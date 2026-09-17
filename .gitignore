@@ -1,0 +1,10 @@
+# Секреты и локальные файлы — не коммитить
+*.key
+*.pem
+id_*
+.env
+.env.*
+*secret*
+*token*
+*.log
+.DS_Store

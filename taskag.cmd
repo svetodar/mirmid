@@ -1,0 +1,1 @@
+@python sqlag.py -p %1
