@@ -1,1 +1,1 @@
-# Проект «mirmid»
+# Project «mirmid»

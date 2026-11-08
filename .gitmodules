@@ -1,0 +1,3 @@
+[submodule "deps/tls"]
+	path = deps/tls
+	url = https://github.com/svetodar/tls.git
