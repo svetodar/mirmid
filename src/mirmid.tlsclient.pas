@@ -61,19 +61,17 @@ type
     FEnded: Boolean;
     FErrText: string;
     function NextPlainRecord: Integer;  { 1 — data; 0 — end; -1 — timeout }
-    function DoHandshake(const AHost, ACaFile: string): Boolean;
+    function DoHandshake(const AHost: string): Boolean;
   public
     constructor Create(ASecure: Boolean);
     destructor Destroy; override;
     { Connect: TCP + handshake TLS 1.2 (for https). Источник доверия:
-      ACAFile — явно заданный PEM-бандл (ca_file из конфига); пустой путь —
       встроенный в exe снимок корней (tls.roots), а если его нет — системное
-      хранилище ОС (Windows). Автопоиска PEM-бандла рядом с программой нет:
-      явный ca_file без файла и отсутствие хоть какого-то хранилища — ошибка
-      без тихого отката. Возвращает False + LastError. }
+      хранилище ОС (только Windows). Автопоиска PEM-бандла рядом с программой
+      нет, внешний бандл не подключается; если нет ни одного хранилища —
+      ошибка без тихого отката. Возвращает False + LastError. }
     function Connect(const AHost: string; APort: Integer;
-      AConnectTimeoutMs, AIOTimeoutMs: Integer;
-      const ACAFile: string): Boolean;
+      AConnectTimeoutMs, AIOTimeoutMs: Integer): Boolean;
     { Send request (headers + body): for TLS — fragmenting records. }
     function Send(const AData: RawByteString): Boolean;
     { Read plaintext: >0 — count, 0 — EOF, <0 — timeout. }
@@ -85,17 +83,9 @@ type
   TTrustStoreSource = (
     tssEmbedded,  { встроенный в exe снимок корней (tls.roots, RT_RCDATA) }
     tssSystem,    { системное хранилище ОС (Windows CryptoAPI) }
-    tssBundle,    { PEM-бандл, заданный явно через ca_file }
-    tssMissing    { хранилища нет: ca_file не задан либо файл не найден }
+    tssMissing    { хранилища нет: снимок недоступен, системного стора нет }
   );
 
-  { Решение о trust store. Path заполнен только для tssBundle;
-    Explicit — ca_file был задан пользователем явно. }
-  TTrustStoreChoice = record
-    Source: TTrustStoreSource;
-    Path: string;
-    Explicit: Boolean;
-  end;
   { Диагностика встроенного снимка корней (tls.roots) для CLI: доступен ли
     снимок, на какую дату он снят и не устарел ли. Available = False —
     снимка нет (сборка без tlsroots.res или с -dTLS_NO_EMBEDDED_ROOTS, либо
@@ -115,20 +105,14 @@ var
     1 — EOF. Set by TSocketTlsTransport.Read. }
   TLSLastReadReason: Integer = 0;
 
-{ Чистый выбор источника trust store: без обращения к файловой системе,
-  окружению и платформе — наличие файлов и ресурсов передаётся флагами.
-  ACAFile — ca_file из конфига ('' — не задан); AEmbeddedAvailable — доступен
-  ли встроенный снимок корней (tls.roots); AAllowSystemStore — доступно ли
-  системное хранилище ОС (Windows); AExplicitExists — существует ли файл по
-  ca_file. Порядок доверия: явно заданный ca_file с файлом — tssBundle; явно
-  заданный ca_file без файла — tssMissing (без тихого отката на другое
-  хранилище, иначе опечатка в пути осталась бы незамеченной); при пустом
-  ca_file — tssEmbedded, если снимок доступен, иначе tssSystem при доступном
-  системном хранилище, иначе tssMissing (делать проверку нечем — ошибка
-  конфигурации, решает вызывающий). }
-function SelectTrustStore(const ACAFile: string;
-  AEmbeddedAvailable, AAllowSystemStore,
-  AExplicitExists: Boolean): TTrustStoreChoice;
+{ Чистый выбор источника trust store: без обращения к файловой системе и
+  окружению — доступность хранилищ передаётся флагами. AEmbeddedAvailable —
+  доступен ли встроенный снимок корней (tls.roots); AAllowSystemStore —
+  доступно ли системное хранилище ОС (Windows). Порядок доверия: встроенный
+  снимок корней, затем системное хранилище ОС; если нет ни того, ни другого —
+  tssMissing (проверять цепочку нечем, это ошибка, решает вызывающий). }
+function SelectTrustStore(AEmbeddedAvailable,
+  AAllowSystemStore: Boolean): TTrustStoreSource;
 const
   { Порог устаревания встроенного снимка корней по умолчанию, дней. Дата
     снимка фиксируется при `make roots`; корни живут годами, поэтому год без
@@ -178,31 +162,18 @@ end;
 
 { --- SelectTrustStore --- }
 
-function SelectTrustStore(const ACAFile: string;
-  AEmbeddedAvailable, AAllowSystemStore,
-  AExplicitExists: Boolean): TTrustStoreChoice;
+function SelectTrustStore(AEmbeddedAvailable,
+  AAllowSystemStore: Boolean): TTrustStoreSource;
 begin
-  Result.Source := tssMissing;
-  Result.Path := '';
-  Result.Explicit := ACAFile <> '';
-  if Result.Explicit then
-  begin
-    { Явный ca_file: отката на другое хранилище нет — иначе опечатка в пути
-      молча осталась бы незамеченной. }
-    if AExplicitExists then
-    begin
-      Result.Source := tssBundle;
-      Result.Path := ACAFile;
-    end;
-    Exit;
-  end;
-  { Порядок доверия без явного ca_file: встроенный снимок корней (не зависит
-    от ОС, файлов рядом с exe и состояния системного хранилища), затем
-    системное хранилище ОС. }
+  { Встроенный снимок корней не зависит от ОС и состояния системного
+    хранилища, поэтому он первый; системное хранилище ОС (только Windows) —
+    запасное. Нет ни того, ни другого — проверять цепочку нечем. }
   if AEmbeddedAvailable then
-    Result.Source := tssEmbedded
+    Result := tssEmbedded
   else if AAllowSystemStore then
-    Result.Source := tssSystem;
+    Result := tssSystem
+  else
+    Result := tssMissing;
 end;
 
 { --- Доступность встроенного снимка корней --- }
@@ -539,11 +510,10 @@ end;
 { Handshake TLS 1.2: ClientHello -> ServerHello/Certificate/
   ServerKeyExchange/ServerHelloDone -> verify -> ClientKeyExchange ->
   CCS/Finished. Sequence matches test_tls12_e2e of library tls.
-  ACaFile — явно заданный PEM-бандл доверия (владеем, Free в finally);
-  пустая строка — встроенный снимок корней (tls.roots) либо, если его нет,
+  Источник доверия — встроенный снимок корней (tls.roots) либо, если его нет,
   системное хранилище ОС (только Windows): оба — кэши уровня юнита, их не
-  освобождаем. Автопоиска бандла рядом с программой больше нет. }
-function THttpTransport.DoHandshake(const AHost, ACaFile: string): Boolean;
+  освобождаем. Автопоиска бандла рядом с программой и внешнего бандла нет. }
+function THttpTransport.DoHandshake(const AHost: string): Boolean;
 var
   ClientRandom, HelloBody, CKEBody, Premaster, SessionHash, Master: TBytes;
   ClientVD, FinishedBody, FinMsg, Frag, Plain: TBytes;
@@ -556,7 +526,6 @@ var
   HasCert, HasSKE: Boolean;
   Chain: TTLS12CertChain;
   Store: TCertStore;
-  OwnsStore: Boolean;             { Store загружен нами (PEM-бандл) и требует Free }
   EmbeddedErr: string;            { причина, по которой встроенный снимок не читается }
   SysStoreErr: string;            { причина сбоя системного хранилища Windows (Windows) }
   VR: TVerifyResult;
@@ -571,7 +540,6 @@ begin
   Chain := nil;
   Buffer := nil;
   Store := nil;
-  OwnsStore := False;
   FTrans := TSocketTlsTransport.Create(FSocket);
   try
     try
@@ -603,53 +571,40 @@ begin
 
       { --- Verify certificate chain and host --- }
       Chain := ParseTLS12CertChain(CertMsg);
-      { Источник доверия — в том же порядке, что в Connect/SelectTrustStore:
-        явный ca_file (PEM-бандл; владеем, Free в finally) → встроенный снимок
-        корней tls.roots → системное хранилище ОС. Встроенный снимок и
-        системное хранилище — ленивые кэши уровня юнита, освобождать их нельзя
-        (OwnsStore остаётся False). Тихих откатов нет: если и снимок, и
-        системное хранилище недоступны, это ошибка с подсказкой задать ca_file. }
-      Store := nil;
-      if ACaFile <> '' then
+      { Источник доверия — встроенный снимок корней tls.roots, а если его нет,
+        системное хранилище ОС (только Windows). Оба — ленивые кэши уровня
+        юнита, освобождать их нельзя. Тихих откатов нет: если недоступно и то,
+        и другое, это ошибка проверки цепочки. }
+      EmbeddedErr := '';
+      try
+        Store := EmbeddedRoots;
+      except
+        on E: Exception do
+          EmbeddedErr := E.Message;
+      end;
+      if Store = nil then
       begin
-        Store := LoadBundle(ACaFile);
-        OwnsStore := True;
-      end
-      else
-      begin
-        EmbeddedErr := '';
+        {$ifdef windows}
+        SysStoreErr := '';
         try
-          Store := EmbeddedRoots;
+          Store := GetSystemTrustStore;
         except
-          on E: Exception do
-            EmbeddedErr := E.Message;
+          on E: TWinCertStoreError do
+            SysStoreErr := E.Message;
+          on E: EASN1Error do
+            SysStoreErr := E.Message;
         end;
         if Store = nil then
-        begin
-          {$ifdef windows}
-          SysStoreErr := '';
-          try
-            Store := GetSystemTrustStore;
-          except
-            on E: TWinCertStoreError do
-              SysStoreErr := E.Message;
-            on E: EASN1Error do
-              SysStoreErr := E.Message;
-          end;
-          if Store = nil then
-            raise ETLS12Error.Create(
-              'хранилище доверия недоступно: встроенный снимок корней не ' +
-              'читается (' + EmbeddedErr + '), системное хранилище Windows — ' +
-              SysStoreErr + '; задайте ca_file в секции [llm] INI или в ' +
-              'переменной MIRMID_CA_FILE');
-          {$else}
           raise ETLS12Error.Create(
             'хранилище доверия недоступно: встроенный снимок корней не ' +
-            'читается (' + EmbeddedErr + '); задайте ca_file в секции [llm] INI ' +
-            'или в переменной MIRMID_CA_FILE (системное хранилище ОС доступно ' +
-            'только на Windows)');
-          {$endif}
-        end;
+            'читается (' + EmbeddedErr + '), системное хранилище Windows — ' +
+            SysStoreErr);
+        {$else}
+        raise ETLS12Error.Create(
+          'хранилище доверия недоступно: встроенный снимок корней не ' +
+          'читается (' + EmbeddedErr + '); системное хранилище ОС доступно ' +
+          'только на Windows');
+        {$endif}
       end;
       VR := Chain.Verify(Store);
       if not VR.OK then
@@ -751,19 +706,17 @@ begin
   finally
     if Chain <> nil then Chain.Free;
     if Buffer <> nil then Buffer.Free;
-    { Встроенный снимок корней и системное хранилище (OwnsStore = False) —
-      разделяемые кэши юнитов tls.roots / mirmid.tlsclient, их освобождают
-      finalization-секции, здесь только забываем ссылку. }
-    if OwnsStore and (Store <> nil) then Store.Free;
+    { Встроенный снимок корней и системное хранилище — разделяемые кэши юнитов
+      tls.roots / mirmid.tlsclient: их освобождают finalization-секции, здесь
+      ничего не освобождаем. }
   end;
 end;
 
 function THttpTransport.Connect(const AHost: string; APort: Integer;
-  AConnectTimeoutMs, AIOTimeoutMs: Integer;
-  const ACAFile: string): Boolean;
+  AConnectTimeoutMs, AIOTimeoutMs: Integer): Boolean;
 var
   AllowSystem: Boolean;
-  Choice: TTrustStoreChoice;
+  Store: TTrustStoreSource;
 begin
   Result := False;
   FErrText := '';
@@ -798,42 +751,31 @@ begin
   if not FTls then
     Exit(True);
 
-   { Выбор источника доверия — до handshake. Порядок: явный ca_file →
-     встроенный снимок корней → системное хранилище ОС → ошибка. Явно заданный
-     ca_file без файла даёт ошибку «файл не найден» (без тихого отката и без
-     автопоиска PEM-бандла рядом с exe). }
-   AllowSystem := False;
-   {$ifdef windows}
-   AllowSystem := True;
-   {$endif}
-   Choice := SelectTrustStore(ACAFile, EmbeddedRootsUsable, AllowSystem,
-     (ACAFile <> '') and FileExists(ACAFile));
-   if Choice.Source = tssMissing then
-   begin
-     if Choice.Explicit then
-       FErrText := 'хранилище доверия: файл ca_file не найден (' + ACAFile + ')'
-     else
-     begin
-       { Пустой ca_file и нет встроенного снимка; на Windows системное
-         хранилище подхватилось бы в SelectTrustStore, так что сюда попадаем
-         только на прочих платформах. Причину недоступности снимка показываем
-         как есть — иначе диагноз «сборка без tlsroots.res» не виден. }
-       FErrText := 'хранилище доверия не настроено: встроенный снимок корней ' +
-         'недоступен';
-       if GEmbeddedRootsErr <> '' then
-         FErrText := FErrText + ' (' + GEmbeddedRootsErr + ')';
-       {$ifndef windows}
-       FErrText := FErrText +
-         '; системное хранилище ОС доступно только на Windows';
-       {$endif}
-       FErrText := FErrText + '; задайте ca_file в секции [llm] INI или в ' +
-         'переменной MIRMID_CA_FILE';
-     end;
-     Exit(False);
-   end;
-  { tssBundle — Path указывает на файл; tssEmbedded и tssSystem — пустая
-    строка (DoHandshake возьмёт встроенный снимок или системное хранилище). }
-  Result := DoHandshake(AHost, Choice.Path);
+  { Выбор источника доверия — до handshake. Порядок: встроенный снимок корней
+    → системное хранилище ОС → ошибка. Автопоиска PEM-бандла рядом с exe нет,
+    внешний бандл не подключается: задать его нечем. }
+  AllowSystem := False;
+  {$ifdef windows}
+  AllowSystem := True;
+  {$endif}
+  Store := SelectTrustStore(EmbeddedRootsUsable, AllowSystem);
+  if Store = tssMissing then
+  begin
+    { Нет встроенного снимка; на Windows системное хранилище подхватилось бы в
+      SelectTrustStore, так что сюда попадаем только на прочих платформах.
+      Причину недоступности снимка показываем как есть — иначе диагноз
+      «сборка без tlsroots.res» не виден. }
+    FErrText := 'хранилище доверия не настроено: встроенный снимок корней ' +
+      'недоступен';
+    if GEmbeddedRootsErr <> '' then
+      FErrText := FErrText + ' (' + GEmbeddedRootsErr + ')';
+    {$ifndef windows}
+    FErrText := FErrText +
+      '; системное хранилище ОС доступно только на Windows';
+    {$endif}
+    Exit(False);
+  end;
+  Result := DoHandshake(AHost);
 end;
 
 

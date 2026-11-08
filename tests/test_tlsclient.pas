@@ -6,12 +6,11 @@ unit test_tlsclient;
   ФС/окружение/платформу, поэтому все сочетания проверяются флагами без сети
   и без реальных файлов.
 
-  Политика доверия (см. src/mirmid.tlsclient.pas): явно заданный ca_file с
-  существующим файлом — PEM-бандл; ca_file без файла — ошибка без тихого
-  отката на другое хранилище; пустой ca_file — встроенный снимок корней
-  (tls.roots), при его отсутствии системное хранилище ОС, иначе ошибка.
-  Автопоиска ca-bundle.pem (рядом с exe, Git for Windows, /etc/ssl) больше
-  нет, поэтому DefaultCaFile в API отсутствует.
+  Политика доверия (см. src/mirmid.tlsclient.pas): встроенный снимок корней
+  (tls.roots), при его отсутствии — системное хранилище ОС (только Windows),
+  иначе ошибка. Внешний PEM-бандл не подключается: соответствующей настройки нет, а
+  автопоиска ca-bundle.pem (рядом с exe, Git for Windows, /etc/ssl) нет,
+  поэтому DefaultCaFile в API отсутствует.
 
   Вторая группа смотрит на настоящий артефакт сборки — снимок корней,
   вкомпилированный в exe (RT_RCDATA, `make roots`): стор непустой, известный
@@ -33,14 +32,9 @@ uses
 type
   TTlsClientTests = class(TTestCase)
   published
-    procedure TestExplicitCaFileExists;
-    procedure TestExplicitCaFileMissingNoFallback;
-    procedure TestEmptyCaFileIgnoresExplicitExists;
-    procedure TestNoCaFileEmbedded;
-    procedure TestNoCaFileEmbeddedWinsOverSystemStore;
-    procedure TestNoCaFileSystemStoreWhenEmbeddedMissing;
-    procedure TestNoCaFileNothing;
-    procedure TestExplicitCaFileWinsOverEmbeddedAndSystem;
+    procedure TestEmbeddedWinsOverSystemStore;
+    procedure TestSystemStoreWhenEmbeddedMissing;
+    procedure TestNoStoreAtAll;
 {$ifndef TLS_NO_EMBEDDED_ROOTS}
     { --- Встроенный снимок корней (tls.roots) --- }
     procedure TestEmbeddedRootsCount;
@@ -58,96 +52,30 @@ uses
   SysUtils,
   tls.roots, tls.certstore, tls.x509;
 
-procedure TTlsClientTests.TestExplicitCaFileExists;
-var
-  C: TTrustStoreChoice;
+{ Встроенный снимок важнее системного хранилища: проверка не зависит от
+  состояния ОС. }
+procedure TTlsClientTests.TestEmbeddedWinsOverSystemStore;
 begin
-  C := SelectTrustStore('C:\certs\my.pem', True, True, True);
-  AssertEquals('явный ca_file — источник bundle', Ord(tssBundle), Ord(C.Source));
-  AssertEquals('путь — явный ca_file', 'C:\certs\my.pem', C.Path);
-  AssertTrue('признак явного ca_file', C.Explicit);
+  AssertEquals('снимок корней — tssEmbedded', Ord(tssEmbedded),
+    Ord(SelectTrustStore(True, True)));
+  AssertEquals('снимок корней без системного хранилища', Ord(tssEmbedded),
+    Ord(SelectTrustStore(True, False)));
 end;
 
-procedure TTlsClientTests.TestExplicitCaFileMissingNoFallback;
-var
-  C: TTrustStoreChoice;
+{ Сборка без tlsroots.res (или -dTLS_NO_EMBEDDED_ROOTS): остаётся системное
+  хранилище ОС. }
+procedure TTlsClientTests.TestSystemStoreWhenEmbeddedMissing;
 begin
-  { Опечатка в ca_file: рядом доступны и встроенный снимок корней, и системное
-    хранилище, но тихого отката быть не должно — иначе ошибка в конфиге
-    осталась бы незамеченной. }
-  C := SelectTrustStore('C:\certs\typo.pem', True, True, False);
-  AssertEquals('нет файла — tssMissing', Ord(tssMissing), Ord(C.Source));
-  AssertEquals('путь не подставляется', '', C.Path);
-  AssertTrue('признак явного ca_file сохраняется', C.Explicit);
+  AssertEquals('снимка нет — системное хранилище', Ord(tssSystem),
+    Ord(SelectTrustStore(False, True)));
 end;
 
-procedure TTlsClientTests.TestEmptyCaFileIgnoresExplicitExists;
-var
-  C: TTrustStoreChoice;
+{ Ни снимка, ни системного хранилища: проверять цепочку нечем — tssMissing,
+  вызывающий превращает это в ошибку. }
+procedure TTlsClientTests.TestNoStoreAtAll;
 begin
-  { Флаг существования файла при пустом ca_file ничего не значит: явного
-    бандла нет, поэтому bundle выбрать нельзя. }
-  C := SelectTrustStore('', False, True, True);
-  AssertEquals('пустой ca_file — не bundle', Ord(tssSystem), Ord(C.Source));
-  AssertEquals('путь пуст', '', C.Path);
-  AssertFalse('ca_file не задан', C.Explicit);
-end;
-
-procedure TTlsClientTests.TestNoCaFileEmbedded;
-var
-  C: TTrustStoreChoice;
-begin
-  C := SelectTrustStore('', True, False, False);
-  AssertEquals('встроенный снимок корней — tssEmbedded',
-    Ord(tssEmbedded), Ord(C.Source));
-  AssertEquals('путь пуст', '', C.Path);
-  AssertFalse('ca_file не задан', C.Explicit);
-end;
-
-procedure TTlsClientTests.TestNoCaFileEmbeddedWinsOverSystemStore;
-var
-  C: TTrustStoreChoice;
-begin
-  { Системное хранилище доступно, но встроенный снимок приоритетнее: проверка
-    не зависит от состояния ОС. }
-  C := SelectTrustStore('', True, True, False);
-  AssertEquals('встроенный снимок важнее системного хранилища',
-    Ord(tssEmbedded), Ord(C.Source));
-  AssertEquals('путь пуст', '', C.Path);
-end;
-
-procedure TTlsClientTests.TestNoCaFileSystemStoreWhenEmbeddedMissing;
-var
-  C: TTrustStoreChoice;
-begin
-  { Сборка без tlsroots.res (или -dTLS_NO_EMBEDDED_ROOTS): остаётся системное
-    хранилище ОС. }
-  C := SelectTrustStore('', False, True, False);
-  AssertEquals('снимка нет — системное хранилище', Ord(tssSystem), Ord(C.Source));
-  AssertEquals('путь пуст', '', C.Path);
-  AssertFalse('ca_file не задан', C.Explicit);
-end;
-
-procedure TTlsClientTests.TestNoCaFileNothing;
-var
-  C: TTrustStoreChoice;
-begin
-  C := SelectTrustStore('', False, False, False);
   AssertEquals('ни снимка, ни системного хранилища — tssMissing',
-    Ord(tssMissing), Ord(C.Source));
-  AssertEquals('путь пуст', '', C.Path);
-  AssertFalse('ca_file не задан', C.Explicit);
-end;
-
-procedure TTlsClientTests.TestExplicitCaFileWinsOverEmbeddedAndSystem;
-var
-  C: TTrustStoreChoice;
-begin
-  C := SelectTrustStore('/opt/certs/corp.pem', True, True, True);
-  AssertEquals('явный ca_file важнее встроенного снимка и системного хранилища',
-    Ord(tssBundle), Ord(C.Source));
-  AssertEquals('путь — явный ca_file', '/opt/certs/corp.pem', C.Path);
-  AssertTrue('признак явного ca_file', C.Explicit);
+    Ord(tssMissing), Ord(SelectTrustStore(False, False)));
 end;
 
 {$ifndef TLS_NO_EMBEDDED_ROOTS}

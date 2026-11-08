@@ -84,16 +84,6 @@ function ParseChunkSize(const Line: RawByteString): Int64;
 { Складывает base URL and path, no double slash. }
 function JoinUrl(const Base, Path: string): string;
 
-var
-  { Путь к PEM-бандлу CA (ключ ca_file в секции [llm] INI или переменная
-    MIRMID_CA_FILE). Заполняется при разборе настроек (mirmid.cli.ResolveConfig);
-    относительный путь уже развёрнут от рабочей папки. Пусто — доверие берётся
-    из встроенного снимка корней (tls.roots, ресурс RT_RCDATA в exe), а если
-    снимка нет — из системного хранилища ОС (на не-Windows — ошибка). Явный
-    путь без файла либо битый бандл — ошибка без тихого отката на другие
-    источники. Автопоиска ca-bundle.pem рядом с exe нет. Применяется только к
-    схеме https и ко всем HTTPS-запросам процесса. }
-  HttpCaFile: string = '';
 
 { HTTP-запрос. Body used only for POST; for GET pass ''. }
 function HttpRequest(const Method, Url, ApiKey, Body: string;
@@ -525,7 +515,7 @@ begin
       IoTimeout := TimeoutMs
     else
       IoTimeout := STREAM_READ_TIMEOUT_MS;
-    if not Transport.Connect(Host, Port, ConnectMs, IoTimeout, HttpCaFile) then
+    if not Transport.Connect(Host, Port, ConnectMs, IoTimeout) then
     begin
       Err := Transport.LastError;
       Exit(False);
