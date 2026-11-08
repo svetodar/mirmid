@@ -369,34 +369,34 @@ begin
   AssertEquals('aePlan не путается', 0, FLog.PlanEvents);
 end;
 
-{ Регрессия (task1.md): фаза анализа наследует политики доступа
-  родительской сессии. Раньше AnalysisPhase жёстко выставляла
-  AllowWrite/AllowShell/AllowHttp в False, поэтому при включённой
-  настройке allow-shell инструмент отвечал «выполнение команд запрещено
-  (запустите с --allow-shell)». }
+{ Регрессия (task1.md): фаза анализа наследует набор инструментов
+  родительской сессии. Раньше AnalysisPhase жёстко выключала пишущие и
+  сетевые инструменты, поэтому при включённом ключе shell инструмент отвечал
+  «выполнение команд запрещено». }
 procedure TPlannerTests.TestAnalysisConfigInheritsPolicies;
 var
   Cfg, AC: TMirmidConfig;
 begin
   Cfg := DefaultConfig;
-  Cfg.AllowWrite := True;
-  Cfg.AllowShell := True;
-  Cfg.AllowHttp := True;
+  SetToolEnabled(Cfg, 'edit_text_file', True);
+  SetToolEnabled(Cfg, 'shell', True);
+  SetToolEnabled(Cfg, 'http_request', True);
   Cfg.Model := 'модель-анализа';
   Cfg.MaxSteps := 7;
   AC := AnalysisConfig(Cfg);
-  AssertTrue('allow-write наследуется', AC.AllowWrite);
-  AssertTrue('allow-shell наследуется', AC.AllowShell);
-  AssertTrue('allow-http наследуется', AC.AllowHttp);
+  AssertTrue('edit_text_file наследуется', ToolEnabled(AC, 'edit_text_file'));
+  AssertTrue('shell наследуется', ToolEnabled(AC, 'shell'));
+  AssertTrue('http_request наследуется', ToolEnabled(AC, 'http_request'));
   AssertEquals('модель наследуется', 'модель-анализа', AC.Model);
   AssertEquals('бюджет шагов наследуется', 7, AC.MaxSteps);
   AssertEquals('подсказка аналитика', PLANNER_ANALYSIS_PROMPT, AC.SystemPrompt);
   { Родительский конфиг — запись, поэтому копия не меняет его. }
-  AC.AllowShell := False;
-  AssertTrue('родитель не изменён', Cfg.AllowShell);
-  { Запрет в родителе остаётся запретом и в анализе. }
-  Cfg.AllowShell := False;
-  AssertFalse('запрет наследуется', AnalysisConfig(Cfg).AllowShell);
+  SetToolEnabled(AC, 'shell', False);
+  AssertTrue('родитель не изменён', ToolEnabled(Cfg, 'shell'));
+  { Выключенный в родителе инструмент остаётся выключенным и в анализе. }
+  SetToolEnabled(Cfg, 'shell', False);
+  AssertFalse('запрет наследуется',
+    ToolEnabled(AnalysisConfig(Cfg), 'shell'));
 end;
 
 { Подсказка шага: общая задача, текущий план, цель шага. }

@@ -34,8 +34,9 @@ function SubagentOutcome(const FinalText: string): TToolOutcome;
 procedure RegisterSubagentTool(R: TToolRegistry);
 
 { Полный набор инструментов сессии: встроенные инструменты, subagent и
-  http_request (если разрешён политикой AllowHttp). Используется и
-  родительской сессией, и субагентами — доступность к инструментам одинаковая. }
+  http_request. Набор фильтруется секцией [tools]: выключенный инструмент в
+  реестр не попадает. Используется и родительской сессией, и субагентами —
+  доступность инструментов одинаковая. }
 procedure RegisterSessionTools(R: TToolRegistry; const Cfg: TMirmidConfig);
 
 implementation
@@ -61,6 +62,9 @@ var
   FinalText, Err: string;
   SubBase, SaveErr: string;
 begin
+  { Гейт в обработчике: ключ subagent в секции [tools]. }
+  if not ToolEnabled(Ctx.Cfg, SUBAGENT_TOOL_NAME) then
+    Exit(ToolDisabled(SUBAGENT_TOOL_NAME));
   if Ctx.SubAgentDepth >= MAX_SUBAGENT_DEPTH then
     Exit(ErrResult(Format('превышена глубина вложенности субагентов (максимум %d)',
       [MAX_SUBAGENT_DEPTH])));
@@ -131,13 +135,17 @@ end;
 
 procedure RegisterSessionTools(R: TToolRegistry; const Cfg: TMirmidConfig);
 begin
+  { Набор фильтруется секцией [tools]: выключенный инструмент не регистрируется
+    и потому не уходит модели в массиве tools. Обработчики дополнительно
+    проверяют свой ключ (ToolDisabled) — субагенты, шаги плана и MCP собирают
+    собственные представления реестра. }
+  R.ApplyToolSwitches(Cfg);
   RegisterBuiltinTools(R);
   RegisterMediaTool(R);
   RegisterScreenTools(R);
   RegisterGuiTools(R);
   RegisterSubagentTool(R);
-  if Cfg.AllowHttp then
-    RegisterHttpTool(R);
+  RegisterHttpTool(R);
 end;
 
 end.

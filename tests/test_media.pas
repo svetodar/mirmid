@@ -100,7 +100,13 @@ begin
   RegisterScreenTools(FReg);
   Cfg := DefaultConfig;
   Cfg.WorkDir := FDir;
-  Cfg.AllowWrite := True;
+  SetToolEnabled(Cfg, 'edit_text_file', True);
+  SetToolEnabled(Cfg, 'copy_file', True);
+  { Инструменты этого юнита по умолчанию выключены: включаем их ключами
+    [tools], иначе обработчики откажут (Invoke проверяет ключ). }
+  SetToolEnabled(Cfg, 'read_media_file', True);
+  SetToolEnabled(Cfg, 'screen_shoot', True);
+  SetToolEnabled(Cfg, 'window_shoot', True);
   FCtx := MakeToolContext(Cfg);
 end;
 
@@ -284,19 +290,24 @@ begin
   AssertTrue('снимок в служебный каталог запрещён', O.IsError);
 end;
 
+{ Ключи screen_shoot=0 и window_shoot=0: обработчики отказывают, файлы не
+  создаются (раньше снимки наследовали общую настройку записи). }
 procedure TMediaTests.TestShotsDeniedWithoutWrite;
 var
   O: TToolOutcome;
 begin
-  FCtx.AllowWrite := False;
+  SetToolEnabled(FCtx.Cfg, 'screen_shoot', False);
+  SetToolEnabled(FCtx.Cfg, 'window_shoot', False);
   O := FReg.Invoke(SCREEN_TOOL_NAME, '{"path":"screen.png"}', FCtx);
-  AssertTrue('снимок экрана без --allow-write запрещён', O.IsError);
-  AssertTrue('подсказка про --allow-write: ' + O.Text,
-    Pos('--allow-write', O.Text) > 0);
+  AssertTrue('снимок экрана при screen_shoot=0 запрещён', O.IsError);
+  AssertTrue('сообщение называет инструмент: ' + O.Text,
+    Pos('tool "screen_shoot" is disabled', O.Text) > 0);
   O := FReg.Invoke(WINDOW_TOOL_NAME, '{"path":"window.png"}', FCtx);
-  AssertTrue('снимок окна без --allow-write запрещён', O.IsError);
+  AssertTrue('снимок окна при window_shoot=0 запрещён', O.IsError);
   AssertFalse('файлы не созданы', FileExists(PathOf('screen.png')) or
     FileExists(PathOf('window.png')));
+  SetToolEnabled(FCtx.Cfg, 'screen_shoot', True);
+  SetToolEnabled(FCtx.Cfg, 'window_shoot', True);
 end;
 
 procedure TMediaTests.TestSaveBgraImage;

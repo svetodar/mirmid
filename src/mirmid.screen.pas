@@ -3,7 +3,8 @@ unit mirmid.screen;
   (всех мониторов) или активного окна в файл PNG или BMP.
   На Windows снимок делается средствами GDI (без внешних программ),
   на Unix — доступными утилитами (grim, scrot, ImageMagick import,
-  gnome-screenshot, spectacle). Сохранение файла требует AllowWrite. }
+  gnome-screenshot, spectacle). Инструменты включаются ключами screen_shoot и
+  window_shoot в секции [tools] (по умолчанию выключены). }
 
 {$mode objfpc}{$H+}
 
@@ -496,15 +497,16 @@ end;
 { --------------------------------------------------------------- инструмент }
 
 function DoShoot(const A: TJSONObject; const Ctx: TToolContext;
-  Window: Boolean): TToolOutcome;
+  Window: Boolean; const ToolName: string): TToolOutcome;
 var
   P, Err, Fmt, Info: string;
   W, H: Integer;
   Ext: string;
   Buf: PByte;
 begin
-  if not Ctx.AllowWrite then
-    Exit(ErrResult('сохранение файлов запрещено (запустите с --allow-write)'));
+  { Гейт в обработчике: у screen_shoot и window_shoot свои ключи [tools]. }
+  if not ToolEnabled(Ctx.Cfg, ToolName) then
+    Exit(ToolDisabled(ToolName));
   P := Trim(JStr(A, 'path', ''));
   if P = '' then
     Exit(ErrResult('не задан path'));
@@ -558,19 +560,19 @@ end;
 
 function ToolScreenShoot(const A: TJSONObject; const Ctx: TToolContext): TToolOutcome;
 begin
-  Result := DoShoot(A, Ctx, False);
+  Result := DoShoot(A, Ctx, False, SCREEN_TOOL_NAME);
 end;
 
 function ToolWindowShoot(const A: TJSONObject; const Ctx: TToolContext): TToolOutcome;
 begin
-  Result := DoShoot(A, Ctx, True);
+  Result := DoShoot(A, Ctx, True, WINDOW_TOOL_NAME);
 end;
 
 procedure RegisterScreenTools(R: TToolRegistry);
 begin
   R.Add(SCREEN_TOOL_NAME,
     'Сохраняет снимок всего экрана (всех мониторов) в файл .png или .bmp. ' +
-    'Нужно разрешение на запись (--allow-write).',
+    'Нужен включённый инструмент (ключ screen_shoot в секции [tools]).',
     SchemaObject(
       TJSONObject.Create([
         'path', PropStr('Путь к файлу снимка (.png или .bmp; без расширения — .png)')]),
@@ -579,7 +581,7 @@ begin
 
   R.Add(WINDOW_TOOL_NAME,
     'Сохраняет снимок активного окна в файл .png или .bmp. ' +
-    'Нужно разрешение на запись (--allow-write).',
+    'Нужен включённый инструмент (ключ window_shoot в секции [tools]).',
     SchemaObject(
       TJSONObject.Create([
         'path', PropStr('Путь к файлу снимка (.png или .bmp; без расширения — .png)'),

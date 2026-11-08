@@ -477,6 +477,9 @@ var
   Size: Int64;
   F: TFileStream;
 begin
+  { Гейт в обработчике: ключ read_media_file в секции [tools]. }
+  if not ToolEnabled(Ctx.Cfg, MEDIA_TOOL_NAME) then
+    Exit(ToolDisabled(MEDIA_TOOL_NAME));
   P := Trim(JStr(A, 'path', ''));
   if P = '' then
     Exit(ErrResult('не задан path'));

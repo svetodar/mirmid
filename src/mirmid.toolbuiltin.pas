@@ -16,6 +16,15 @@ implementation
 uses
   SysUtils, Classes, fpjson, md5, mirmid.types, mirmid.util, mirmid.json;
 
+const
+  { Имена инструментов, у которых гейт [tools] стоит в самом обработчике: те же
+    строки нужны при регистрации, поэтому держим их константами — опечатка в
+    гейте навсегда выключила бы инструмент (fail-closed), а дрейф между гейтом,
+    регистрацией и таблицей mirmid.tools заметить было бы нечем. }
+  EDIT_TOOL_NAME = 'edit_text_file';
+  COPY_TOOL_NAME = 'copy_file';
+  SHELL_TOOL_NAME = 'shell';
+
 { ------------------------------------------------------------------ helpers }
 
 function ArgStr(const A: TJSONObject; const Name, Def: string): string;
@@ -622,8 +631,9 @@ var
   HadBreak, AddHadBreak: Boolean;
   LimitGiven: Boolean;
 begin
-  if not Ctx.AllowWrite then
-    Exit(ErrResult('правка файлов запрещена (запустите с --allow-write)'));
+  { Гейт в обработчике: ключ edit_text_file в секции [tools]. }
+  if not ToolEnabled(Ctx.Cfg, EDIT_TOOL_NAME) then
+    Exit(ToolDisabled(EDIT_TOOL_NAME));
   P := ResolvePath(Ctx, A, 'path');
   if P = '' then
     Exit(ErrResult('не задан path'));
@@ -753,8 +763,9 @@ function ToolCopyFile(const A: TJSONObject; const Ctx: TToolContext): TToolOutco
 var
   Src, Dst, Data, Err: string;
 begin
-  if not Ctx.AllowWrite then
-    Exit(ErrResult('копирование запрещено (запустите с --allow-write)'));
+  { Гейт в обработчике: ключ copy_file в секции [tools]. }
+  if not ToolEnabled(Ctx.Cfg, COPY_TOOL_NAME) then
+    Exit(ToolDisabled(COPY_TOOL_NAME));
   Src := ResolvePath(Ctx, A, 'source');
   Dst := ResolvePath(Ctx, A, 'destination');
   if (Src = '') or (Dst = '') then
@@ -777,8 +788,9 @@ var
   Cmd, OutText, Err: string;
   EC, OrigLen: Integer;
 begin
-  if not Ctx.AllowShell then
-    Exit(ErrResult('выполнение команд запрещено (запустите с --allow-shell)'));
+  { Гейт в обработчике: ключ shell в секции [tools]. }
+  if not ToolEnabled(Ctx.Cfg, SHELL_TOOL_NAME) then
+    Exit(ToolDisabled(SHELL_TOOL_NAME));
   Cmd := ArgStr(A, 'command', '');
   if Cmd = '' then
     Exit(ErrResult('не задан command'));
@@ -1125,7 +1137,7 @@ begin
       ['path']),
     @ToolReadPascalInterface);
 
-  R.Add('edit_text_file',
+  R.Add(EDIT_TOOL_NAME,
     'Создаёт файл или меняет в нём диапазон строк, описываемый offset/limit, ' +
     'на content. offset — 1-базированный номер первой строки диапазона; 0 — ' +
     'дописать в конец файла; отрицательный — отсчёт от конца (-1 — последняя ' +
@@ -1149,7 +1161,7 @@ begin
       ['path']),
     @ToolEditText);
 
-  R.Add('copy_file',
+  R.Add(COPY_TOOL_NAME,
     'Копирует файл из source в destination.',
     SchemaObject(
       TJSONObject.Create([
@@ -1158,7 +1170,7 @@ begin
       ['source', 'destination']),
     @ToolCopyFile);
 
-  R.Add('shell',
+  R.Add(SHELL_TOOL_NAME,
     'Выполняет команду в системной оболочке (bash на Unix, cmd.exe на Windows) ' +
     'и возвращает stdout+stderr и код выхода.',
     SchemaObject(

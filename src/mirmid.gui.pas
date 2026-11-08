@@ -3,7 +3,7 @@ unit mirmid.gui;
   window_info. На Windows — нативно через WinAPI (EnumWindows, GetWindowTextW,
   GetClassNameW, GetWindowRect, EnumChildWindows); на Unix — через утилиты
   xwininfo/xprop (пакет x11-utils) через shell. Инструменты только читают
-  состояние окон: не пишут файлы и не требуют AllowWrite/AllowShell. }
+  состояние окон: не пишут файлы и не требуют отдельного разрешения. }
 
 {$mode objfpc}{$H+}
 

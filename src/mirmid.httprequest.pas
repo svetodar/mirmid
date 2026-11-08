@@ -1,8 +1,7 @@
 unit mirmid.httprequest;
 { Инструмент http_request: доступ к сайтам по HTTP-протоколу (GET/POST).
-  По умолчанию недоступен — включается политикой AllowHttp (--allow-http,
-  allow_http=1 в INI или переменная окружения MIRMID_ALLOW_HTTP) и
-  регистрируется в наборе инструментов сессии только тогда. }
+  По умолчанию выключен: включается ключом http_request=1 в секции [tools] INI
+  (см. mirmid.tools) и только тогда попадает в набор инструментов сессии. }
 
 {$mode objfpc}{$H+}
 
@@ -30,8 +29,10 @@ var
   TimeoutSec, TimeoutMs: Integer;
   HR: THttpResult;
 begin
-  if not Ctx.AllowHttp then
-    Exit(ErrResult('доступ к HTTP запрещён (запустите с --allow-http)'));
+  { Гейт в обработчике: набор инструментов фильтруется при регистрации, но
+    субагенты, шаги плана и прямой вызов обработчика обходят её. }
+  if not ToolEnabled(Ctx.Cfg, HTTP_TOOL_NAME) then
+    Exit(ToolDisabled(HTTP_TOOL_NAME));
 
   Url := Trim(JStr(A, 'url', ''));
   if Url = '' then

@@ -58,6 +58,7 @@ type
     procedure TestEditLimitMissingHint;
     procedure TestCreateNotFromStart;
     procedure TestWriteDenied;
+    procedure TestReadOnlyToolDisabled;
     procedure TestMirmidDirDenied;
     procedure TestFileList;
     procedure TestShellPolicy;
@@ -145,8 +146,8 @@ begin
   RegisterBuiltinTools(FReg);
   Cfg := DefaultConfig;
   Cfg.WorkDir := FDir;
-  Cfg.AllowWrite := True;
-  Cfg.AllowShell := False;
+  SetToolEnabled(Cfg, 'edit_text_file', True);
+  SetToolEnabled(Cfg, 'copy_file', True);
   Cfg.ShellTimeout := 10;
   FCtx := MakeToolContext(Cfg);
 end;
@@ -632,35 +633,61 @@ begin
   AssertFalse('файл не создан', FileExists(FullPath('new.txt')));
 end;
 
-{ AllowWrite=False: и создание, и правка отклоняются, файл не появляется/не
-  меняется. }
+{ Ключ edit_text_file=0 в [tools]: и создание, и правка отклоняются, файл не
+  появляется и не меняется. }
 procedure TToolTests.TestWriteDenied;
 var
   O: TToolOutcome;
   Hash: string;
 begin
-  FCtx.AllowWrite := False;
+  SetToolEnabled(FCtx.Cfg, 'edit_text_file', False);
 
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"x"}', FCtx);
-  AssertTrue('создание при AllowWrite=False запрещено: ' + O.Text, O.IsError);
-  AssertTrue('сообщение о запрете записи: ' + O.Text, Pos('запрещена', O.Text) > 0);
+  AssertTrue('создание при edit_text_file=0 запрещено: ' + O.Text, O.IsError);
+  AssertTrue('сообщение называет инструмент: ' + O.Text,
+    Pos('tool "edit_text_file" is disabled', O.Text) > 0);
   AssertFalse('файл не создан', FileExists(FullPath('a.txt')));
 
   { Готовим файл, чтобы проверить запрет правки. }
-  FCtx.AllowWrite := True;
+  SetToolEnabled(FCtx.Cfg, 'edit_text_file', True);
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"hello","offset":0}', FCtx);
   AssertFalse('подготовка файла: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
-  FCtx.AllowWrite := False;
+  SetToolEnabled(FCtx.Cfg, 'edit_text_file', False);
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"world","hash":"' + Hash + '"}', FCtx);
-  AssertTrue('правка при AllowWrite=False запрещена: ' + O.Text, O.IsError);
+  AssertTrue('правка при edit_text_file=0 запрещена: ' + O.Text, O.IsError);
   AssertEquals('файл не изменён', 'hello', ReadFileText(FullPath('a.txt')));
 
-  FCtx.AllowWrite := True;
+  SetToolEnabled(FCtx.Cfg, 'edit_text_file', True);
+end;
+
+{ Выключенный читающий инструмент без собственного гейта в обработчике тоже
+  обязан отказать: проверку делает реестр (защита в глубину), иначе вызов в
+  обход политики — из теста или внешнего кода — выполнил бы инструмент. }
+procedure TToolTests.TestReadOnlyToolDisabled;
+var
+  O: TToolOutcome;
+begin
+  SetToolEnabled(FCtx.Cfg, 'file_list', False);
+  SetToolEnabled(FCtx.Cfg, 'grep', False);
+  try
+    O := FReg.Invoke('file_list', '{"path":"."}', FCtx);
+    AssertTrue('file_list=0 — отказ: ' + O.Text, O.IsError);
+    AssertTrue('сообщение называет инструмент: ' + O.Text,
+      Pos('tool "file_list" is disabled', O.Text) > 0);
+
+    O := FReg.Invoke('grep', '{"pattern":"x","path":"."}', FCtx);
+    AssertTrue('grep=0 — отказ: ' + O.Text, O.IsError);
+    AssertTrue('сообщение называет инструмент: ' + O.Text,
+      Pos('tool "grep" is disabled', O.Text) > 0);
+  finally
+    SetToolEnabled(FCtx.Cfg, 'file_list', True);
+    SetToolEnabled(FCtx.Cfg, 'grep', True);
+  end;
 end;
 
 { Служебный каталог .mirmid закрыт для всех файловых инструментов. }
@@ -727,9 +754,10 @@ var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('shell', '{"command":"echo mirmid"}', FCtx);
-  AssertTrue('shell запрещён по умолчанию', O.IsError);
-
-  FCtx.AllowShell := True;
+  AssertTrue('shell выключен по умолчанию', O.IsError);
+  AssertTrue('сообщение называет инструмент: ' + O.Text,
+    Pos('tool "shell" is disabled', O.Text) > 0);
+  SetToolEnabled(FCtx.Cfg, 'shell', True);
   O := FReg.Invoke('shell', '{"command":"echo mirmid"}', FCtx);
   AssertFalse('shell разрешён: ' + O.Text, O.IsError);
   AssertTrue('вывод содержит mirmid', Pos('mirmid', O.Text) > 0);
@@ -745,7 +773,7 @@ var
 begin
   { Успешная ветка ToolShell: вывод длиннее shell_output_limit режется, но код
     возврата сохраняется, а в ответе остаётся пометка с числом байт. }
-  FCtx.AllowShell := True;
+  SetToolEnabled(FCtx.Cfg, 'shell', True);
   Cmd := 'echo ' + StringOfChar('x', N);
 
   FCtx.ShellOutputLimit := Limit;
@@ -777,7 +805,7 @@ var
   O, Prep: TToolOutcome;
   Cmd, Body: string;
 begin
-  FCtx.AllowShell := True;
+  SetToolEnabled(FCtx.Cfg, 'shell', True);
   FCtx.ShellOutputLimit := Limit;
 
   { Печатаем файл сырыми байтами (type/cat не перекодируют содержимое),
@@ -816,7 +844,7 @@ var
 begin
   { Ветка ошибки ToolShell (таймаут): прочитанный до остановки процесса вывод
     тоже обязан обрезаться до shell_output_limit, а причина ошибки — сохраниться. }
-  FCtx.AllowShell := True;
+  SetToolEnabled(FCtx.Cfg, 'shell', True);
   FCtx.ShellTimeout := 1;
   FCtx.ShellOutputLimit := Limit;
   {$IFDEF UNIX}
