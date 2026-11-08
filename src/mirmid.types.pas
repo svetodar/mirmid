@@ -48,6 +48,18 @@ type
   { Обработчик событий агента. }
   TAgentEvent = procedure(Kind: TAgentEventKind; const Text: string) of object;
 
+  { Переключатель одного встроенного инструмента из секции [tools] INI:
+    имя ключа и его значение. Набор инструментов и значения по умолчанию
+    задаёт таблица в mirmid.tools; здесь хранится только то, что прочитано
+    из конфигурации. Пустой массив — ни один ключ не задан, все инструменты
+    работают со значениями по умолчанию. }
+  TToolSwitch = record
+    Name: string;
+    Enabled: Boolean;
+  end;
+
+  TToolSwitches = array of TToolSwitch;
+
   { Настройки одного запуска харнесса. }
   TMirmidConfig = record
     BaseUrl: string;            { базовый URL OpenAI-совместимого API, без слэша }
@@ -67,11 +79,9 @@ type
     PlanMaxStep: Integer;       { максимум шагов в самом плане; 0 — без ограничений }
     RequestTimeout: Integer;    { мс; общий таймаут HTTP-запроса }
     ConnectTimeout: Integer;    { мс }
-    CaFile: string;             { путь к PEM-бандлу корневых сертификатов для HTTPS;
-                                  пусто — автопоиск (mirmid.tlsclient.DefaultCaFile) }
-    AllowWrite: Boolean;        { разрешены ли пишущие инструменты }
-    AllowShell: Boolean;        { разрешён ли запуск shell-команд }
-    AllowHttp: Boolean;         { разрешён ли инструмент http_request (по умолчанию нет) }
+    Tools: TToolSwitches;       { переключатели встроенных инструментов из
+                                  секции [tools]; пусто — значения по умолчанию
+                                  (таблица в mirmid.tools) }
     ShellTimeout: Integer;      { сек; 0 — без ограничения }
     ShellOutputLimit: Integer;  { байт; максимум вывода shell-инструмента; 0 — без ограничения }
     WorkDir: string;            { рабочая папка инструментов }
@@ -163,10 +173,10 @@ begin
   Result.PlanStepFixAttempts := 1;  { один повтор шага при сбое }
   Result.RequestTimeout := 1800000;
   Result.ConnectTimeout := 10000;
-  Result.CaFile         := '';
-  Result.AllowWrite     := True;
-  Result.AllowShell     := False;
-  Result.AllowHttp      := False;
+  { Переключателей [tools] по умолчанию нет: значения берутся из таблицы
+    mirmid.tools (ToolEnabledByDefault), так что DefaultConfig не зависит от
+    юнита реестра инструментов. }
+  SetLength(Result.Tools, 0);
   Result.ShellTimeout   := 60;
   Result.ShellOutputLimit := 65536;
   Result.ToolOutputLines := DEFAULT_TOOL_OUTPUT_LINES;

@@ -14,8 +14,12 @@ function ConfigDir(const Dir: string): string;
 { Проектный конфиг: <Dir>/.mirmid/mirmid.ini. }
 function ProjectConfigPath(const Dir: string): string;
 
-{ Читает INI поверх переданных значений (отсутствующие ключи не трогает). }
-procedure LoadIni(const FileName: string; var C: TMirmidConfig);
+{ Читает INI поверх переданных значений (отсутствующие ключи не трогает).
+  Возвращает False и текст причины в Err, если файл непригоден: неизвестный
+  ключ в секции [tools], опечатка в имени самой секции ([tool]) или дубликат
+  ключа — опечатка не должна молча включать или выключать инструмент. }
+function LoadIni(const FileName: string; var C: TMirmidConfig;
+  out Err: string): Boolean;
 { Применяет переменные окружения MIRMID_*. }
 procedure ApplyEnv(var C: TMirmidConfig);
 { Пишет пример конфигурации. }
@@ -36,7 +40,7 @@ function ResolveApiKey(const S: string): string;
 implementation
 
 uses
-  SysUtils, Classes, IniFiles, mirmid.util;
+  SysUtils, Classes, IniFiles, mirmid.util, mirmid.tools;
 
 function ConfigDir(const Dir: string): string;
 begin
@@ -106,14 +110,68 @@ begin
   Result := V;
 end;
 
-procedure LoadIni(const FileName: string; var C: TMirmidConfig);
+{ Имя секции с ключами инструментов. Опечатка в самом имени секции («[tool]»
+  или «[tools ]» с пробелом) раньше молча возвращала все инструменты к
+  умолчаниям: пользователь писал grep=0, а grep оставался включённым. Это тот же
+  класс тихой опечатки, что и неизвестный ключ, поэтому имя секции проверяется
+  так же строго. Регистр не важен: TIniFile читает секции без учёта регистра,
+  поэтому «[Tools]» — не ошибка. }
+const
+  TOOLS_SECTION = 'tools';
+
+function CheckToolsSectionName(F: TIniFile; out Err: string): Boolean;
+var
+  Sections: TStringList;
+  I: Integer;
+  Raw, Norm: string;
+begin
+  Err := '';
+  Result := True;
+  Sections := TStringList.Create;
+  try
+    F.ReadSections(Sections);
+    for I := 0 to Sections.Count - 1 do
+    begin
+      Raw := Sections[I];
+      Norm := LowerCase(Trim(Raw));
+      { «[tools ]»: ключи этой секции TIniFile уже не читает, инструменты молча
+        остаются с умолчаниями. }
+      if (Norm = TOOLS_SECTION) and (Trim(Raw) <> Raw) then
+      begin
+        Err := Format('section name "[%s]" has stray spaces; write it as [%s]',
+          [Raw, TOOLS_SECTION]);
+        Exit(False);
+      end;
+      { «[tool]» — самая вероятная опечатка; любая другая секция тоже игнорируется,
+        но полный запрет незнакомых секций сломал бы совместимость вперёд. }
+      if Norm = 'tool' then
+      begin
+        Err := Format('unknown section "[%s]"; did you mean [%s]?',
+          [Raw, TOOLS_SECTION]);
+        Exit(False);
+      end;
+    end;
+  finally
+    Sections.Free;
+  end;
+end;
+
+function LoadIni(const FileName: string; var C: TMirmidConfig;
+  out Err: string): Boolean;
 var
   F: TIniFile;
+  Keys: TStringList;
+  I, J: Integer;
+  ToolName: string;
 begin
+  Err := '';
+  Result := True;
   if not FileExists(FileName) then
     Exit;
   F := TIniFile.Create(FileName);
   try
+    if not CheckToolsSectionName(F, Err) then
+      Exit(False);
     C.BaseUrl := F.ReadString('llm', 'base_url', C.BaseUrl);
     C.ApiKey := F.ReadString('llm', 'api_key', C.ApiKey);
     C.Model := F.ReadString('llm', 'model', C.Model);
@@ -124,7 +182,6 @@ begin
     C.ContextWindow := F.ReadInteger('llm', 'context_window', C.ContextWindow);
     C.RequestTimeout := F.ReadInteger('llm', 'timeout', C.RequestTimeout div 1000) * 1000;
     C.ConnectTimeout := F.ReadInteger('llm', 'connect_timeout', C.ConnectTimeout div 1000) * 1000;
-    C.CaFile := Trim(F.ReadString('llm', 'ca_file', C.CaFile));
     C.SystemPrompt := F.ReadString('agent', 'system_prompt', C.SystemPrompt);
     C.MaxSteps := F.ReadInteger('agent', 'max_steps', C.MaxSteps);
     C.PlanMode := F.ReadBool('agent', 'plan', C.PlanMode);
@@ -135,11 +192,44 @@ begin
     { Максимум строк вывода инструментов (0 — без ограничения). }
     C.ToolOutputLines := F.ReadInteger('agent', 'tool_output_lines', C.ToolOutputLines);
 
-    C.AllowWrite := F.ReadBool('workspace', 'allow_write', C.AllowWrite);
-    C.AllowShell := F.ReadBool('workspace', 'allow_shell', C.AllowShell);
-    C.AllowHttp := F.ReadBool('workspace', 'allow_http', C.AllowHttp);
     C.ShellTimeout := F.ReadInteger('workspace', 'shell_timeout', C.ShellTimeout);
     C.ShellOutputLimit := F.ReadInteger('workspace', 'shell_output_limit', C.ShellOutputLimit);
+
+    { Секция [tools]: один ключ на встроенный инструмент. Набор ключей задаёт
+      таблица mirmid.tools; неизвестный ключ — фатальная ошибка, иначе
+      опечатка молча оставила бы инструмент со значением по умолчанию. }
+    Keys := TStringList.Create;
+    try
+      F.ReadSection(TOOLS_SECTION, Keys);
+      for I := 0 to Keys.Count - 1 do
+      begin
+        { Имя ключа как в файле; пустые записи (ReadSection отдаёт их на
+          пустых строках секции) пропускаем. }
+        ToolName := Trim(Keys[I]);
+        if ToolName = '' then
+          Continue;
+        { Дубликат ключа: TIniFile читает первое значение, а читатель файла ждёт
+          последнее — расхождение могло включить инструмент вопреки явному «=0»
+          ниже. Ошибка та же, что на неизвестный ключ. }
+        for J := 0 to I - 1 do
+          if SameText(Trim(Keys[J]), ToolName) then
+          begin
+            Err := Format('duplicate tool "%s" in [%s]', [ToolName, TOOLS_SECTION]);
+            Exit(False);
+          end;
+        if not IsKnownToolName(ToolName) then
+        begin
+          Err := Format('unknown tool "%s"; known tools: %s',
+            [ToolName, ToolNamesCsv]);
+          Exit(False);
+        end;
+        SetToolEnabled(C, ToolName,
+          ParseBoolStr(F.ReadString(TOOLS_SECTION, ToolName, ''),
+            ToolEnabledByDefault(ToolName)));
+      end;
+    finally
+      Keys.Free;
+    end;
 
     C.McpEnabled := F.ReadBool('mcp', 'enabled', C.McpEnabled);
     C.McpConfig := F.ReadString('mcp', 'config', C.McpConfig);
@@ -186,12 +276,6 @@ begin
   S := GetEnvironmentVariable('MIRMID_CONTEXT_WINDOW');
   if S <> '' then
     C.ContextWindow := StrToIntDef(S, C.ContextWindow);
-  S := GetEnvironmentVariable('MIRMID_CA_FILE');
-  if S <> '' then
-    C.CaFile := Trim(S);
-  S := LowerCase(Trim(GetEnvironmentVariable('MIRMID_ALLOW_HTTP')));
-  if (S = '1') or (S = 'true') or (S = 'yes') or (S = 'on') then
-    C.AllowHttp := True;
 
   S := LowerCase(Trim(GetEnvironmentVariable('MIRMID_MCP')));
   if (S = '1') or (S = 'true') or (S = 'yes') or (S = 'on') then
@@ -210,6 +294,8 @@ function SaveSampleIni(const FileName: string; const C: TMirmidConfig;
   out Err: string): Boolean;
 var
   L: TStringList;
+  I: Integer;
+  Def: TToolSwitchDef;
 begin
   Err := '';
   Result := False;
@@ -218,7 +304,7 @@ begin
     L.Add('# Конфигурация mirmid. Создано командой `mirmid --init`.');
     L.Add('# Файл лежит в каталоге .mirmid рабочей папки.');
     L.Add('# Значения можно переопределять переменными MIRMID_BASE_URL, MIRMID_API_KEY,');
-    L.Add('# MIRMID_MODEL, MIRMID_TEMPERATURE, MIRMID_REASONING, MIRMID_CA_FILE.');
+    L.Add('# MIRMID_MODEL, MIRMID_TEMPERATURE, MIRMID_REASONING.');
     L.Add('');
     L.Add('[llm]');
     L.Add('base_url=' + C.BaseUrl);
@@ -235,11 +321,6 @@ begin
     L.Add('context_window=' + IntToStr(C.ContextWindow));
     L.Add('timeout=' + IntToStr(C.RequestTimeout div 1000));
     L.Add('connect_timeout=' + IntToStr(C.ConnectTimeout div 1000));
-    L.Add('# Путь к PEM-бандлу корневых сертификатов для HTTPS (необязательно).');
-    L.Add('# Пусто — встроенный в программу снимок корней (tls.roots), а если его');
-    L.Add('# нет — системное хранилище ОС (Windows). Автопоиска ca-bundle.pem нет.');
-    L.Add('# Заданный путь должен существовать: битый или отсутствующий бандл — ошибка.');
-    L.Add('ca_file=' + C.CaFile);
     L.Add('');
     L.Add('[agent]');
     L.Add('max_steps=' + IntToStr(C.MaxSteps));
@@ -269,10 +350,17 @@ begin
     L.Add('# Loop-guard: повторы одного вызова инструмента подряд для остановки хода (0 — выкл).');
     L.Add('loop_stop=' + IntToStr(C.LoopStop));
     L.Add('');
+    L.Add('[tools]');
+    L.Add('# One key per built-in tool: 1 enables the tool, 0 keeps it away from');
+    L.Add('# the model and makes its handler refuse to run.');
+    for I := 0 to ToolSwitchCount - 1 do
+    begin
+      Def := ToolSwitchAt(I);
+      L.Add('# ' + Def.Note);
+      L.Add(Def.Name + '=' + BoolToStr(ToolEnabled(C, Def.Name), '1', '0'));
+    end;
+    L.Add('');
     L.Add('[workspace]');
-    L.Add('allow_write=' + BoolToStr(C.AllowWrite, '1', '0'));
-    L.Add('allow_shell=' + BoolToStr(C.AllowShell, '1', '0'));
-    L.Add('allow_http=' + BoolToStr(C.AllowHttp, '1', '0'));
     L.Add('shell_timeout=' + IntToStr(C.ShellTimeout));
     L.Add('# Максимум вывода shell-инструмента в байтах (0 — без ограничения).');
     L.Add('shell_output_limit=' + IntToStr(C.ShellOutputLimit));

@@ -24,9 +24,6 @@ type
     LoopWarn, LoopStop: Integer;
     HasLoopWarn, HasLoopStop: Boolean;
     HasReasoning: Boolean;
-    AllowWrite, HasAllowWrite: Boolean;
-    AllowShell, HasAllowShell: Boolean;
-    AllowHttp, HasAllowHttp: Boolean;
     McpConfig: string;
     HasMcpConfig, NoMcp, ListMcp: Boolean;
     McpTimeout: Integer;
@@ -44,8 +41,14 @@ type
 
 { Разбирает командную строку. Args — аргументы (без имени программы). }
 function ParseCli(const Args: array of string; out Cli: TCli; out Err: string): Boolean;
-{ Разрешает итоговую конфигурацию из командной строки, INI и окружения. }
-procedure ResolveConfig(const Cli: TCli; var Cfg: TMirmidConfig; var WorkDir: string);
+{ Разрешает итоговую конфигурацию из командной строки, INI и окружения.
+  Возвращает False и текст причины в Err, если конфигурация непригодна
+  (например, неизвестный ключ в секции [tools]): сессия тогда не начинается. }
+function ResolveConfig(const Cli: TCli; var Cfg: TMirmidConfig;
+  var WorkDir: string; out Err: string): Boolean;
+{ Текст справки (--help): тот же, что печатает Main. Экспортируется для
+  тестов контракта командной строки. }
+function UsageText: string;
 { Форматирует текст события aeStepEnd «s1: done — результат» для показа:
   укорачивает только результат (до TOOL_RESULT_MAX), заголовок сохраняет.
   При отсутствии разделителя « — » возвращает текст как есть. }
@@ -462,15 +465,11 @@ const
     '      --no-stream         печатать весь ответ после завершения запроса' + sLineBreak +
     '' + sLineBreak +
     'Инструменты:' + sLineBreak +
-    '  -w, --allow-write       разрешить запись/правку файлов и снимки экрана (по умолчанию да)' + sLineBreak +
-    '      --no-write          запретить запись файлов' + sLineBreak +
-    '      --allow-shell       разрешить выполнение команд (по умолчанию нет)' + sLineBreak +
-    '      --no-shell          запретить команды' + sLineBreak +
+    '      набор инструментов задаётся секцией [tools] файла mirmid.ini:' + sLineBreak +
+    '      по одному ключу 1/0 на инструмент (см. mirmid --init)' + sLineBreak +
      '      --shell-timeout S   таймаут команды в секундах (по умолчанию 60)' + sLineBreak +
      '      --tool-output-lines N  максимум строк вывода инструмента (по умолчанию 9, середина сокращается, 0 — без ограничения)' + sLineBreak +
      '      --shell-output-limit N  максимум вывода shell в байтах (по умолчанию 65536, 0 — без ограничения)' + sLineBreak +
-    '      --allow-http        разрешить инструмент http_request (по умолчанию нет)' + sLineBreak +
-    '      --no-http           запретить инструмент http_request' + sLineBreak +
     '' + sLineBreak +
     'MCP (Model Context Protocol):' + sLineBreak +
     '      --mcp-config FILE   файл mcp.json с описанием серверов' + sLineBreak +
@@ -489,6 +488,11 @@ const
     '  -v, --verbose           подробный вывод' + sLineBreak +
     '  -V, --version           версия' + sLineBreak +
     '  -h, --help              эта справка';
+
+function UsageText: string;
+begin
+  Result := USAGE;
+end;
 
 function Shorten(const S: string; MaxLen: Integer): string;
 begin
@@ -656,36 +660,6 @@ begin
         Cli.ShowVersion := True
       else if (Name = '-i') or (Name = '--interactive') then
         Cli.Interactive := True
-      else if (Name = '-w') or (Name = '--allow-write') then
-      begin
-        Cli.AllowWrite := True;
-        Cli.HasAllowWrite := True;
-      end
-      else if Name = '--no-write' then
-      begin
-        Cli.AllowWrite := False;
-        Cli.HasAllowWrite := True;
-      end
-      else if Name = '--allow-shell' then
-      begin
-        Cli.AllowShell := True;
-        Cli.HasAllowShell := True;
-      end
-      else if Name = '--no-shell' then
-      begin
-        Cli.AllowShell := False;
-        Cli.HasAllowShell := True;
-      end
-      else if Name = '--allow-http' then
-      begin
-        Cli.AllowHttp := True;
-        Cli.HasAllowHttp := True;
-      end
-      else if Name = '--no-http' then
-      begin
-        Cli.AllowHttp := False;
-        Cli.HasAllowHttp := True;
-      end
       else if Name = '--no-mcp' then
         Cli.NoMcp := True
       else if Name = '--list-mcp' then
@@ -894,16 +868,32 @@ begin
   Result := '';
 end;
 
-procedure ResolveConfig(const Cli: TCli; var Cfg: TMirmidConfig;
-  var WorkDir: string);
+function ResolveConfig(const Cli: TCli; var Cfg: TMirmidConfig;
+  var WorkDir: string; out Err: string): Boolean;
+var
+  ErrText: string;
 begin
+  Err := '';
+  Result := True;
   if WorkDir = '' then
     WorkDir := GetCurrentDir;
   WorkDir := ExpPath(WorkDir, GetCurrentDir);
   Cfg := DefaultConfig;
   Cfg.WorkDir := WorkDir;
 
-  LoadIni(FindConfigFile(Cli.ConfigFile, WorkDir), Cfg);
+  { Неизвестный ключ в [tools] — фатальная ошибка: опечатка не должна молча
+    оставить инструмент со значением по умолчанию. Исключение — `--init`: он
+    как раз и нужен, чтобы починить сломанный файл, поэтому образец строится из
+    умолчаний и переопределений командной строки, а причина разбора не выводится. }
+  ErrText := '';
+  if not LoadIni(FindConfigFile(Cli.ConfigFile, WorkDir), Cfg, ErrText) then
+  begin
+    if not Cli.DoInit then
+    begin
+      Err := ErrText;
+      Exit(False);
+    end;
+  end;
 
   ApplyEnv(Cfg);
 
@@ -921,9 +911,6 @@ begin
   if Cli.HasToolOutputLines then Cfg.ToolOutputLines := Cli.ToolOutputLines;
   if Cli.HasLoopWarn then Cfg.LoopWarn := Cli.LoopWarn;
   if Cli.HasLoopStop then Cfg.LoopStop := Cli.LoopStop;
-  if Cli.HasAllowWrite then Cfg.AllowWrite := Cli.AllowWrite;
-  if Cli.HasAllowShell then Cfg.AllowShell := Cli.AllowShell;
-  if Cli.HasAllowHttp then Cfg.AllowHttp := Cli.AllowHttp;
   if Cli.NoMcp then Cfg.McpEnabled := False;
   if Cli.HasMcpConfig then Cfg.McpConfig := ExpPath(Cli.McpConfig, WorkDir);
   if Cli.HasMcpTimeout then Cfg.McpTimeout := Cli.McpTimeout;
@@ -937,28 +924,19 @@ begin
     его в новый INI, чтобы развёрнутый ключ не попадал в файл. }
   Cfg.ApiKeyRaw := Cfg.ApiKey;
   Cfg.ApiKey := ResolveApiKey(Cfg.ApiKey);
-  { ca_file применяется ко всем HTTPS-запросам процесса (провайдер LLM,
-    инструмент http_request; MCP у mirmid — только stdio). Относительный
-    путь — от рабочей папки. Пусто — доверие берётся из встроенного в exe
-    снимка корней (tls.roots), а при его отсутствии — из системного
-    хранилища ОС; автопоиска ca-bundle.pem рядом с exe больше нет.
-    Заданный, но несуществующий/битый файл — ошибка без тихого отката. }
-  if Cfg.CaFile <> '' then
-    Cfg.CaFile := ExpPath(Cfg.CaFile, WorkDir);
-  HttpCaFile := Cfg.CaFile;
+  { HTTPS-доверие: встроенный в exe снимок корней (tls.roots), а при его
+    отсутствии — системное хранилище ОС. Настраивать здесь нечего, поэтому в
+    INI нет ключа с путём к PEM-бандлу, а в окружении — переменной с ним. }
 end;
 
 { Состояние встроенного снимка корней TLS (tls.roots) для пользователя: дата
   снимка и признак устаревания. Вызывается один раз при старте — до первого
   HTTPS-запроса (провайдер LLM, инструмент http_request), поэтому в лог не
-  попадает повторно на каждое соединение. Явный ca_file отменяет использование
-  снимка, и диагностика молчит: источник доверия задан пользователем. }
+  попадает повторно на каждое соединение. }
 procedure WarnEmbeddedRoots(const Cfg: TMirmidConfig);
 var
   Info: TEmbeddedRootsInfo;
 begin
-  if Cfg.CaFile <> '' then
-    Exit;
   Info := GetEmbeddedRootsInfo;
   if not Info.Available then
   begin
@@ -972,13 +950,13 @@ begin
         '; используется системное хранилище Windows');
     {$else}
     WriteWarning(EmbeddedRootsInfoText(Info) +
-      '; HTTPS-запросы без ca_file завершатся ошибкой хранилища доверия');
+      '; HTTPS-запросы завершатся ошибкой хранилища доверия');
     {$endif}
     Exit;
   end;
   if Info.Stale then
     WriteWarning(EmbeddedRootsInfoText(Info) +
-      ' — обновите библиотеку tls (make roots) или задайте ca_file в [llm]')
+      ' — обновите библиотеку tls (make roots)')
   else if Cfg.Verbose then
     { Снимок свежий: дата интересна только в подробном режиме. }
     WriteLn(StdErr, 'TLS: ', EmbeddedRootsInfoText(Info));
@@ -1978,7 +1956,8 @@ begin
   inherited Create;
   FCfg := ACfg;
   FReg := TToolRegistry.Create;
-  { Состав инструментов сессии: встроенные + subagent (+ http_request, если разрешён). }
+  { Состав инструментов сессии: встроенные, subagent, http_request и
+    revise_plan; какие из них попадут в запрос, решает секция [tools]. }
   RegisterSessionTools(FReg, FCfg);
   FAgent := TAgent.Create(FCfg, FReg);
   FAgent.OnEvent := @OnAgentEvent;
@@ -3154,7 +3133,13 @@ begin
   end;
 
   WorkDir := Cli.WorkDir;
-  ResolveConfig(Cli, Cfg, WorkDir);
+  { Неизвестный ключ в [tools] (и прочие непригодные настройки) — фатальная
+    ошибка до старта сессии: печатаем причину и выходим с кодом 1. }
+  if not ResolveConfig(Cli, Cfg, WorkDir, Err) then
+  begin
+    WriteError(Err);
+    Exit(1);
+  end;
 
   if Cli.DoInit then
     begin
