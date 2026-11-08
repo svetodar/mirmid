@@ -1,4 +1,4 @@
-# Секреты и локальные файлы — не коммитить
+# Secrets and local files — never commit
 *.key
 *.pem
 id_*
@@ -8,3 +8,43 @@ id_*
 *token*
 *.log
 .DS_Store
+
+# Free Pascal / Lazarus build output
+build/
+bin/
+*.o
+*.ppu
+*.a
+*.or
+*.compiled
+*.lps
+*.res
+backup/
+mk.cmd
+
+mirmid.ini
+.mirmid/
+
+# Local tasks
+.subag/
+task*.md
+plan.json
+
+# Session dumps of subagents and plan steps (normally inside .mirmid,
+# occasionally written to the repository root)
+*_sub_*.json
+*_step_*.json
+*_analysis.json
+# Session files dumped into the repository root: <yyyymmdd>-<hhmmss>-<HASH>.json
+[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-*.json
+
+# Reports dumped by the agent into the repository root
+result.md
+
+# OpenSSL reference sources no longer live here: they moved with the TLS
+# library to https://github.com/svetodar/tls
+
+# FPC/JSON debug dumps
+fpcdebug.txt
+jsontest.txt
+jsontest_long.txt
