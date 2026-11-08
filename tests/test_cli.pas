@@ -194,6 +194,19 @@ type
     { Выход без входа — простое обнуление. }
     procedure TestExitWithoutEnterZeroes;
   end;
+  { Контракт командной строки после перехода на секцию [tools]: справка
+    описывает модель ключей и не содержит убранных флагов, а сами убранные
+    флаги отвергаются разбором как неизвестные. }
+  TCliToolsModelTests = class(TTestCase)
+  published
+    { В справке есть секция [tools] и нет --allow-write/--no-write,
+      --allow-shell/--no-shell, --allow-http/--no-http. }
+    procedure TestHelpMentionsToolsSection;
+    { В справке нет упоминаний удалённых настроек доверия. }
+    procedure TestHelpHasNoCaFile;
+    { Убранные флаги — ошибка разбора («неизвестная опция»). }
+    procedure TestRemovedFlagsRejected;
+  end;
 
   { Сохранение основной сессии после неудачного хода (task2.md).
     Интеграционный тест на собранный bin/mirmid: ход с недоступным
@@ -203,6 +216,15 @@ type
   TCliSessionTurnTests = class(TTestCase)
   published
     procedure TestSessionSavedAfterFailedTurn;
+  end;
+  { Фатальная ошибка на неизвестный ключ в секции [tools] (собранный
+    bin/mirmid): опечатка не должна молча оставить инструмент со значением по
+    умолчанию, поэтому запуск завершается кодом 1 и сообщением с именем ключа
+    и списком известных инструментов. Бинарник не собран — тест пропускается. }
+  TCliUnknownToolKeyTests = class(TTestCase)
+  published
+    procedure TestUnknownToolKeyExitsWithCodeOne;
+    procedure TestInitRepairsBrokenToolsSection;
   end;
 
 implementation
@@ -1142,14 +1164,15 @@ begin
     'mirmid' + ExtractFileExt(ParamStr(0));
 end;
 
-{ Запускает mirmid с недоступным провайдером в отдельном рабочем каталоге.
-  Окружение хоста очищается от MIRMID_*: тест не должен зависеть от настроек
-  разработчика (например MIRMID_PLAN включил бы планировщик). }
-function RunAppWithBadProvider(const Exe, WorkDir: string;
+{ Запускает mirmid с заданными аргументами и ждёт выхода. Окружение хоста
+  очищается от MIRMID_*: тест не должен зависеть от настроек разработчика
+  (например MIRMID_PLAN включил бы планировщик). stdout и stderr слиты в один
+  поток (poStderrToOutPut): проверяются сообщения об ошибках. }
+function RunAppArgs(const Exe: string; const Args: array of string;
   out OutText: string; out ExitCode: Integer): Boolean;
 var
   Proc: TProcess;
-  Args, Env: TStringList;
+  Params, Env: TStringList;
   MS: TMemoryStream;
   Buf: array[0..4095] of Byte;
   N, I: Integer;
@@ -1157,28 +1180,13 @@ begin
   Result := False;
   OutText := '';
   ExitCode := -1;
-  Args := TStringList.Create;
+  Params := TStringList.Create;
   Env := TStringList.Create;
   Proc := TProcess.Create(nil);
   MS := TMemoryStream.Create;
   try
-    Args.Add('--config');
-    Args.Add(IncludeTrailingPathDelimiter(WorkDir) + 'none.ini');
-    Args.Add('--workdir');
-    Args.Add(WorkDir);
-    Args.Add('--base-url');
-    Args.Add('http://127.0.0.1:1/v1');
-    Args.Add('--api-key');
-    Args.Add('test-key');
-    Args.Add('--model');
-    Args.Add('test-model');
-    Args.Add('--no-stream');
-    Args.Add('--no-mcp');
-    Args.Add('--connect-timeout');
-    Args.Add('1');
-    Args.Add('--timeout');
-    Args.Add('5');
-    Args.Add('session-save-check');
+    for I := 0 to High(Args) do
+      Params.Add(Args[I]);
 
     EnvironmentToList(Env);
     for I := Env.Count - 1 downto 0 do
@@ -1186,7 +1194,7 @@ begin
         Env.Delete(I);
 
     Proc.Executable := Exe;
-    Proc.Parameters := Args;
+    Proc.Parameters := Params;
     Proc.Environment := Env;
     Proc.Options := [poUsePipes, poStderrToOutPut];
     Proc.Execute;
@@ -1214,8 +1222,24 @@ begin
     MS.Free;
     Proc.Free;
     Env.Free;
-    Args.Free;
+    Params.Free;
   end;
+end;
+
+{ Запускает mirmid с недоступным провайдером в отдельном рабочем каталоге. }
+function RunAppWithBadProvider(const Exe, WorkDir: string;
+  out OutText: string; out ExitCode: Integer): Boolean;
+begin
+  Result := RunAppArgs(Exe, ['--config',
+    IncludeTrailingPathDelimiter(WorkDir) + 'none.ini',
+    '--workdir', WorkDir,
+    '--base-url', 'http://127.0.0.1:1/v1',
+    '--api-key', 'test-key',
+    '--model', 'test-model',
+    '--no-stream', '--no-mcp',
+    '--connect-timeout', '1',
+    '--timeout', '5',
+    'session-save-check'], OutText, ExitCode);
 end;
 
 { Первый JSON-файл основной сессии (вспомогательные *_sub_/_step_ не в счёт). }
@@ -1308,6 +1332,85 @@ begin
   end;
 end;
 
+{ --- Неизвестный ключ [tools] — фатальная ошибка (E2E) ---------------------
+
+  Собранный bin/mirmid с INI, где в [tools] есть неизвестный ключ, обязан
+  завершиться с кодом 1 и назвать ключ со списком известных инструментов:
+  молчаливое включение/выключение инструмента из-за опечатки недопустимо.
+  Сети тест не требует — сессия не начинается. }
+
+procedure TCliUnknownToolKeyTests.TestUnknownToolKeyExitsWithCodeOne;
+var
+  Exe, WorkDir, IniFile, OutText, Err: string;
+  ExitCode: Integer;
+begin
+  Exe := AppExePath;
+  if not FileExists(Exe) then
+    Exit;   { bin/mirmid не собран — тест пропускается }
+
+  WorkDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'mirmid_unknown_tool_' + FormatDateTime('hhnnsszzz', Now);
+  AssertTrue('временный каталог создан', ForceDirectories(WorkDir));
+  try
+    IniFile := IncludeTrailingPathDelimiter(WorkDir) + 'unknown.ini';
+    AssertTrue('INI с неизвестным ключом записан',
+      WriteTextFile(IniFile, '[tools]' + LineEnding +
+        'read_text_file=1' + LineEnding + 'no_such_tool=1' + LineEnding, Err));
+
+    AssertTrue('приложение запущено', RunAppArgs(Exe, ['--config', IniFile,
+      '--workdir', WorkDir, '--no-mcp', '--no-stream', 'hello'],
+      OutText, ExitCode));
+    AssertEquals('неизвестный ключ [tools] — код возврата 1, вывод: ' + OutText,
+      1, ExitCode);
+    AssertTrue('сообщение называет неизвестный ключ: ' + OutText,
+      Pos('unknown tool "no_such_tool"', OutText) > 0);
+    AssertTrue('сообщение перечисляет известные инструменты: ' + OutText,
+      Pos('known tools:', OutText) > 0);
+    { Список известных инструментов непуст: в нём есть ключ из реестра. }
+    AssertTrue('в списке есть read_text_file: ' + OutText,
+      Pos('read_text_file', OutText) > 0);
+  finally
+    RemoveTree(WorkDir);
+  end;
+end;
+
+{ `--init` обязан починить и сломанный INI: если файл содержит неизвестный ключ
+  [tools], обычный старт завершается ошибкой, а пересоздать конфигурацию всё
+  равно нужно. Проверяется на собранном бинарнике: код 0 и образец со всеми
+  ключами [tools]. }
+procedure TCliUnknownToolKeyTests.TestInitRepairsBrokenToolsSection;
+var
+  Exe, WorkDir, IniFile, ConfigFile, OutText, Text, Err: string;
+  ExitCode: Integer;
+begin
+  Exe := AppExePath;
+  if not FileExists(Exe) then
+    Exit;   { bin/mirmid не собран — тест пропускается }
+
+  WorkDir := IncludeTrailingPathDelimiter(GetTempDir) +
+    'mirmid_init_repair_' + FormatDateTime('hhnnsszzz', Now);
+  AssertTrue('временный каталог создан', ForceDirectories(WorkDir));
+  try
+    IniFile := IncludeTrailingPathDelimiter(WorkDir) + 'broken.ini';
+    AssertTrue('INI с неизвестным ключом записан',
+      WriteTextFile(IniFile, '[tools]' + LineEnding + 'shel=1' + LineEnding, Err));
+
+    AssertTrue('приложение запущено', RunAppArgs(Exe, ['--init', '--config',
+      IniFile, '--workdir', WorkDir], OutText, ExitCode));
+    AssertEquals('--init со сломанным INI — код 0, вывод: ' + OutText,
+      0, ExitCode);
+
+    ConfigFile := IncludeTrailingPathDelimiter(WorkDir) + '.mirmid' + PathDelim +
+      'mirmid.ini';
+    AssertTrue('образец создан: ' + ConfigFile, FileExists(ConfigFile));
+    AssertTrue('образец читается', ReadTextFile(ConfigFile, Text, Err));
+    AssertTrue('в образце есть секция [tools]', Pos('[tools]', Text) > 0);
+    AssertTrue('в образце есть ключ shell', Pos('shell=', Text) > 0);
+  finally
+    RemoveTree(WorkDir);
+  end;
+end;
+
 procedure TCliParseToolOutputLinesTests.TestDefaultOff;
 var
   Cli: TCli;
@@ -1382,6 +1485,57 @@ begin
   AssertEquals('запрос не съеден как значение', 'вопрос', Cli.Prompt);
 end;
 
+{ --- TCliToolsModelTests ------------------------------------------------ }
+
+procedure TCliToolsModelTests.TestHelpMentionsToolsSection;
+var
+  H: string;
+begin
+  H := UsageText;
+  AssertTrue('в справке есть секция [tools]', Pos('[tools]', H) > 0);
+  AssertTrue('справка описывает ключи 1/0', Pos('1/0', H) > 0);
+  AssertEquals('нет --allow-write', 0, Pos('--allow-write', H));
+  AssertEquals('нет --no-write', 0, Pos('--no-write', H));
+  AssertEquals('нет --allow-shell', 0, Pos('--allow-shell', H));
+  AssertEquals('нет --no-shell', 0, Pos('--no-shell', H));
+  AssertEquals('нет --allow-http', 0, Pos('--allow-http', H));
+  AssertEquals('нет --no-http', 0, Pos('--no-http', H));
+  { Настройки shell остаются флагами и не должны исчезнуть вместе с
+    переключателями. }
+  AssertTrue('--shell-timeout остался', Pos('--shell-timeout', H) > 0);
+  AssertTrue('--tool-output-lines остался', Pos('--tool-output-lines', H) > 0);
+end;
+
+procedure TCliToolsModelTests.TestHelpHasNoCaFile;
+var
+  H: string;
+begin
+  H := UsageText;
+  AssertEquals('нет ключа доверия', 0, Pos('ca' + '_file', H));
+  { Имени переменной окружения с путём к бандлу в справке тоже нет: строка
+    собирается по частям, чтобы сам тест не содержал искомого текста. }
+  AssertEquals('нет переменной окружения с бандлом',
+    0, Pos('CA' + '_FILE', H));
+end;
+
+procedure TCliToolsModelTests.TestRemovedFlagsRejected;
+var
+  Cli: TCli;
+  Err: string;
+begin
+  AssertFalse('--allow-write отвергнут',
+    ParseCli(['--allow-write'], Cli, Err));
+  AssertTrue('сообщение об опции: ' + Err, Pos('--allow-write', Err) > 0);
+
+  AssertFalse('--allow-shell отвергнут',
+    ParseCli(['--allow-shell'], Cli, Err));
+  AssertFalse('--no-shell отвергнут', ParseCli(['--no-shell'], Cli, Err));
+  AssertFalse('--allow-http отвергнут',
+    ParseCli(['--allow-http'], Cli, Err));
+  AssertFalse('--no-http отвергнут', ParseCli(['--no-http'], Cli, Err));
+  AssertFalse('-w отвергнут', ParseCli(['-w'], Cli, Err));
+end;
+
 initialization
   RegisterTest(TCliFormatTests);
   RegisterTest(TCliSubAgentOutputTests);
@@ -1392,5 +1546,7 @@ initialization
   RegisterTest(TCliParseToolOutputLinesTests);
   RegisterTest(TEffectiveContextWindowTests);
   RegisterTest(TContextTokensTests);
+  RegisterTest(TCliToolsModelTests);
   RegisterTest(TCliSessionTurnTests);
+  RegisterTest(TCliUnknownToolKeyTests);
 end.
