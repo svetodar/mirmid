@@ -179,8 +179,9 @@ Rules for the `[tools]` section:
   the `tools` array, and the handler still refuses to run if called (subagents
   and MCP reuse the same registry, so the check belongs to the tool, not to the
   CLI).
-- An unknown key is a startup error (`ERROR: unknown tool "<name>"; known
-  tools: ...`) — a typo must never silently disable or enable something.
+- An unknown key is a startup error (`Error: unknown tool "<name>"; known
+  tools: ...` on stderr, exit code 1) — a typo must never silently disable or
+  enable something.
 - `mcp__<server>__<tool>` entries are governed by the `[mcp]` section, not by
   per-tool keys.
 

@@ -157,3 +157,196 @@ Measured in `C:\ai\git\mirmid` after the P2 removal (`make -B app test` with the
   it with an X11 query, but it is not part of the input removal. `plan.md` §7
   and its "Done" line were clarified in the same phase to state this exception
   explicitly, so the requirement and the code no longer contradict each other.
+
+## 2026-11-08 — phase 3 result (settings model: `[tools]`, no `ca_file`/`allow_*`)
+
+Measured in `C:\ai\git\mirmid` after the P3 change (`make -B app test` with the
+`PATH` from `AGENTS.md`). Confirmed counts of the phase 3 runs, in order:
+
+| Run | Tests | Errors | Failures | What changed |
+| --- | --- | --- | --- | --- |
+| after the P3 change | 460 | 0 | 0 | was 456 after P2 |
+| after the unknown-tool E2E test | 461 | 0 | 0 | `TCliUnknownToolKeyTests` |
+| after the review fixes | **467** | **0** | **0** | +6 regression tests (`--init`, section typos, duplicate keys, defence in depth) |
+
+- Reference count for the phase: **467 run, 0 errors, 0 failures** — the last
+  run, after the review follow-up below; treat it as the current baseline.
+- Net +11 over P2's 456: the two `ca_file` tests in `test_config` are replaced
+  by four `[tools]` tests, the eight `SelectTrustStore` cases in
+  `test_tlsclient` collapse to four (no explicit bundle left), and
+  `test_cli`/`test_subagent`/`test_config` gained the CLI contract, request-array
+  and INI-validation tests described below.
+- Source tree: still **25 units** `src/mirmid.*.pas` plus `src/mirmid.lpr`; test
+  tree still **19 test units**.
+
+What P3 changed:
+
+- `mirmid.types`: `CaFile`, `AllowWrite`, `AllowShell`, `AllowHttp` are gone
+  from `TMirmidConfig`; instead `Tools: TToolSwitches` holds the keys read from
+  `[tools]` (`TToolSwitch` = name + boolean). An empty array means "no key
+  given", so `DefaultConfig` stays independent of `mirmid.tools`.
+- `mirmid.tools` is the single source of truth: `TOOL_SWITCHES` (17 entries:
+  name, default, one-line note for the sample INI) plus `IsKnownToolName`,
+  `ToolEnabledByDefault`, `ToolNamesCsv`, `ToolSwitchCount/ToolSwitchAt`,
+  `ToolEnabled(Cfg, Name)`, `SetToolEnabled`, `ToolDisabled`. `TToolContext`
+  lost the three `Allow*` fields (it still carries the whole `Cfg`).
+- Registry policy: `TToolRegistry.ApplyToolSwitches(Cfg)` filters `Add` and
+  `AddMethod`, so a disabled tool never reaches the request's `tools` array;
+  `RegisterSessionTools` applies it before registering and now always calls
+  `RegisterHttpTool` (the policy decides). `Invoke` re-checks the key, so a
+  handler cannot run even if the registry was filled in another way.
+- Handler gates (`ToolDisabled`) in `edit_text_file`, `copy_file`, `shell`,
+  `http_request`, `subagent`, `read_media_file`, `screen_shoot`,
+  `window_shoot` — the CLI is not the only gate.
+- `mirmid.config`: `LoadIni` became
+  `function LoadIni(const FileName: string; var C: TMirmidConfig; out Err: string): Boolean`.
+  `[tools]` values go through `ParseBoolStr`; a key missing from the table makes
+  it return False with `unknown tool "<name>"; known tools: ...`. The
+  `ca_file` key, the `MIRMID_CA_FILE` override and the `[workspace]`
+  `allow_*` keys are gone; the sample INI (`--init`) emits the full `[tools]`
+  block from the same table (note text in English, the rest of the sample is
+  still Russian until P4).
+- `mirmid.cli`: `ResolveConfig` is now
+  `function ResolveConfig(...; out Err: string): Boolean`; `Main` prints the
+  reason and exits 1 before starting a session. Removed
+  `-w/--allow-write`, `--no-write`, `--allow-shell`, `--no-shell`,
+  `--allow-http`, `--no-http` (their handlers, the `TCli` fields and the usage
+  lines), the startup warning branch that mentioned the trust bundle, and the
+  `HttpCaFile` plumbing. `UsageText` is exported for tests.
+- `mirmid.tlsclient`: trust is "embedded roots first, then the OS store, else
+  error". `SelectTrustStore(AEmbeddedAvailable, AAllowSystemStore)` returns a
+  `TTrustStoreSource`; `TTrustStoreChoice`, `tssBundle` and the
+  `Connect`/`DoHandshake` `ACAFile` parameter are gone, and the error texts no
+  longer suggest a bundle. `HttpCaFile` was removed from `mirmid.http`.
+- Docs: the `[tools]` model and the screenshot/media behaviour change are
+  documented in `README.md` (English section; the full rewrite stays in P5).
+
+Pitfalls found while doing P3 (worth remembering):
+
+- `TIniFile.ReadSection('tools', ...)` returns an **empty** name for the blank
+  line before the next section; without skipping empty names every config
+  written by `--init` failed with `unknown tool ""`.
+- `TMirmidConfig` holds a dynamic array (`Tools`), so `AC := Cfg` shares the
+  storage. `SetToolEnabled` therefore copies the array (`Copy(Cfg.Tools)`)
+  before touching an element, otherwise
+  `TPlannerTests.TestAnalysisConfigInheritsPolicies` sees the parent config
+  change through the copy.
+- `TStringList.IndexOf(S, StartAt)` in FPC 3.2.2 skips index 0 when `StartAt=1`;
+  `IndexOf(name, 1)` is not "search everywhere" — the request-array test used it
+  and missed `file_list`, the first registered tool.
+- `plan.md` §2 requires the removed setting names to be absent from the tracked
+  tree, so the tests that assert their absence build the strings from parts
+  (`'allow' + '_write=1'`, `'ca' + '_file'`). The dash-form flags
+  (`--allow-write` …) are kept in `test_cli`: they are the option names the
+  parser must reject, not settings.
+- Line endings: `edit_text_file` writes CRLF on Windows; all touched files were
+  converted back to LF (`perl -pi -e 's/\r\n/\n/'`) before the final build, per
+  `.gitattributes`.
+
+Behaviour breaks (settings contract, hence `!` in the commit):
+
+- `--allow-write`, `--no-write`, `--allow-shell`, `--no-shell`, `--allow-http`,
+  `--no-http` are unknown options now (exit code 2, `unknown option: <argument>`).
+- Old INIs with `ca_file` under `[llm]` or `allow_*` under `[workspace]` are
+  ignored silently (only `[tools]` keys are validated); a `[tools]` typo is a
+  fatal startup error instead.
+- `screen_shoot`, `window_shoot` and `read_media_file` are `0` by default and
+  need their own keys — previously they inherited `allow_write`.
+
+Left for the next phases: P4 (English-only pass over `src/`, `tests/`, tool
+descriptions, prompts, CLI text) and P5 (`config/mirmid.ini.example`,
+`docs/`).
+
+## 2026-11-08 — phase 3 review follow-up (independent review of the P3 diff)
+
+An independent subagent reviewed the uncommitted P3 diff against the §4 checklist
+of `plan.md` and returned **PASS WITH MINOR ISSUES** (no blockers): the
+`(name, default)` table in `mirmid.tools` matches §4 (17 entries), an unknown
+`[tools]` key is fatal (exit 1, all 17 known names listed), every handler gate
+(`ToolDisabled`) is the first statement of its tool, the `ca_file` branch is gone
+from `mirmid.tlsclient`/`mirmid.http`, and `--init` writes the commented sample.
+The issues it found were fixed before committing:
+
+- `--init` is no longer blocked by a broken INI: `ResolveConfig` returns the
+  `LoadIni` error and `Main` aborts only when the run is not `--init`, so a
+  mistyped key can be repaired by regenerating the sample instead of deadlocking
+  the user (`TCliUnknownToolKeyTests.TestInitRepairsBrokenToolsSection`,
+  `TConfigTests.TestResolveConfigInitToleratesBrokenIni`).
+- The same class of silent typo is now fatal in the section *name*: `[tool]`
+  gives `unknown section "[tool]"; did you mean [tools]?`, `[tools ]` with stray
+  spaces gives `section name "[tools ]" has stray spaces; write it as [tools]`,
+  and a repeated key gives `duplicate tool "<name>" in [tools]`
+  (`CheckToolsSectionName` + the duplicate scan in `LoadIni`; tests
+  `TestIniToolsSectionNameTypo`, `TestIniToolsDuplicateKey`). Case stays
+  irrelevant (`[Tools]` is fine) because `TIniFile` is case-insensitive.
+- Defence in depth is now covered by tests instead of being assumed:
+  `TSubAgentToolTests.TestRequestToolsMatchTable` (the request array equals the
+  table's enabled names), `TestDisabledToolAbsentFromRequest`,
+  `TestDisabledToolRefusesInHandler` and `TToolTests.TestReadOnlyToolDisabled`.
+
+Verification after the fixes (`make -B app test`, `PATH` from `AGENTS.md`):
+`bin\mirmid.exe` relinked with 0 errors and the suite reported **467 run tests,
+0 errors, 0 failures** — 460 before the review plus 7 regression tests. LF
+normalisation (`perl -pi -e 's/\r\n/\n/'`) was re-applied to the touched files
+afterwards, because `edit_text_file` writes CRLF on Windows.
+
+Deliberately deferred, recorded so they are not lost:
+
+- Error/warning prefixes stayed Russian in P3; the P4 pass (step 21) replaced
+  them with `Error:` / `Warning:` on stderr (§9.3). `README.md` quoted the
+  target wording, so docs and runtime agree again.
+- The sample INI written by `--init` was still Russian apart from the `[tools]`
+  note lines in P3; P4 (step 23) translated every comment line of `SaveSampleIni`.
+
+## 2026-11-09 — phase 4 result (English-only pass over src/ and tests/)
+
+`make -B app test` → **467 run tests, 0 errors, 0 failures** (`bin\testrunner.exe
+--all --format=plain` reports the same numbers), so the new reference test count
+is **467 / 0 / 0**, unchanged from the P3 baseline (the pass changed text, not
+behaviour). `bin\mirmid.exe --version` → `mirmid 0.1.0`; `--help` prints the full
+English usage; `--init` in a scratch directory writes a 96-line
+`.mirmid\mirmid.ini` with English section/comment lines and 0 Cyrillic lines.
+
+Scope: 49 tracked files touched — 26 in `src/` (all 25 units plus
+`mirmid.lpr`), 21 in `tests/` (19 `test_*.pas` + 2 fixtures) and `README.md`.
+The pre-pass scan (`git ls-files -z | xargs -0 grep -lP
+"[\x{0400}-\x{04FF}]"`) found 48 such files; only `context.md` was left, and its
+two remaining Cyrillic lines were fixed in this step (the P3 notes above).
+
+Decisions worth keeping:
+
+- **Answer language is neutral.** `DEFAULT_SYSTEM_PROMPT` and
+  `SUBAGENT_SYSTEM_PROMPT` now say "reply in the same language the user writes
+  in" instead of naming Russian, so the harness no longer hard-codes a locale.
+- **CLI prefixes are `Error:` / `Warning:`**, not the `ERROR: ` form quoted in
+  plan §9.3: the tool-result convention keeps `ERROR: ` (set by the handlers in
+  `mirmid.tool*`), while the human-facing stderr prefixes in `mirmid.cli`
+  (`WriteError`, `WriteWarning`) start with a single capital letter. Both
+  spellings are now consistent across code, tests and `README.md`.
+- **`PluralNoun` is gone** from `mirmid.plan`: `Summary` is built as
+  `"3/5 done, 1 failed, 1 skipped"`, which needs no plural forms.
+- **`IsRetryableNetErrorText` was re-keyed** to the translated transport texts
+  (`could not connect`, `no response`), so a retry decision does not silently
+  stop matching after the translation.
+- Renamed runtime texts that tests assert on were moved in the same commit as
+  the tests: loop guard (`loop detected: %d identical calls of %s`), file tool
+  summary (`[mirmid] file: %s | size: %d bytes | lines: %d | hash: %s`),
+  `file changed: ... lines removed: N, inserted: M ...`, planner sub-session
+  labels (`analysis`, `step sN`), `Task:`/`Plan:`/`Summary:` report headings,
+  `Environment: OS ...` and the `[plan]`/`[analysis]`/`[loop]` event tags.
+- **Cyrillic test data was replaced, not deleted.** Where a test needs
+  multi-byte UTF-8 it now uses Latin with diacritics (`grüße`, `Grüße!`,
+  `äöüßéè` as 12 bytes / 6 columns in `test_util`), which keeps the byte/column
+  arithmetic and the SSE chunk split (`Grü` + `ße!`) meaningful. Non-ASCII
+  typography (`—`, `→`, `│`, `…`, `≈`) is kept on purpose: it is layout, not
+  language.
+- `grep -P` on the Cyrillic block only works with `LC_ALL=C.UTF-8` in Git
+  Bash; without it the pattern is rejected as invalid in a non-UTF-8 locale.
+
+Line endings: `edit_text_file` writes CRLF on Windows, so 23 of the 49 touched
+files came back with CRLF and were normalised to LF (`perl -pi -e
+'s/\r\n/\n/'`) before the final build, per `.gitattributes`
+(`* text=auto eol=lf`).
+
+Left for P5: `config/mirmid.ini.example`, `config/mcp.json.example` and
+`docs/` (placeholder `.gitkeep` files today).
