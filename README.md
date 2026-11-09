@@ -39,9 +39,10 @@ License: Apache-2.0.
 
 - Free Pascal 3.2.2 (x86_64) and GNU make; Lazarus 4.0 is optional.
 - The `tls` library (Pascal TLS client and crypto) is mandatory. The Makefile
-  picks the first directory containing `src/*.pas` among `deps/tls` (declared
-  in `.gitmodules`) and `../tls`; `TLS_DIR` overrides the choice. To fetch it
-  separately: `git clone https://github.com/svetodar/tls.git ../tls`.
+  picks the first directory containing `src/*.pas` among `deps/tls` (the git
+  submodule declared in `.gitmodules`) and `../tls`; `TLS_DIR` overrides the
+  choice. Fetch it either way: `git submodule update --init deps/tls` or
+  `git clone https://github.com/svetodar/tls.git ../tls`.
 - Linux: `fpc`, `make`, `git` and the usual build tools. Window observation
   needs `xwininfo`/`xprop` from `x11-utils`; screenshots need one of `grim`,
   `scrot`, ImageMagick `import`, `gnome-screenshot` or `spectacle`.
@@ -130,8 +131,9 @@ Settings are read in this order, each layer overriding the previous one:
 
 Boolean keys: `[tools]` keys and `MIRMID_*` variables accept `1`/`0`,
 `true`/`false`, `yes`/`no` and `on`/`off`; `stream`, `plan`, `verbose` and
-`[mcp] enabled` accept only `1` (on) or `0` (off), and any other value reads
-as off. Only a line starting with `;` is a comment; `#` is not.
+`[mcp] enabled` accept only `1` (on) or `0` (off), an empty value keeps the
+default, and any other non-empty value reads as off. Only a line whose first
+non-blank character is `;` is a comment; `#` is not.
 
 ### `.mirmid` layout
 

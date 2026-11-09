@@ -223,9 +223,10 @@ What P3 changed:
 
 Pitfalls found while doing P3 (worth remembering):
 
-- `TIniFile.ReadSection('tools', ...)` returns an **empty** name for the blank
-  line before the next section; without skipping empty names every config
-  written by `--init` failed with `unknown tool ""`.
+- Blank lines never reach the key list (`ReadSection` trims every line and skips
+  the empty ones), but a non-empty line without `=` inside `[tools]` is stored
+  with an **empty** name — that is what a `#` note does. `LoadIni` skips empty
+  names; without that guard such a note fails with `unknown tool ""`.
 - `TMirmidConfig` holds a dynamic array (`Tools`), so `AC := Cfg` shares the
   storage. `SetToolEnabled` therefore copies the array (`Copy(Cfg.Tools)`)
   before touching an element, otherwise
@@ -356,11 +357,12 @@ Left for P5: `config/mirmid.ini.example`, `config/mcp.json.example` and
 Scope: `README.md` rewritten from the scaffold (purpose, feature list,
 Windows/Linux build, the settings sections including the full `[tools]` table,
 the `.mirmid` layout, MCP and the license); `docs/` replaced its placeholder
-with `index.md` (68 lines) plus the topic notes `architecture.md` (321),
-`planning.md` (258), `anthropic.md` (263), `repository.md` (222) and
-`roadmap.md` (365); `config/` replaced its placeholder with
-`mirmid.ini.example` (131 lines) and `mcp.json.example` (25 lines / 430 bytes);
-`AGENTS.md` now describes the phase 5 tree and the standalone Anthropic client.
+with `index.md` (69 lines) plus the topic notes `architecture.md` (322),
+`planning.md` (261), `anthropic.md` (267), `repository.md` (224) and
+`roadmap.md` (381) — the counts are `wc -l` at the phase commit `a8f09b3`;
+`config/` replaced its placeholder with `mirmid.ini.example` (134 lines) and
+`mcp.json.example` (25 lines / 430 bytes); `AGENTS.md` now describes the
+phase 5 tree and the standalone Anthropic client.
 `docs/.gitkeep` and `config/.gitkeep` are deleted; no placeholders remain.
 
 Verification (all commands run in `C:\ai\git\mirmid` on 2026-11-09):
@@ -400,7 +402,9 @@ Open observations for the remaining P5 steps:
   `task*.md` scratch file; `git status` is the source of truth for the file
   list of the commit.
 - Independent review of the P5 diff returned **changes required**; the findings
-  are fixed in the follow-up entry below. The commit itself is still pending.
+  are fixed and the whole P5 change set, follow-up included, is committed as
+  `a8f09b3 docs: rewrite the README and add topic notes and config examples`.
+  (The earlier wording said the commit was still pending; corrected in P6.)
 - `deps/tls` is still an uninitialised submodule in this checkout, so the build
   falls back to `../tls`; `repository.md` and `README.md` document the
   `TLS_DIR` override and the embedded-roots `roots` goal.
@@ -451,3 +455,122 @@ Non-blocking findings fixed in the same pass:
 - New roadmap item 7.2: a duplicated `[tools]` section is not diagnosed because
   `TIniFile.ReadSection` reads one section, so the "unknown key aborts startup"
   rule has a blind spot.
+
+## 2026-11-09 — phase 6 result (hand-off hygiene, verification, new baseline)
+
+Scope: a pass over the repository state left by P0-P5 — no feature work. 16
+tracked files change (`.gitignore`, `README.md`, `config/mirmid.ini.example`,
+this log, `docs/repository.md`, `docs/roadmap.md`, four `src/` units and six
+`tests/` files — five test units plus the `streamprobe` fixture) plus the
+`deps/tls` gitlink that was missing from the index.
+
+Verification (all commands run in `C:\ai\git\mirmid` on 2026-11-09):
+
+- `make -B app test` → **470 tests run, 0 errors, 0 failures**, exit code 0.
+  The new reference count is **470 / 0 / 0**, three more than the P4/P5 count of
+  467, which is exactly the number of regression tests added in this phase:
+  `TestSampleIniCommentPrefix` and `TestCommentPrefixIsSemicolon`
+  (`tests/test_config.pas`), `TestHelpListsConnectionAndInteractiveFlags`
+  (`tests/test_cli.pas`). `docs/repository.md` and `docs/roadmap.md` were
+  updated to the same number.
+- `bin\mirmid.exe --version` → `mirmid 0.1.0`; `--help` → exit 0, full English
+  usage with the corrected `Tools:` block. A `[\u0400-\u04FF]` scan of the whole
+  help output finds nothing; only em dashes and `→` stay, as everywhere else.
+- `--init` in a scratch directory outside the tree writes a 96-line
+  `.mirmid\mirmid.ini` whose key set is **46 `section.key` pairs**
+  (`[llm]` 10, `[agent]` 14, `[tools]` 17, `[workspace]` 2, `[mcp]` 3), and
+  `comm`/`diff` against `config/mirmid.ini.example` show no difference in the
+  key set, the order or the values — only the comment wording differs.
+- No Cyrillic in the tracked tree: `LC_ALL=C.UTF-8 git grep -nP
+  '[\u0400-\u04FF]'` → exit 1, confirmed by an independent perl scan of every
+  tracked working-tree file. No removed feature is named as a capability: the
+  strings of the excluded features and settings do not occur in `src/`,
+  `tests/`, `config/`, `docs/` or `README.md`.
+- Every edited file is LF (scan of the tracked tree for `\r\n` → no hits), per
+  `.gitattributes`.
+
+Decisions worth keeping:
+
+- **`deps/tls` is now a real gitlink.** `.gitmodules`, the `Makefile`,
+  `build.sh` (it fast-forwards a clean submodule to the revision pinned in the
+  index) and three documents all already assumed a submodule; only the index
+  entry was missing. It is registered at `0f6ee94`, the revision the local
+  `../tls` checkout is on (= `refs/heads/main` upstream), so
+  `git submodule status` now prints `-0f6ee94… deps/tls` (the leading `-` means
+  "not initialised in this checkout", which stays true). The alternative —
+  weakening the wording to "a plain directory" — would have contradicted the
+  build scripts. A fresh clone still needs `git submodule update --init
+  deps/tls`; `README.md` and `docs/repository.md` now name both that command and
+  the `../tls` fallback.
+- **`SaveSampleIni` writes `;` comments, not `#`.** The parser treats only a
+  line whose first non-blank character is `;` as a comment, so the old `#` lines
+  contradicted the documented format — and a `#` note containing `=` inside
+  `[tools]` would have been read as an unknown tool key and aborted startup
+  after `--init`. All 24 comment lines of the generated sample were rewritten;
+  the two new tests pin both halves of the rule (`#`-prefixed notes never
+  appear, every generated line parses as a comment or a known key/value).
+- **Stale permission-model comment removed** above `TPlanner.AnalysisPhase`
+  (`src/mirmid.planner.pas`): it claimed the deleted `--allow-*` flags still
+  apply. It now says tool access is inherited from the parent session through
+  `[tools]` and that read-only behaviour comes from the analyst prompt.
+  `docs/roadmap.md` item 7.1 ("a removed permission model survives in a code
+  comment") is deleted with it, and the priority table was renumbered — the
+  duplicate-`[tools]`-section item added in the P5 follow-up is now **7.1**.
+- **`.gitignore` cleaned up:** the legacy `.subag/` line is gone (that directory
+  is covered per clone by `.git/info/exclude`, so its name no longer enters the
+  repository), the obsolete comment about moved OpenSSL sources is gone, and
+  `plan.md` joined `task*.md` — the local scratch plan can no longer be staged
+  by `git add -A`.
+- **Wording of the Boolean rule was too strict.** `#` was already documented as
+  "not a comment", but "only a line starting with `;`" missed the leading-blank
+  case, and an empty value keeps the default instead of reading as off.
+  `README.md` and the header of `config/mirmid.ini.example` now say "only a line
+  whose first non-blank character is `;`" and "an empty value keeps the
+  default".
+- **`--help` now lists every accepted option.** `--connect-timeout` (10 s
+  default) and `--interactive` were parsed but undocumented; the `Tools:` block
+  of the usage text also had one line of broken indentation. The new test parses
+  the help output and then builds a CLI object from those exact forms, so a help
+  line for a dead flag cannot pass.
+- **No references to local scratch files.** `task1.md`/`task2.md` were quoted in
+  comments throughout `src/` and `tests/`, naming files that are not part of the
+  repository; the notes were kept and the file names dropped, and the fixture
+  line `[read] task1.md` became `[read] notes.md` (asserted in two tests).
+  `git grep 'task[12]\.md'` is now empty. `docs/roadmap.md` likewise stopped
+  saying the work is tracked in `plan.md` and points to this dated log instead.
+
+Pitfalls re-confirmed:
+
+- `edit_text_file` writes CRLF on Windows: eight files came back with CRLF and
+  were normalised with `perl -pi -e 's/\r\n/\n/'` before the build. Check, do
+  not assume.
+- The Linux path still cannot be exercised here. WSL2 runs Debian trixie and
+  even offers `fpc 3.2.2` as a package, but the distro has **no egress** (IPv4
+  timeouts, IPv6 "could not connect", curl exit 124/7) while Windows fetches the
+  same URL with HTTP 200, and no FPC/Lazarus is pre-installed (`/usr/lib/fpc`,
+  `ppcx64` absent, no proxy variables), so `apt-get install fpc` cannot run
+  either. Decision: the Windows `make -B app test` run stays the verification
+  path; `build.sh`/`make test` on Linux remain unverified in this checkout and
+  are documented as such, not claimed as passing.
+- `grep`, `wc`, `comm`, `perl` and `make` are not in the default `PATH` of
+  `cmd.exe`: the `C:\Program Files\Git\usr\bin` prefix from `AGENTS.md` is
+  needed even for read-only checks.
+- A running `bin\mirmid.exe` still blocks the link step (error 5 → `move /y
+  bin\mirmid.exe bin\mirmid.exe.old`).
+
+E2E: with `src/` changed, one manual run was made against a live
+OpenAI-compatible endpoint from a temporary directory outside the repository
+(`--no-session --no-stream`): exit 0, one tool round-trip (`exist_file` → "file
+exists") and a single-sentence English answer, so transport and TLS work. The
+test suite itself still never touches the network.
+
+Review: two independent subagents read the whole diff (docs/config layer and
+src/tests layer). No blockers; their findings — the stale `task1.md`/`task2.md`
+references, the undocumented options, the imprecise Boolean-comment wording and
+the roadmap's pointer to an untracked file — are the fixes listed above, each
+covered by a test where behaviour is at stake.
+
+Left open after P6 (unchanged or newly noted): roadmap item 7.1 (a duplicated
+`[tools]` section is still not diagnosed), the remaining roadmap items, and
+`deps/tls` still being uninitialised in this checkout. `mirmid.anthropic`
+remains a standalone unit, untouched by this phase.

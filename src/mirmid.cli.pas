@@ -86,7 +86,7 @@ function FormatAnalysisStatus(const Cur, Total: Integer;
   MainCur: Integer = 0): string;
 { The short step name for the final status line: only the identifier "s1" is
   taken from "s1: description". After the step finishes the description is no
-  longer needed, the line looks like "[…] s1 done" (task1.md). Without a colon the
+  longer needed, the line looks like "[…] s1 done". Without a colon the
   name is returned as it is. }
 function StepShortName(const Name: string): string;
 { Whether to print the text of a plan step sub-session (and the step result in
@@ -100,7 +100,7 @@ function StepShortName(const Name: string): string;
   signature and for trying all flag combinations in the tests. }
 function StepTaskVisible(ShowStepTask, ShowReasoning,
   ShowStepResult: Boolean): Boolean;
-{ The decision on the tool output (task2.md): tool calls (aeToolCall), shell
+{ The decision on the tool output: tool calls (aeToolCall), shell
   commands (aeShellCommand) and their results (aeToolResult) are printed in any
   session — the main one, the subagent and the planner sub-sessions ("analysis",
   "step sN") — only together with the reasoning (--show-reasoning), that is as
@@ -209,7 +209,7 @@ private
   FTableRawPrinted: Integer; { buffer lines printed in the "raw" mode }
   FPendingOnScreen: Boolean; { the partial text is visible on the line above the status }
   FPrefix: string;           { prefix for every printed line (depth indent) }
-  { Separator between output blocks (task1.md): the requested blank line is
+  { Separator between output blocks: the requested blank line is
     printed lazily — at the start of the next block (PrepareStatic/PersistStatus),
     after the status line is erased. Otherwise the status line would take its
     place, and after the status is erased no separator would remain on the
@@ -268,7 +268,7 @@ public
     does not stay a line above. Outside an ANSI terminal there is no status, the
     behaviour is the same as in PrepareStatic. }
   procedure PrepareStaticOverStatus;
-  { Request a blank separator line before the next output block (task1.md): a
+  { Request a blank separator line before the next output block: a
     tool result is separated from the next block of information. It is printed
     lazily and once — at the start of the next block
     (PrepareStatic/PersistStatus), already after the status line is erased:
@@ -394,7 +394,7 @@ type
       FormatStepStatus). The counters are the context of the main session
       (MainContextTokens), of the step (SubTokens) and the common model window. }
     function StepStatusText: string;
-    { The status line fixed in the log after leaving a sub-session (task1.md:
+    { The status line fixed in the log after leaving a sub-session (for example
       "…] analysis done", "…] s1 done"). The counters are taken before the depth
       is unwound, so the numbers are the result of the finished sub-session; the
       step label is taken short (StepShortName), without the task description.
@@ -449,7 +449,7 @@ const
     '' + sLineBreak +
     'Usage:' + sLineBreak +
     '  mirmid [options] ["prompt"]' + sLineBreak +
-    '  mirmid -i ["prompt"]    interactive mode (the prompt is the first turn, then the loop)' + sLineBreak +
+    '  mirmid -i ["prompt"]    interactive mode (--interactive is the same; the prompt is the first turn, then the loop)' + sLineBreak +
     '' + sLineBreak +
     'Model and connection:' + sLineBreak +
     '  -m, --model NAME        model name' + sLineBreak +
@@ -470,6 +470,7 @@ const
     '                          (without MODE and without a value — medium)' + sLineBreak +
     '      --no-reasoning      synonym of --reasoning none' + sLineBreak +
     '      --timeout SEC       HTTP request timeout (1800 by default)' + sLineBreak +
+    '      --connect-timeout SEC  connection timeout in seconds (10 by default)' + sLineBreak +
     '      --show-reasoning    print the model reasoning_content and the tool output' + sLineBreak +
     '      --show-step-task    print the plan step task before its work (off by default)' + sLineBreak +
     '      --show-step-result  print the result of every plan step (off by default)' + sLineBreak +
@@ -479,9 +480,9 @@ const
     'Tools:' + sLineBreak +
     '      the tool set is defined by the [tools] section of mirmid.ini:' + sLineBreak +
     '      one 1/0 key per tool (see mirmid --init)' + sLineBreak +
-     '      --shell-timeout S   command timeout in seconds (60 by default)' + sLineBreak +
-     '      --tool-output-lines N  maximum tool output lines (9 by default, the middle is cut, 0 — no limit)' + sLineBreak +
-     '      --shell-output-limit N  maximum shell output in bytes (65536 by default, 0 — no limit)' + sLineBreak +
+    '      --shell-timeout S   command timeout in seconds (60 by default)' + sLineBreak +
+    '      --tool-output-lines N  maximum tool output lines (9 by default, the middle is cut, 0 — no limit)' + sLineBreak +
+    '      --shell-output-limit N  maximum shell output in bytes (65536 by default, 0 — no limit)' + sLineBreak +
     '' + sLineBreak +
     'MCP (Model Context Protocol):' + sLineBreak +
     '      --mcp-config FILE   mcp.json file describing the servers' + sLineBreak +
@@ -1081,7 +1082,7 @@ end;
 { The short step name for the final status line: only the identifier "s1" is
   taken from "s1: description" (trimmed and stripped of the surrounding spaces).
   In the step line the description is needed, in the fixed "s1 done" line it is
-  not (task1.md). Without a colon the name is returned as it is, an empty one
+  not. Without a colon the name is returned as it is, an empty one
   stays empty. }
 function StepShortName(const Name: string): string;
 var
@@ -2085,7 +2086,7 @@ begin
     FormatContextStatus(FAgent.ContextTokens, EffectiveContextWindow(FCfg))));
 end;
 
-{ The final status line stays on the screen after a turn (task2.md): in
+{ The final status line stays on the screen after a turn: in
   streaming mode the log gets the same line the printer drew under the answer
   (end-of-turn counters, the same colour), in non-streaming mode it was never
   drawn — print it ourselves. Outside a terminal both paths stay silent. }
@@ -2140,7 +2141,7 @@ begin
     Result := FTokens.Text(EffectiveContextWindow(FCfg), FSubAgentDepth);
 end;
 
-{ The status line fixed after leaving a sub-session (task1.md): for a step the
+{ The status line fixed after leaving a sub-session: for a step the
   label is short — "s1", without the task description that is needed only in the
   current step line; for the analysis the label is already "analysis"
   (FormatAnalysisStatus). The counters are the same as in StatusText at the
@@ -2155,7 +2156,7 @@ begin
     Result := StatusText;
 end;
 
-{ Fixing the done line of a finished sub-session (task1.md, item 4):
+{ Fixing the done line of a finished sub-session:
   "…] analysis done", "…] s1 done". In an ANSI terminal the line is fixed by the
   stream printer: PersistStatus erases the drawn temporary line and prints the
   result. In a console without VT mode there is no drawn line, and in
@@ -2251,7 +2252,7 @@ begin
       begin
         FPrinter.PrepareStatic;
         { The blank line before the report — only when the previous block did not
-          leave it (a tool result, task1.md). }
+          leave it (a tool result). }
         if not FPrinter.BlankSeparated then
           WriteLn(Pfx);
         WriteLn(FPrinter.ApplyPrefix(RenderMarkdown(Text)));
@@ -2319,7 +2320,7 @@ begin
           FTokens.EnterSubAgent;
         end;
         { Printing is gated: without --show-reasoning the tool call line is
-          hidden in every session (task2.md). The service part (FToolStack.Add,
+          hidden in every session. The service part (FToolStack.Add,
           depth, ClearLine/DrawStatus) is done above and below in any case —
           otherwise the accounting and the detection of the subagent result
           would drift apart. }
@@ -2369,7 +2370,7 @@ begin
         Multi-line text is printed with the prefix on every line. }
       begin
         { Blank lines at the start and the end of the tool output are removed
-          before truncation by the line limit (task1.md): otherwise the limit is
+          before truncation by the line limit: otherwise the limit is
           spent on blank lines and extra blank lines stay on the screen. The
           text is for printing only; in the history and in the session file the
           output stays as it is. }
@@ -2401,7 +2402,7 @@ begin
             FPrinter.PrepareStaticOverStatus;
             WriteLn(FPrinter.ApplyPrefix(Colored(C_RESULT,
               ShortenLinesMiddle(Body, FCfg.ToolOutputLines))));
-            { A blank line after the tool output (task1.md): the next block of
+            { A blank line after the tool output: the next block of
               information (the call of the next tool, the model answer, the done
               line) starts under a separator, not right against the result. The
               line is requested lazily — the start of the next block prints it. }
@@ -2447,8 +2448,7 @@ begin
             FPrinter.PrepareStaticOverStatus;
             WriteLn(FPrinter.ApplyPrefix(Colored(C_RESULT,
               ShortenLinesMiddle(Body, FCfg.ToolOutputLines))));
-            { A separator after the tool output — as in the subagent branch above
-              (task1.md). }
+            { A separator after the tool output, as in the subagent branch above. }
             FPrinter.RequestBlankLine;
           end;
           FPrinter.DrawStatus(StatusText);
@@ -2467,7 +2467,7 @@ begin
       begin
         FPrinter.PrepareStatic;
         { Print the blank line before the answer only when the previous block did
-          not leave it itself (a tool result — task1.md): otherwise two blank
+          not leave it itself (a tool result): otherwise two blank
           lines in a row would end up under the tool output. }
         if not FPrinter.BlankSeparated then
           WriteLn(Pfx);
@@ -2524,7 +2524,7 @@ begin
     aeSubSessionEnd:
       { Leaving a planner sub-session: the status line (including the step label)
         is fixed in the log with the "done" mark — by it one can see how much
-        context a finished sub-session took (task1.md). Then the depth, the label
+        context a finished sub-session took. Then the depth, the label
         and the counter stack return to the entry mark: everything left from an
         unclosed subagent or revise_plan is dropped, and the step values do not
         leak into the next step or the main session. A subagent nested in a step
@@ -2690,7 +2690,7 @@ begin
         FJournalMsgs := Length(FAgent.Messages);
     end;
   except
-    { A write failure must not mask the original turn error (task2.md: the
+    { A write failure must not mask the original turn error (the
       session is saved even after an error or an exception). }
     on E: Exception do
       WriteWarning('could not save the session: ' + E.ClassName + ': ' + E.Message);
@@ -2824,7 +2824,7 @@ var
 begin
   { One turn: the prompt goes into the history at once. The session is saved in
     any case — after a model error (for example "HTTP 400 Bad Request") and
-    after an exception inside the turn (task2.md): otherwise the history of a
+    after an exception inside the turn: otherwise the history of a
     failed turn is lost and there is nothing to investigate. }
   Result := 1;
   Ok := False;
@@ -2864,7 +2864,7 @@ begin
         { The context cache of the main session — after the turn: the model
           answer and (in planning mode) the report were added to the history. }
         UpdateMainContext;
-        { The final status line stays on the screen after the turn (task2.md). }
+        { The final status line stays on the screen after the turn. }
         KeepContextStatus;
         CheckAutoSummarize;
       end;
@@ -3224,7 +3224,7 @@ begin
       begin
         { An exception outside a turn (REPL, commands, planner) must not leave
           the session unsaved: print the reason and save the history already
-          accumulated in the session (task2.md). }
+          accumulated in the session. }
         WriteError('exception: ' + E.ClassName + ': ' + E.Message);
         App.SaveCurrentSession;
         Result := 1;

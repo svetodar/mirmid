@@ -116,7 +116,7 @@ type
   end;
 
   { Gating of the tool output (the "[name] arguments", "$ command" lines and the
-    aeToolResult results): task2.md — the output is printed only together with
+    aeToolResult results): the output is printed only together with
     the reasoning (--show-reasoning), regardless of whether it is the main
     session, a subagent sub-session or a planner sub-session ("analysis",
     "step sN"). }
@@ -214,13 +214,16 @@ type
     { The help has the [tools] section and no --allow-write/--no-write,
       --allow-shell/--no-shell, --allow-http/--no-http. }
     procedure TestHelpMentionsToolsSection;
+    { Every documented option is reachable and every parsed option is documented:
+      at least the connection and interactive flags, which the help used to omit. }
+    procedure TestHelpListsConnectionAndInteractiveFlags;
     { The help has no mentions of the removed trust settings. }
     procedure TestHelpHasNoCaFile;
     { The removed flags are a parse error ("unknown option"). }
     procedure TestRemovedFlagsRejected;
   end;
 
-  { Saving the main session after a failed turn (task2.md). An integration test
+  { Saving the main session after a failed turn. An integration test
     against the built bin/mirmid: a turn with an unreachable provider fails, but
     the session must be written together with the user message. The binary is not
     built — the test is skipped (make test does not build bin/mirmid itself). }
@@ -756,7 +759,7 @@ begin
 end;
 
 { A single --show-reasoning enables the tool output in all sessions: the gating
-  no longer depends on the sub-session label (task2.md). }
+  no longer depends on the sub-session label. }
 procedure TCliToolOutputGatingTests.TestShownByReasoning;
 begin
   AssertTrue('--show-reasoning shows the tool output',
@@ -1172,7 +1175,7 @@ begin
     T.Free;
   end;
 end;
-{ --- Session saved after a failed turn (task2.md) ------------------------
+{ --- Session saved after a failed turn -----------------------------------
 
   Integration test against the built bin/mirmid binary. The turn fails (the
   provider is unreachable: 127.0.0.1:1) — the session must be stored in
@@ -1528,6 +1531,32 @@ begin
     switches. }
   AssertTrue('--shell-timeout is still there', Pos('--shell-timeout', H) > 0);
   AssertTrue('--tool-output-lines is still there', Pos('--tool-output-lines', H) > 0);
+end;
+
+{ The help used to omit two options the parser accepts: --connect-timeout and
+  --interactive. Both are documented now, and the test also proves that the
+  documented form is really parsed (a help line for a dead flag would be worse
+  than no line at all). }
+procedure TCliToolsModelTests.TestHelpListsConnectionAndInteractiveFlags;
+var
+  H: string;
+  Cli: TCli;
+  Err: string;
+begin
+  H := UsageText;
+  AssertTrue('--connect-timeout is documented',
+    Pos('--connect-timeout', H) > 0);
+  AssertTrue('--interactive is documented', Pos('--interactive', H) > 0);
+
+  AssertTrue('--connect-timeout is parsed',
+    ParseCli(['--connect-timeout', '5', 'question'], Cli, Err));
+  AssertEquals('no error', '', Err);
+  AssertTrue('the connection timeout is noticed', Cli.HasConnectTimeout);
+  AssertEquals('the connection timeout value', 5, Cli.ConnectTimeout);
+  AssertEquals('the prompt is not eaten as a value', 'question', Cli.Prompt);
+
+  AssertTrue('--interactive is parsed', ParseCli(['--interactive'], Cli, Err));
+  AssertTrue('the interactive mode is on', Cli.Interactive);
 end;
 
 procedure TCliToolsModelTests.TestHelpHasNoCaFile;

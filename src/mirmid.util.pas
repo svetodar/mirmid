@@ -136,7 +136,7 @@ function SanitizeUTF8(const S: string): string;
 { --- Shortening multi-line text --- }
 { Indent of the "..." marker from the start of the line (in spaces): the marker
   separates the parts of tool output and must not look like its first line
-  (task1.md) - with indent 8 the ellipsis is printed from position 9. }
+  - with indent 8 the ellipsis is printed from position 9. }
 const
   SHORTEN_ELLIPSIS_INDENT = 8;
 { Shortens S to MaxLines lines by cutting the middle: the first
@@ -148,7 +148,7 @@ const
   S shorter than the limit - also as is. Line breaks are preserved
   (CRLF/LF of the source text), no trailing break is added. }
 function ShortenLinesMiddle(const S: string; MaxLines: Integer): string;
-{ Removes blank lines at the start and at the end of the text (task1.md: tool
+{ Removes blank lines at the start and at the end of the text (tool
   output must start and end with content before the line limit is applied,
   otherwise the limit is spent on blank lines and extra blank lines remain on
   the screen). A line of only spaces/tabs counts as blank; inner blank lines
@@ -1451,7 +1451,7 @@ begin
       Result := Result + Lines[I] + Sep;
     { The truncation marker is printed with an indent (SHORTEN_ELLIPSIS_INDENT):
       otherwise the ellipsis sits flush with the start of the line and reads as
-      the first line of the output instead of a separator (task1.md). }
+      the first line of the output instead of a separator. }
     Result := Result + StringOfChar(' ', SHORTEN_ELLIPSIS_INDENT) + '…' + Sep;
     for I := Lines.Count - Tail to Lines.Count - 1 do
       Result := Result + Lines[I] + Sep;

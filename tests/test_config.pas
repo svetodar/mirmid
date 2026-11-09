@@ -30,6 +30,8 @@ type
     procedure TestIniToolsUnknownKey;
     procedure TestIniToolsDefaults;
     procedure TestSampleIniToolsBlock;
+    procedure TestSampleIniCommentPrefix;
+    procedure TestCommentPrefixIsSemicolon;
     procedure TestIniToolsSectionNameTypo;
     procedure TestIniToolsDuplicateKey;
     procedure TestResolveConfigValidIni;
@@ -502,6 +504,120 @@ begin
   AssertTrue('shell=1 from the sample', ToolEnabled(C, 'shell'));
   AssertFalse('grep=0 from the sample', ToolEnabled(C, 'grep'));
   AssertFalse('edit_text_file by default', ToolEnabled(C, 'edit_text_file'));
+
+  DeleteFile(FileName);
+end;
+
+{ The sample configuration (--init) writes every note with the ";" prefix. The
+  INI reader treats only ";" as a comment, so a "#" note inside [tools] turns
+  into a tool key: without "=" its name is empty and LoadIni skips it (the old
+  sample parsed by luck), with "=" it is an unknown key that aborts startup.
+  Every other line of the sample must be a section header or a "key=value"
+  pair — this is the regression guard for the comment prefix written by --init. }
+procedure TConfigTests.TestSampleIniCommentPrefix;
+var
+  C: TMirmidConfig;
+  FileName, Err, S: string;
+  L, Sections: TStringList;
+  I, Comments: Integer;
+  Ok: Boolean;
+begin
+  FileName := IncludeTrailingPathDelimiter(TempDir) +
+    'mirmid-test-comment-prefix.ini';
+  DeleteFile(FileName);
+  C := DefaultConfig;
+  AssertTrue('save the sample', SaveSampleIni(FileName, C, Err));
+
+  Sections := TStringList.Create;
+  L := TStringList.Create;
+  try
+    Sections.Add('llm');
+    Sections.Add('agent');
+    Sections.Add('tools');
+    Sections.Add('workspace');
+    Sections.Add('mcp');
+    L.LoadFromFile(FileName);
+    Comments := 0;
+    for I := 0 to L.Count - 1 do
+    begin
+      S := Trim(L[I]);
+      if S = '' then
+        Continue;
+      AssertFalse('no "#" line in the sample: ' + S, S[1] = '#');
+      if S[1] = ';' then
+      begin
+        Inc(Comments);
+        Continue;
+      end;
+      if S[1] = '[' then
+      begin
+        AssertTrue('a closed section header: ' + S, S[Length(S)] = ']');
+        AssertTrue('a known section: ' + S,
+          Sections.IndexOf(Copy(S, 2, Length(S) - 2)) >= 0);
+        Continue;
+      end;
+      AssertTrue('a non-comment line is a key=value pair: ' + S,
+        Pos('=', S) > 0);
+    end;
+    AssertTrue('the sample carries comments', Comments > 0);
+  finally
+    L.Free;
+    Sections.Free;
+  end;
+
+  { The sample reads back without a single error. }
+  C := DefaultConfig;
+  Ok := LoadIni(FileName, C, Err);
+  AssertTrue('the sample reads back: ' + Err, Ok);
+  AssertEquals('no read error', '', Err);
+
+  DeleteFile(FileName);
+end;
+
+{ Reader semantics: inside [tools] the same note is a comment with ";" and a
+  tool key with "#" (the "=" part of a "#" line becomes the key name). This test
+  documents the existing reader; the writer-side regression guard is
+  TestSampleIniCommentPrefix. }
+procedure TConfigTests.TestCommentPrefixIsSemicolon;
+var
+  C: TMirmidConfig;
+  FileName, Err: string;
+  L: TStringList;
+  Ok: Boolean;
+begin
+  FileName := IncludeTrailingPathDelimiter(TempDir) +
+    'mirmid-test-comment-prefix-read.ini';
+
+  L := TStringList.Create;
+  try
+    L.Add('[tools]');
+    L.Add('; a note with "=" inside stays a comment');
+    L.Add('grep=0');
+    L.SaveToFile(FileName);
+  finally
+    L.Free;
+  end;
+  C := DefaultConfig;
+  AssertTrue('grep is enabled by default', ToolEnabled(C, 'grep'));
+  Ok := LoadIni(FileName, C, Err);
+  AssertTrue('a ";" note is a comment: ' + Err, Ok);
+  AssertFalse('grep is disabled by the key after the note',
+    ToolEnabled(C, 'grep'));
+
+  DeleteFile(FileName);
+  L := TStringList.Create;
+  try
+    L.Add('[tools]');
+    L.Add('# a note with "=" inside is not a comment');
+    L.Add('grep=1');
+    L.SaveToFile(FileName);
+  finally
+    L.Free;
+  end;
+  C := DefaultConfig;
+  Ok := LoadIni(FileName, C, Err);
+  AssertFalse('the "#" note makes the file invalid', Ok);
+  AssertTrue('the message names the note: ' + Err, Pos('# a note', Err) > 0);
 
   DeleteFile(FileName);
 end;

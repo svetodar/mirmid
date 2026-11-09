@@ -588,10 +588,10 @@ begin
 end;
 
 { Phase 0 - preliminary analysis: a separate agent studies the task and its
-  environment and returns the analysis text. Rights - as in the parent
-  session (AnalysisConfig): the `--allow-*` flags apply here too, while
-  "read-only" is required by the analyst prompt. The plan is then built on top
-  of the analysis. }
+  environment and returns the analysis text. Tool access is the parent
+  session's: AnalysisConfig replaces only the system prompt, so the `[tools]`
+  grants stay in force, while "read-only" is required by the analyst prompt. The
+  plan is then built on top of the analysis. }
 function TPlanner.AnalysisPhase(const History: TMessages;
   out Analysis: string; out Err: string): Boolean;
 var

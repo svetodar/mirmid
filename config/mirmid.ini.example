@@ -5,11 +5,12 @@
 ; file of the harness - settings, MCP servers, sessions and logs - lives in
 ; ./.mirmid, which is never entered by the file tools.
 ;
-; Format: "key=value" pairs under square-bracket sections. Only a line starting
-; with ";" is a comment; "#" is not, and a "#" line containing "=" inside
-; [tools] is read as a tool key and fails startup. [tools] keys and MIRMID_*
-; environment variables accept 1/0, true/false, yes/no and on/off; stream, plan,
-; verbose and mcp.enabled accept only 1 (on) or 0 (off), because any other value
+; Format: "key=value" pairs under square-bracket sections. Only a line whose
+; first non-blank character is ";" is a comment; "#" is not, and a "#" line
+; containing "=" inside [tools] is read as a tool key and fails startup.
+; [tools] keys and MIRMID_* environment variables accept 1/0, true/false,
+; yes/no and on/off; stream, plan, verbose and mcp.enabled accept only 1 (on)
+; or 0 (off), an empty value keeps the default, and any other non-empty value
 ; reads as off. Numbers always use a dot as the decimal separator, so the file
 ; stays portable across locales.
 ;

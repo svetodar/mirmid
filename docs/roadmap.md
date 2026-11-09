@@ -6,7 +6,7 @@ makes the gap visible and has a closing condition that a test can check. Feature
 ideas that no code currently promises are not listed here.
 
 Snapshot: working tree of 2026-11-09. The build is green (`make -B app test`,
-467 tests, 0 errors, 0 failures; see the latest dated entry in
+470 tests, 0 errors, 0 failures; see the latest dated entry in
 [../context.md](../context.md)), the suite never touches the network, and
 `bin/mirmid --version` reports `mirmid 0.1.0`. Nothing below blocks this state.
 
@@ -305,19 +305,7 @@ text.
 
 ## 7. Hygiene
 
-### 7.1 A removed permission model survives in a code comment
-
-**Evidence.** The comment above `TPlanner.AnalysisPhase` still says that the
-removed per-capability permission flags apply there. Access is granted per tool
-in `[tools]` since phase 3.
-
-**Work.** Rewrite the comment in terms of `[tools]`; search `src/` for other
-mentions of the old switches.
-
-**Done when.** `src/` has no mention of the old switches and the build is
-unchanged.
-
-### 7.2 A duplicated `[tools]` section is not diagnosed
+### 7.1 A duplicated `[tools]` section is not diagnosed
 
 **Evidence.** `LoadIni` rejects duplicate keys inside `[tools]` and a mistyped
 section name, but not a second `[tools]` section. `TIniFile.ReadSection('tools',
@@ -339,22 +327,21 @@ key, and startup fails with a message naming the repeated section.
 | 1 | 1.1 auto-summarisation guard | data loss in long sessions | S |
 | 2 | 3.2 streaming redirects | the default mode fails where `--no-stream` works | S |
 | 3 | 3.1 429/5xx retry | a rate limit kills a turn | S |
-| 4 | 7.1 stale comment | cheap, prevents wrong reasoning about access | S |
-| 5 | 7.2 duplicate `[tools]` section | a typo can silently leave tools unexamined | S |
-| 6 | 1.3 tool-result budget | protects the window and the session files | M |
-| 7 | 1.2 summary tail and estimate | quality of long sessions | M |
-| 8 | 2.1 Anthropic wiring | unlocks the second provider | L |
-| 9 | 2.2 per-role models | cost and latency control | M |
-| 10 | 3.3 connection reuse and proxy | latency and deployment behind a gateway | M |
-| 11 | 3.4 cancellation | user control over a running turn | M |
-| 12 | 4.1 MCP HTTP transport | servers that do not ship a stdio command | M |
-| 13 | 4.3 tool-list refresh | correctness for dynamic servers | S |
-| 14 | 4.2 MCP resources and prompts | completeness against the protocol | L |
-| 15 | 5.1 REPL history | daily usability | M |
-| 16 | 5.2 parallel tool calls | latency of independent calls | M |
-| 17 | 2.3 prompt caching | cost on long system prompts | S |
-| 18 | 2.4 message parts | multimodal models | L |
-| 19 | 6.1 and 6.2 Unix parity | removes hidden dependencies and skipped paths | L |
+| 4 | 7.1 duplicate `[tools]` section | a typo can silently leave tools unexamined | S |
+| 5 | 1.3 tool-result budget | protects the window and the session files | M |
+| 6 | 1.2 summary tail and estimate | quality of long sessions | M |
+| 7 | 2.1 Anthropic wiring | unlocks the second provider | L |
+| 8 | 2.2 per-role models | cost and latency control | M |
+| 9 | 3.3 connection reuse and proxy | latency and deployment behind a gateway | M |
+| 10 | 3.4 cancellation | user control over a running turn | M |
+| 11 | 4.1 MCP HTTP transport | servers that do not ship a stdio command | M |
+| 12 | 4.3 tool-list refresh | correctness for dynamic servers | S |
+| 13 | 4.2 MCP resources and prompts | completeness against the protocol | L |
+| 14 | 5.1 REPL history | daily usability | M |
+| 15 | 5.2 parallel tool calls | latency of independent calls | M |
+| 16 | 2.3 prompt caching | cost on long system prompts | S |
+| 17 | 2.4 message parts | multimodal models | L |
+| 18 | 6.1 and 6.2 Unix parity | removes hidden dependencies and skipped paths | L |
 
 Sizes are rough: S is a contained change with one or two tests, M touches a unit
 and its settings or fixtures, L changes a contract between units.
@@ -367,7 +354,9 @@ and its settings or fixtures, L changes a contract between units.
 - Speculative work with no code anchor (a plugin API, a web interface, model
   routing heuristics). Listing it would make this file a wish list.
 - Work already scheduled in the documentation phase itself (the reference
-  configuration examples and this note). It is tracked in `plan.md`, not here.
+  configuration examples and this note). It is scheduled in the local
+  `plan.md`, which is not part of the repository; the dated results live in
+  `context.md`.
 
 ## Keeping this list honest
 

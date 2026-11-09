@@ -59,7 +59,7 @@ begin
     end
     else if Name = 'done-status' then
     begin
-      { End of a step sub-session (task1.md item 4): the temporary status line is
+      { End of a step sub-session: the temporary status line is
         erased (EndStream), and PersistStatus fixes a done line in its place with
         the final counters and the short step name
         ("[HH:MM:SS|main/sub/total|%/%] s1 done"). The previous status variant
@@ -257,7 +257,7 @@ begin
         that it does not disappear while the tool runs. }
       P.PrepareStatic;
       Write(#13, #27, '[K');
-      WriteLn('[read] task1.md');
+      WriteLn('[read] notes.md');
       P.DrawStatus(FormatStepStatus('s3: task by reasoning', 3200, 128000,
         MAIN_CTX_TASK));
 
@@ -265,7 +265,7 @@ begin
         the status is drawn again under the result. }
       P.PrepareStaticOverStatus;
       WriteLn('result text');
-      { Separator after the tool output (task1.md). }
+      { Separator after the tool output. }
       P.RequestBlankLine;
       P.DrawStatus(FormatStepStatus('s3: task by reasoning', 3300, 128000,
         MAIN_CTX_TASK));
@@ -281,7 +281,7 @@ begin
         lines are printed only together with the reasoning — --show-reasoning.
         The session role plays no part: in a step and in the main session
         without the flag the output is hidden, in the analysis and in the main
-        session with the flag it is visible (task2.md). The scenario repeats the
+        session with the flag it is visible. The scenario repeats the
         aeToolCall/aeShellCommand/aeToolResult branches: the status line is
         temporary, EndStream erases it, and on aeSubSessionEnd PersistDoneStatus
         fixes a done line with the final counters (the main session from this
@@ -336,7 +336,7 @@ begin
       if ToolOutputVisible(True) then
       begin
         WriteLn('shown result');
-        { Separator after the tool output (task1.md). }
+        { Separator after the tool output. }
         P.RequestBlankLine;
       end;
       P.DrawStatus(FormatAnalysisStatus(500, 128000, MAIN_CTX_ANALYSIS));
@@ -347,7 +347,7 @@ begin
         ' done');
 
       { The main session without flags — the call and the result are hidden too
-        (task2.md: the gating is the same for all sessions); the status is
+        (the gating is the same for all sessions); the status is
         erased instead of staying a line in the log: only sub-sessions fix a
         done line. }
       P.BeginStream('[main]');
@@ -378,7 +378,7 @@ begin
       if ToolOutputVisible(True) then
       begin
         WriteLn('main2 result');
-        { Separator after the tool output (task1.md). }
+        { Separator after the tool output. }
         P.RequestBlankLine;
       end;
       P.DrawStatus('[main2 4]');
@@ -386,7 +386,7 @@ begin
     end
     else if Name = 'tool-blank' then
     begin
-      { The empty line after the tool output (task1.md): the result is separated
+      { The empty line after the tool output: the result is separated
         from the next block of information. The scenario repeats the
         aeToolCall/aeToolResult/aeAssistant/aeSubSessionEnd branches:
         1) a tool result, then a static block (the model answer) — exactly one
@@ -456,7 +456,7 @@ begin
     end
     else if Name = 'persist-status' then
     begin
-      { The end of a turn (task2.md): the final status line stays on the screen.
+      { The end of a turn: the final status line stays on the screen.
         The scenario repeats the TMirmidApp.KeepContextStatus branch in streaming
         mode: after EndStream (it erased the temporary status) the printer fixes
         the line with the final counters (PersistStatus), and the next output —

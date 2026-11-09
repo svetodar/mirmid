@@ -301,7 +301,7 @@ var
   Screen: TStringList;
   I, Dones: Integer;
 begin
-  { The end of a step sub-session (task1.md item 4): the temporary status line is
+  { The end of a step sub-session: the temporary status line is
     erased (EndStream), and PersistDoneStatus fixes a done line in its place with
     the final counters and the short step name ("...] s1 done"). The previous
     status variants do not get into the log, and the static output and the next
@@ -458,7 +458,7 @@ begin
     line and its result are printed in place of the drawn status (aeToolCall does
     ClearLine, aeToolResult does PrepareStaticOverStatus), and the status is then
     drawn again under them (DrawStatus). The scenario repeats these branches:
-    under "[read] task1.md" a status with 3.2k is drawn, under "result text" one
+    under "[read] notes.md" a status with 3.2k is drawn, under "result text" one
     with 3.3k. By the end of the sub-session (EndStream) the temporary status is
     erased, and PersistDoneStatus fixes a done line with the short name "sN" and
     the final counters in its place — therefore there are no temporary statuses on
@@ -471,7 +471,7 @@ begin
 
   { Raw output: the status with the new counters is printed after the call line
     and after the result line — that is DrawStatus. }
-  CallPos := Pos('[read] task1.md', Out);
+  CallPos := Pos('[read] notes.md', Out);
   AssertTrue('the tool call line is printed', CallPos > 0);
   ResultPos := Pos('result text', Out);
   AssertTrue('the tool result line is printed', ResultPos > 0);
@@ -504,9 +504,9 @@ begin
     AssertEquals('the task of the third step by --show-reasoning', TASK3,
       Screen[5]);
     AssertEquals('the third step text', 'step three', Screen[6]);
-    AssertEquals('the tool call', '[read] task1.md', Screen[7]);
+    AssertEquals('the tool call', '[read] notes.md', Screen[7]);
     AssertEquals('the tool result', 'result text', Screen[8]);
-    AssertEquals('the empty separator line under the result (task1.md)', '',
+    AssertEquals('the empty separator line under the result', '',
       Screen[9]);
     AssertEquals('the done line of the third step under the result', True,
       Pos('] s3 done', Screen[10]) > 0);
@@ -568,7 +568,7 @@ var
   I, Statuses, Dones, Analyzes: Integer;
 begin
   { Gating of the tool output (ToolOutputVisible): the output is printed only
-    together with the reasoning (--show-reasoning), in any session — task2.md.
+    together with the reasoning (--show-reasoning), in any session.
     The probe scenario: s1 — a step without --show-reasoning (the call and the
     result are hidden), s2 — the analysis with it (the shell command "$ ..." and
     the result are printed), then the main session without the flag (hidden) and
@@ -612,7 +612,7 @@ begin
       Screen[3]);
     AssertEquals('the tool result of the analysis is visible', 'shown result',
       Screen[4]);
-    AssertEquals('the empty separator line under the result (task1.md)', '',
+    AssertEquals('the empty separator line under the result', '',
       Screen[5]);
     AssertEquals('the done line of the analysis under the separator', True,
       Pos('] analysis done', Screen[6]) > 0);
@@ -667,7 +667,7 @@ var
   Screen: TStringList;
   I, Blanks, Doubles, Statuses: Integer;
 begin
-  { The empty line after the tool output (task1.md): the result is separated from
+  { The empty line after the tool output: the result is separated from
     the next block of information — by exactly one empty line. The probe scenario
     repeats the aeToolResult/aeAssistant/aeSubSessionEnd branches: a result → a
     static answer block (the own empty line of the answer is suppressed by
@@ -684,7 +684,7 @@ begin
     AssertEquals('the line before the first tool', 'answer zero', Screen[0]);
     AssertEquals('the call of the first tool', '[read] a.txt', Screen[1]);
     AssertEquals('the result of the first tool', 'result a', Screen[2]);
-    AssertEquals('the separator under the result (task1.md)', '', Screen[3]);
+    AssertEquals('the separator under the result', '', Screen[3]);
     AssertEquals('the model answer under the separator', 'answer one', Screen[4]);
     AssertEquals('the call of the second tool', '[read] b.txt', Screen[5]);
     AssertEquals('the result of the second tool', 'result b', Screen[6]);
@@ -789,7 +789,7 @@ var
   Screen: TStringList;
   I, Finals: Integer;
 begin
-  { After a turn the final status line stays on the screen (task2.md): the
+  { After a turn the final status line stays on the screen: the
     temporary status is erased by EndStream, and PersistStatus (the
     KeepContextStatus branch in streaming mode) fixes the line in the log — under
     the answer, with the final counters. The next REPL prompt goes from a clean

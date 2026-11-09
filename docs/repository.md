@@ -14,7 +14,7 @@ described in [architecture.md](architecture.md).
 | `tests/` | 19 `test_*.pas` units, the runner `testrunner.lpr`, two fixture programs under `tests/fixtures/` and `rsa_test_vectors.txt`. |
 | `config/` | Reference settings files: `mirmid.ini.example` (every section, full `[tools]` table) and `mcp.json.example`. |
 | `docs/` | This note and the topic notes listed in [index.md](index.md). |
-| `deps/tls` | Git submodule declaring the mandatory `tls` library (see `.gitmodules`); uninitialised in a fresh checkout, so the build falls back to `../tls` until it is fetched. |
+| `deps/tls` | Git submodule for the mandatory `tls` library (see `.gitmodules`), pinned by the gitlink committed in the tree (`git submodule status`); uninitialised in a fresh checkout, so the build falls back to `../tls` until `git submodule update --init deps/tls` is run. |
 | `.mirmid/` | Local state written by the program: `mirmid.ini`, `mcp.json`, `sessions/`, `journal/`, `logs/`. Git-ignored; never commit it. |
 | `bin/` | Build output: `mirmid`, `testrunner`, `fakemcp`, `streamprobe` (`.exe` on Windows) and `bin/win64/`. Git-ignored. |
 | `build/` | Unit files: `build/lib` (application), `build/testlib` (tests and fixtures), `build/win64` (cross-build). Git-ignored. |
@@ -28,7 +28,7 @@ Root files:
 | `mirmid.lpi` | Lazarus project: one unit (`src/mirmid.lpr`), search paths `src`, `deps/tls/src`, `../tls/src`, output `build/lib`, target `bin/mirmid`, `-O2`, DWARF3. |
 | `.gitattributes` | `* text=auto eol=lf` - every text file is stored and checked out with LF. |
 | `.gitignore` | Build output, local settings and state, secrets, session dumps, local task files. |
-| `.gitmodules` | Declares `deps/tls` (the `tls` library submodule). |
+| `.gitmodules` | Declares `deps/tls` (the `tls` library submodule); its pinned revision is the gitlink in the tree. |
 | `LICENSE` | Apache-2.0. |
 | `README.md`, `AGENTS.md`, `context.md` | User documentation, contributor rules, dated decision log. |
 
@@ -120,16 +120,16 @@ Operational notes:
   without the `tls.roots` unit links no resource and needs no roots step.
 - `build.sh` checks `fpc` and `make`, installs the `gmkdir` shim over
   `mkdir -p` when the tool is missing, fast-forwards a clean `deps/tls`
-  submodule to the revision pinned in the index (no network), warns when the
-  checkout is outdated or dirty, then runs `roots`, `make app` and `make test`.
-  It treats a generated `tlsroots.res` as success even when `rootsgen` returns
-  an error (known race in tls).
+  submodule to the revision pinned by the committed gitlink (no network), warns
+  when the checkout is outdated or dirty, then runs `roots`, `make app` and
+  `make test`. It treats a generated `tlsroots.res` as success even when
+  `rootsgen` returns an error (known race in tls).
 
 ## Test suite
 
 `tests/testrunner.lpr` is a `consoletestrunner` program that registers the `test_*.pas`
 units and runs them; the `test` target invokes it as
-`bin/testrunner --all --format=plain`. The reference result is **467 run,
+`bin/testrunner --all --format=plain`. The reference result is **470 run,
 0 errors, 0 failures** (see the latest dated entry in
 [../context.md](../context.md)); keep that count current when tests are added.
 

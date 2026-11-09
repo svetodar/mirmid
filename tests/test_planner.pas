@@ -369,7 +369,7 @@ begin
   AssertEquals('aePlan not mixed up', 0, FLog.PlanEvents);
 end;
 
-{ Regression (task1.md): the analysis phase inherits the tool set of the parent
+{ Regression: the analysis phase inherits the tool set of the parent
   session. AnalysisPhase used to switch the writing and network tools off
   unconditionally, so with the shell key enabled the tool answered
   "running commands is not allowed". }

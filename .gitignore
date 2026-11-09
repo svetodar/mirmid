@@ -25,9 +25,9 @@ mk.cmd
 mirmid.ini
 .mirmid/
 
-# Local tasks
-.subag/
+# Local tasks and the local development plan
 task*.md
+plan.md
 plan.json
 
 # Session dumps of subagents and plan steps (normally inside .mirmid,
@@ -40,9 +40,6 @@ plan.json
 
 # Reports dumped by the agent into the repository root
 result.md
-
-# OpenSSL reference sources no longer live here: they moved with the TLS
-# library to https://github.com/svetodar/tls
 
 # FPC/JSON debug dumps
 fpcdebug.txt

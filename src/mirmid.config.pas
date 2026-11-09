@@ -302,14 +302,14 @@ begin
   Result := False;
   L := TStringList.Create;
   try
-    L.Add('# mirmid configuration. Created by `mirmid --init`.');
-    L.Add('# The file lives in the .mirmid directory of the working folder.');
-    L.Add('# Values can be overridden with the MIRMID_BASE_URL, MIRMID_API_KEY,');
-    L.Add('# MIRMID_MODEL, MIRMID_TEMPERATURE, MIRMID_REASONING environment variables.');
+    L.Add('; mirmid configuration. Created by `mirmid --init`.');
+    L.Add('; The file lives in the .mirmid directory of the working folder.');
+    L.Add('; Values can be overridden with the MIRMID_BASE_URL, MIRMID_API_KEY,');
+    L.Add('; MIRMID_MODEL, MIRMID_TEMPERATURE, MIRMID_REASONING environment variables.');
     L.Add('');
     L.Add('[llm]');
     L.Add('base_url=' + C.BaseUrl);
-    L.Add('# API key literally, or "&NAME" of an environment variable holding it');
+    L.Add('; API key literally, or "&NAME" of an environment variable holding it');
     if C.ApiKeyRaw <> '' then
       L.Add('api_key=' + C.ApiKeyRaw)
     else
@@ -325,53 +325,53 @@ begin
     L.Add('');
     L.Add('[agent]');
     L.Add('max_steps=' + IntToStr(C.MaxSteps));
-    L.Add('# Plan mode: plan -> steps -> report (0 — off, 1 — on).');
+    L.Add('; Plan mode: plan -> steps -> report (0 — off, 1 — on).');
     L.Add('plan=' + BoolToStr(C.PlanMode, '1', '0'));
-    L.Add('# Step budget: limit of "model -> tools" iterations per step (0 — no limit).');
+    L.Add('; Step budget: limit of "model -> tools" iterations per step (0 — no limit).');
     L.Add('plan_step_max_steps=' + IntToStr(C.PlanStepMaxSteps));
-    L.Add('# Retries of a plan step after an abnormal result, passing the failure cause (0 — do not retry).');
+    L.Add('; Retries of a plan step after an abnormal result, passing the failure cause (0 — do not retry).');
     L.Add('plan_step_fix_attempts=' + IntToStr(C.PlanStepFixAttempts));
-    L.Add('# Maximum number of steps in the plan itself (0 — no limit).');
+    L.Add('; Maximum number of steps in the plan itself (0 — no limit).');
     L.Add('plan_max_step=' + IntToStr(C.PlanMaxStep));
     L.Add('system_prompt=' + C.SystemPrompt);
     L.Add('verbose=' + BoolToStr(C.Verbose, '1', '0'));
-    L.Add('# Maximum number of tool output lines: the middle is cut out into an');
-    L.Add('# indented "..." line (0 — no limit).');
+    L.Add('; Maximum number of tool output lines: the middle is cut out into an');
+    L.Add('; indented "..." line (0 — no limit).');
     L.Add('tool_output_lines=' + IntToStr(C.ToolOutputLines));
-    L.Add('# Auto-summarisation threshold: % of context fill (0 — off).');
+    L.Add('; Auto-summarisation threshold: % of context fill (0 — off).');
     L.Add('summarize_threshold_percent=' + IntToStr(C.SummarizeThresholdPercent));
-    L.Add('# Auto-summarisation threshold: absolute value in tokens (0 — use the percent).');
+    L.Add('; Auto-summarisation threshold: absolute value in tokens (0 — use the percent).');
     L.Add('summarize_threshold_tokens=' + IntToStr(C.SummarizeThresholdTokens));
-    L.Add('# Minimum % of context reduction for a summary to be effective.');
+    L.Add('; Minimum % of context reduction for a summary to be effective.');
     L.Add('summarize_min_saving_percent=' + IntToStr(C.SummarizeMinSavingPercent));
-    L.Add('# Minimum absolute reduction in tokens (0 — use the percent).');
+    L.Add('; Minimum absolute reduction in tokens (0 — use the percent).');
     L.Add('summarize_min_saving_tokens=' + IntToStr(C.SummarizeMinSavingTokens));
-    L.Add('# Loop-guard: repetitions of one tool call in a row that trigger a warning (0 — off).');
+    L.Add('; Loop-guard: repetitions of one tool call in a row that trigger a warning (0 — off).');
     L.Add('loop_warn=' + IntToStr(C.LoopWarn));
-    L.Add('# Loop-guard: repetitions of one tool call in a row that stop the turn (0 — off).');
+    L.Add('; Loop-guard: repetitions of one tool call in a row that stop the turn (0 — off).');
     L.Add('loop_stop=' + IntToStr(C.LoopStop));
     L.Add('');
     L.Add('[tools]');
-    L.Add('# One key per built-in tool: 1 enables the tool, 0 keeps it away from');
-    L.Add('# the model and makes its handler refuse to run.');
+    L.Add('; One key per built-in tool: 1 enables the tool, 0 keeps it away from');
+    L.Add('; the model and makes its handler refuse to run.');
     for I := 0 to ToolSwitchCount - 1 do
     begin
       Def := ToolSwitchAt(I);
-      L.Add('# ' + Def.Note);
+      L.Add('; ' + Def.Note);
       L.Add(Def.Name + '=' + BoolToStr(ToolEnabled(C, Def.Name), '1', '0'));
     end;
     L.Add('');
     L.Add('[workspace]');
     L.Add('shell_timeout=' + IntToStr(C.ShellTimeout));
-    L.Add('# Maximum output of the shell tool in bytes (0 — no limit).');
+    L.Add('; Maximum output of the shell tool in bytes (0 — no limit).');
     L.Add('shell_output_limit=' + IntToStr(C.ShellOutputLimit));
     L.Add('');
     L.Add('[mcp]');
-    L.Add('# Connect MCP servers from .mirmid/mcp.json (see config/mcp.json.example).');
+    L.Add('; Connect MCP servers from .mirmid/mcp.json (see config/mcp.json.example).');
     L.Add('enabled=' + BoolToStr(C.McpEnabled, '1', '0'));
-    L.Add('# Path to mcp.json; empty — look for ./.mirmid/mcp.json.');
+    L.Add('; Path to mcp.json; empty — look for ./.mirmid/mcp.json.');
     L.Add('config=' + C.McpConfig);
-    L.Add('# MCP server response timeout, seconds.');
+    L.Add('; MCP server response timeout, seconds.');
     L.Add('timeout=' + IntToStr(C.McpTimeout));
     if not EnsureParentDir(FileName) then
     begin

@@ -21,7 +21,7 @@ type
     function CountLines(const S: string): Integer;
     { True if the text has an LF that is not part of a CRLF pair. }
     function HasLoneLf(const S: string): Boolean;
-    { The middle truncation marker indented from the start of the line (task1.md):
+    { The middle truncation marker indented from the start of the line:
       the ellipsis is printed not from position zero but after SHORTEN_ELLIPSIS_INDENT
       spaces. }
     function Mark: string;
@@ -63,7 +63,7 @@ type
     procedure TestShortenLinesMiddleCRLF;
     procedure TestShortenLinesMiddleKeepsTrailingEol;
     procedure TestShortenLinesMiddleUTF8;
-    { TrimBlankLines: blank lines at the top and the bottom are removed (task1.md). }
+    { TrimBlankLines: blank lines at the top and the bottom are removed. }
     procedure TestTrimBlankLinesNoChange;
     procedure TestTrimBlankLinesEdges;
     procedure TestTrimBlankLinesKeepsInner;
@@ -198,7 +198,7 @@ var
   L: TStringList;
 begin
   { The marker separates the parts of tool output and must not sit at the start
-    of a line (task1.md): the ellipsis is printed after eight spaces (position 9). }
+    of a line: the ellipsis is printed after eight spaces (position 9). }
   S := JoinLines(['l1', 'l2', 'l3', 'l4', 'l5'], #10);
   Res := ShortenLinesMiddle(S, 3);
   L := TStringList.Create;
@@ -360,7 +360,7 @@ procedure TUtilTests.TestTrimBlankLinesBlankBeforeShorten;
 var
   S: string;
 begin
-  { Regression task1.md: blank lines are removed BEFORE truncation, otherwise the
+  { Regression: blank lines are removed BEFORE truncation, otherwise the
     line limit is spent on them and extra blank lines remain on the screen. }
   S := JoinLines(['', '', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9',
     'l10', '', ''], #10);
