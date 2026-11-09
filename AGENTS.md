@@ -2,9 +2,10 @@
 
 Console, open-source AI-agent harness written in **Free Pascal 3.2.2** and built
 either with GNU make (`Makefile`) or with **Lazarus 4.0** (`mirmid.lpi`). The
-agent talks to any OpenAI-compatible endpoint (`POST /chat/completions`, plus the
-Anthropic Messages API), calls tools on its own (files, shell, screen, MCP),
-keeps an interactive REPL and stores sessions on disk.
+agent talks to any OpenAI-compatible endpoint (`POST /chat/completions`, streaming
+and tool calls), calls tools on its own (files, shell, screen, MCP), keeps an
+interactive REPL and stores sessions on disk. A standalone Anthropic Messages API
+client lives in `mirmid.anthropic`, but it is not wired into the agent loop yet.
 
 This file is read into the system prompt of the root session on every reset, so
 keep it short: environment quirks, decisions and pitfalls go to
@@ -30,7 +31,7 @@ License: Apache-2.0.
   OS store; nothing else is configurable.
 - Never commit secrets, local INI files, sessions or build artefacts.
 
-## Repository state (2026-11-08, after the phase 2 input removal)
+## Repository state (2026-11-09, after the phase 5 documentation pass)
 
 The tree is no longer a docs-only scaffold: it builds and passes its suite
 (`make -B app test` -> 0 errors / 0 failures; the reference test count is the
@@ -41,16 +42,22 @@ latest dated entry in `context.md`).
   `fixtures/streamprobe.pas`, `rsa_test_vectors.txt`.
 - `Makefile`, `build.sh`, `mirmid.lpi`, `.gitmodules` — the last one declares the
   `deps/tls` submodule (`https://github.com/svetodar/tls.git`) but it is not
-  initialised yet, so the build currently falls back to `../tls`.
-- `config/` and `docs/` — placeholders (`.gitkeep`) only.
+  initialised in this checkout, so the build currently falls back to `../tls`.
+- `config/` — `mirmid.ini.example` (every section, including the full `[tools]`
+  table with the default of each key) and `mcp.json.example` (strict JSON,
+  `mcpServers`); no placeholders are left.
+- `docs/` — `index.md` plus the topic notes `architecture.md`, `planning.md`,
+  `anthropic.md`, `repository.md`, `roadmap.md`; no placeholders are left.
 - `bin/` and `build/` are git-ignored artefacts produced by `make app` and
   `make test`.
 - `.gitattributes` — text files are stored and checked out with LF
   (`* text=auto eol=lf`); keep it that way so `build.sh` stays runnable on Linux
   and no file drifts back to CRLF.
 
-Nothing of this cleanup is committed yet — everything is still untracked or
-modified in the working tree, so `git status` is the source of truth.
+The files under `config/` are reference examples, not live settings: the program
+reads `./.mirmid/mirmid.ini` and `./.mirmid/mcp.json`. `git status` is the source
+of truth for what is tracked, so check it instead of assuming a file is
+committed.
 
 ## Build and test
 
@@ -105,7 +112,7 @@ src/mirmid.lpr             program entry point
 src/mirmid.cli.pas         CLI, REPL, markdown rendering, status line
 src/mirmid.agent.pas       turn loop (model -> tools -> model), events
 src/mirmid.llm.pas         OpenAI-compatible client (streaming, tool_calls)
-src/mirmid.anthropic.pas   Anthropic Messages API client
+src/mirmid.anthropic.pas   Anthropic Messages API client (standalone unit)
 src/mirmid.http.pas        HTTP/1.1 transport
 src/mirmid.tlsclient.pas   thin wrapper over the tls library
 src/mirmid.tools.pas       registry, schemas, dispatch, enable/disable policy
@@ -129,22 +136,26 @@ src/mirmid.loopguard.pas   repeated-call detector
 src/mirmid.version.pas     program name and version
 tests/                     fpcunit suite (testrunner.lpr) + fixtures
 config/                    mirmid.ini.example, mcp.json.example
-docs/                      architecture and topic notes
-.mirmid/                   local settings, sessions, logs (git-ignored)
+docs/                      index.md and the topic notes (architecture, planning,
+                           anthropic, repository, roadmap)
+.mirmid/                   local settings, sessions, journal, logs (git-ignored)
 ```
 
-Layering: `mirmid.lpr` -> `mirmid.cli` -> `mirmid.agent` -> `mirmid.llm` /
-`mirmid.anthropic` -> `mirmid.http` -> `mirmid.tlsclient`. Tools are registered
-in one place (`RegisterBuiltinTools` in `mirmid.toolbuiltin`) and reached only
-through `mirmid.tools`.
+Layering: `mirmid.lpr` -> `mirmid.cli` -> `mirmid.agent` ->
+`mirmid.llm` -> `mirmid.http` -> `mirmid.tlsclient`. `mirmid.anthropic` is a
+standalone Messages API client: it reuses `mirmid.http` and the JSON layer, but
+nothing in the live chain (`mirmid.cli`, `mirmid.agent`, `mirmid.planner`,
+`mirmid.subagent`) calls it, so a change there is covered by unit tests only.
+Tools are registered in one place (`RegisterBuiltinTools` in
+`mirmid.toolbuiltin`) and reached only through `mirmid.tools`.
 
 ## Settings model
 
 All local state lives in `./.mirmid`: `mirmid.ini`, `mcp.json`,
-`sessions/*.json`, `logs/*.jsonl`. Auxiliary sessions of subagents and plan
-steps use the suffixes `*_sub_<n>.json`, `*_step_<id>.json`, `*_analysis.json`
-and are hidden from `--list-sessions`. File tools must refuse to enter
-`.mirmid`.
+`sessions/*.json`, `journal/*.jsonl` and `logs/*.jsonl`. Auxiliary sessions of
+subagents and plan steps use the suffixes `*_sub_<n>.json`, `*_step_<id>.json`,
+`*_analysis.json` and are hidden from `--list-sessions`. File tools must refuse
+to enter `.mirmid`.
 
 Every built-in tool is switched on or off in the INI file — one key per tool,
 `1`/`0`:
@@ -198,6 +209,11 @@ Rules for the `[tools]` section:
 - Decisions, environment quirks, measured test counts and mistakes go into
   `context.md` with a date and the verification result; user-visible behaviour
   changes also update `README.md`.
+- A new or renamed setting touches four places in the same change:
+  `DefaultConfig` in `mirmid.types` (tool defaults: `TOOL_SWITCHES` in
+  `mirmid.tools`), `SaveSampleIni` (what `--init` writes),
+  `config/mirmid.ini.example` and the settings section of `README.md`; the key
+  set of the example must stay identical to the `--init` output.
 
 ## Common pitfalls (details in context.md)
 

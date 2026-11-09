@@ -1,0 +1,134 @@
+; mirmid configuration example.
+;
+; Copy this file to .mirmid/mirmid.ini of the working folder, or let
+; `mirmid --init` write the file and edit the values in place. Every local
+; file of the harness - settings, MCP servers, sessions and logs - lives in
+; ./.mirmid, which is never entered by the file tools.
+;
+; Format: "key=value" pairs under square-bracket sections. Only a line starting
+; with ";" is a comment; "#" is not, and a "#" line containing "=" inside
+; [tools] is read as a tool key and fails startup. [tools] keys and MIRMID_*
+; environment variables accept 1/0, true/false, yes/no and on/off; stream, plan,
+; verbose and mcp.enabled accept only 1 (on) or 0 (off), because any other value
+; reads as off. Numbers always use a dot as the decimal separator, so the file
+; stays portable across locales.
+;
+; Most settings can be overridden by environment variables: MIRMID_BASE_URL,
+; MIRMID_API_KEY, MIRMID_MODEL, MIRMID_TEMPERATURE, MIRMID_REASONING,
+; MIRMID_STREAM, MIRMID_PLAN, MIRMID_CONTEXT_WINDOW, MIRMID_MCP,
+; MIRMID_MCP_CONFIG, MIRMID_MCP_TIMEOUT.
+
+[llm]
+; Base URL of an OpenAI-compatible API (POST /chat/completions), no trailing
+; slash. A local server usually listens on 127.0.0.1.
+base_url=http://127.0.0.1:1234/v1
+; API key literally, or "&NAME" of an environment variable holding it, for
+; example api_key=&MY_API_KEY. Any other string is taken as a literal key; the
+; expanded value is never written back to the file.
+api_key=
+; Model name as the endpoint knows it.
+model=
+; Sampling temperature. It is parsed with the dot, not the locale comma.
+temperature=0.1
+; Maximum number of tokens in one answer.
+max_tokens=32768
+; reasoning_effort for reasoning models: none, minimal, low, medium or high.
+; Empty - the parameter is not sent.
+reasoning=
+; Stream the answer over server-sent events (1) or wait for the whole body (0).
+stream=1
+; Model context size in tokens. Together with the value reported by the host it
+; drives auto-summarisation and the context indicator of the status line.
+context_window=128000
+; Overall HTTP request timeout, seconds.
+timeout=1800
+; Connection timeout, seconds.
+connect_timeout=10
+
+[agent]
+; Limit of "model -> tools" iterations per turn (0 - unlimited).
+max_steps=0
+; Plan mode: plan -> steps -> report (0 - off, 1 - on).
+plan=0
+; Step budget: limit of "model -> tools" iterations per step (0 - no limit).
+plan_step_max_steps=0
+; Retries of a plan step after an abnormal result, passing the failure cause
+; into the prompt (0 - do not retry).
+plan_step_fix_attempts=1
+; Maximum number of steps in the plan itself (0 - no limit).
+plan_max_step=0
+; System prompt of the root session; it is read into the context on every reset.
+; The value below is the built-in default.
+system_prompt=You are mirmid, a careful AI agent on the user's local machine. Reply in the same language the user writes in, briefly and to the point. Use the provided tools to work with files and commands. Read first, then change. Do not invent file contents.
+; Verbose output: tool arguments, timings and extra status lines.
+verbose=0
+; Maximum number of tool output lines on screen: the middle is cut out into an
+; indented "..." line (0 - no limit).
+tool_output_lines=9
+; Auto-summarisation threshold: % of context fill (0 - off).
+summarize_threshold_percent=90
+; Auto-summarisation threshold: absolute value in tokens (0 - use the percent).
+summarize_threshold_tokens=0
+; Minimum % of context reduction for a summary to be effective.
+summarize_min_saving_percent=50
+; Minimum absolute reduction in tokens (0 - use the percent).
+summarize_min_saving_tokens=0
+; Loop-guard: repetitions of one tool call in a row that trigger a warning (0 - off).
+loop_warn=3
+; Loop-guard: repetitions of one tool call in a row that stop the turn (0 - off).
+loop_stop=5
+
+[tools]
+; One key per built-in tool: 1 enables the tool, 0 keeps it away from the model
+; and makes its handler refuse to run. The set of keys below is the registry:
+; an unknown or duplicate key is a startup error, so a typo never silently
+; changes a default. Tools served by MCP servers appear as
+; mcp__<server>__<tool> and are governed by the [mcp] section instead.
+; read-only: list files and directories
+file_list=1
+; read-only: check whether a path exists
+exist_file=1
+; read-only: read a text file with its hash header
+read_text_file=1
+; read-only: read the interface section of a Pascal unit
+read_pascal_interface=1
+; read-only: search a substring in text files
+grep=1
+; read-only: list open windows
+list_windows=1
+; read-only: find a window by title or class
+find_window=1
+; read-only: window details and child controls
+window_info=1
+; writes files: create a file or replace a line range
+edit_text_file=0
+; writes files: copy a file
+copy_file=0
+; runs commands: execute a shell command
+shell=0
+; network: perform an HTTP request
+http_request=0
+; nested session: run a separate agent session
+subagent=0
+; reads binary media: image, audio and video info
+read_media_file=0
+; writes an image: capture the whole screen
+screen_shoot=0
+; writes an image: capture the active window
+window_shoot=0
+; plan revision while the plan mode is on
+revise_plan=1
+
+[workspace]
+; Timeout of one shell command, seconds (0 - no limit).
+shell_timeout=60
+; Maximum output of the shell tool in bytes (0 - no limit).
+shell_output_limit=65536
+
+[mcp]
+; Connect the MCP servers described in mcp.json (see config/mcp.json.example).
+enabled=1
+; Path to mcp.json; empty - look for <workdir>/.mirmid/mcp.json.
+config=
+; MCP server answer timeout, seconds.
+timeout=60

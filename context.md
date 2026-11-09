@@ -350,3 +350,104 @@ files came back with CRLF and were normalised to LF (`perl -pi -e
 
 Left for P5: `config/mirmid.ini.example`, `config/mcp.json.example` and
 `docs/` (placeholder `.gitkeep` files today).
+
+## 2026-11-09 — phase 5 result (documentation and example configs)
+
+Scope: `README.md` rewritten from the scaffold (purpose, feature list,
+Windows/Linux build, the settings sections including the full `[tools]` table,
+the `.mirmid` layout, MCP and the license); `docs/` replaced its placeholder
+with `index.md` (68 lines) plus the topic notes `architecture.md` (321),
+`planning.md` (258), `anthropic.md` (263), `repository.md` (222) and
+`roadmap.md` (365); `config/` replaced its placeholder with
+`mirmid.ini.example` (131 lines) and `mcp.json.example` (25 lines / 430 bytes);
+`AGENTS.md` now describes the phase 5 tree and the standalone Anthropic client.
+`docs/.gitkeep` and `config/.gitkeep` are deleted; no placeholders remain.
+
+Verification (all commands run in `C:\ai\git\mirmid` on 2026-11-09):
+
+- `make -B app test` → **467 tests run, 0 errors, 0 failures**, exit code 0 —
+  the documentation pass changed no code, so the P4 reference count stands.
+- `bin\mirmid.exe --version` → `mirmid 0.1.0`; `--help` prints the full usage
+  (Model/Agent/Tools/MCP/Sessions, `--init`, `--list-mcp`, `--plan`), exit 0.
+- `--init` in the git-ignored scratch dir `build/p5-init` wrote
+  `.mirmid\mirmid.ini` with **46 `section.key` pairs**; compared against
+  `config/mirmid.ini.example` the key sets, their order and all 46 values are
+  identical (only comments differ), so the example matches what `--init`
+  emits, as the settings rule requires.
+- `config/mcp.json.example` is strict JSON (no comments): two independent
+  parsers (`node -e "JSON.parse(...)"` and PowerShell `ConvertFrom-Json`)
+  return one root key `mcpServers` with the `filesystem` and `memory` entries;
+  the file is valid UTF-8.
+- No Cyrillic: `LC_ALL=C.UTF-8 git grep -nP '[\u0400-\u04FF]'` over the
+  tracked tree returns exit 1 (no matches); the same check over the new
+  `docs/*.md` and `config/*.example` also finds nothing.
+- No removed feature is described as existing. A case-insensitive search still
+  finds the excluded names only in the ground rules of `AGENTS.md`, in this
+  historical log and in the rejection tests of `tests/test_cli.pas`; the new
+  docs and examples do not mention them as capabilities.
+- Line endings: every new and edited file is LF; 5 files came back with CRLF
+  from `edit_text_file` (`README.md`, `AGENTS.md`, `docs/anthropic.md`,
+  `docs/roadmap.md`, `config/mirmid.ini.example`) and were normalised with
+  `perl -pi -e 's/\r\n/\n/'`, per `.gitattributes`.
+- Encoding: `docs/planning.md`, `docs/architecture.md`, `docs/anthropic.md`,
+  `docs/repository.md`, `docs/roadmap.md` and both examples are pure ASCII;
+  `README.md`, `AGENTS.md` and `docs/index.md` are UTF-8 and keep non-ASCII
+  typography (em dash, arrows, ellipsis) on purpose — layout, not a locale.
+
+Open observations for the remaining P5 steps:
+
+- `plan.md` is still untracked and must stay out of the commit, as must any
+  `task*.md` scratch file; `git status` is the source of truth for the file
+  list of the commit.
+- Independent review of the P5 diff returned **changes required**; the findings
+  are fixed in the follow-up entry below. The commit itself is still pending.
+- `deps/tls` is still an uninitialised submodule in this checkout, so the build
+  falls back to `../tls`; `repository.md` and `README.md` document the
+  `TLS_DIR` override and the embedded-roots `roots` goal.
+- `mirmid.anthropic` remains a standalone unit: `README.md`, `AGENTS.md` and
+  `docs/anthropic.md` all say it is not called by the CLI, the agent loop, the
+  planner or the subagent, so any change there is covered by unit tests only.
+
+## 2026-11-09 — phase 5 review follow-up (documentation findings fixed)
+
+An independent subagent reviewed the P5 diff and returned **changes required**
+(3 blocking, 12 non-blocking findings: two wrong claims in the INI header and
+one wrong file pointer). All are fixed; the change set is documentation and
+examples only, so the suite stays at **467 / 0 / 0**.
+
+Blocking findings:
+
+- `config/mirmid.ini.example` promised `true/false/yes/no/on/off` for every
+  Boolean key and `#` comments. `TCustomIniFile.ReadBool` reads only `1` as
+  true (`CharToBool`, `inifiles.pp`) for `llm.stream`, `agent.plan`,
+  `agent.verbose` and `mcp.enabled`, and `Comment` is `;` only: a `#` line with
+  `=` inside `[tools]` is a tool key and aborts startup. The header, the
+  `[tools]` note and `README.md` now state the exact rules.
+- `docs/repository.md` "Where to add what" sent a new `[tools]` key to
+  `mirmid.config.pas`. The registry is `TOOL_SWITCHES` in `mirmid.tools.pas`;
+  `mirmid.config` only validates it and writes the sample (`SaveSampleIni`).
+  Defaults belong to `DefaultConfig` in `mirmid.types.pas`.
+
+Non-blocking findings fixed in the same pass:
+
+- Dependency graphs in `docs/index.md` and `docs/repository.md`, and the status
+  bullet in `docs/anthropic.md`, mark `mirmid.anthropic` as standalone instead
+  of an edge from `mirmid.agent`; `docs/architecture.md` splits
+  `RegisterBuiltinTools` from `RegisterGuiTools`.
+- `README.md` `.mirmid` layout gained `logs/`; `AGENTS.md` lists
+  `journal/*.jsonl`. The make-target lists in `README.md`, `docs/index.md` and
+  `docs/repository.md` now all include `make`/`all` and `tls-dir`.
+- `docs/repository.md` notes that `deps/tls` is uninitialised in a fresh
+  checkout and that units, not the executable, go to `build/lib`; the
+  `build.sh` description in `README.md` matches the script.
+- `docs/anthropic.md` says the client timeouts are fixed private fields fed by
+  no INI key (the `[llm]` timeouts belong to the OpenAI client) and gives the
+  real `BuildRequestJson` field order.
+- `docs/planning.md` states that its ASCII `-` stands for the em dash
+  (`U+2014`) in the planner texts it quotes.
+- `docs/repository.md` phrases the excluded features without repeating the
+  literal forbidden names; this entry narrows the earlier "no forbidden strings"
+  claim to "no removed feature is described as existing".
+- New roadmap item 7.2: a duplicated `[tools]` section is not diagnosed because
+  `TIniFile.ReadSection` reads one section, so the "unknown key aborts startup"
+  rule has a blind spot.
