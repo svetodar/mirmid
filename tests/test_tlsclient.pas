@@ -1,26 +1,26 @@
 unit test_tlsclient;
-{ Тесты выбора источника trust store (mirmid.tlsclient.SelectTrustStore) и
-  встроенного снимка корней (tls.roots через обёртки mirmid.tlsclient).
+{ Tests of the trust store source selection (mirmid.tlsclient.SelectTrustStore)
+  and of the embedded root snapshot (tls.roots via the mirmid.tlsclient wrappers).
 
-  Первая группа проверяет чистую функцию SelectTrustStore: она не трогает
-  ФС/окружение/платформу, поэтому все сочетания проверяются флагами без сети
-  и без реальных файлов.
+  The first group checks the pure function SelectTrustStore: it does not touch
+  the file system, the environment or the platform, so all combinations are
+  checked with flags - no network, no real files.
 
-  Политика доверия (см. src/mirmid.tlsclient.pas): встроенный снимок корней
-  (tls.roots), при его отсутствии — системное хранилище ОС (только Windows),
-  иначе ошибка. Внешний PEM-бандл не подключается: соответствующей настройки нет, а
-  автопоиска ca-bundle.pem (рядом с exe, Git for Windows, /etc/ssl) нет,
-  поэтому DefaultCaFile в API отсутствует.
+  Trust policy (see src/mirmid.tlsclient.pas): the embedded root snapshot
+  (tls.roots); when it is missing, the OS store (Windows only); otherwise an
+  error. No external PEM bundle is supported: there is no such setting, and
+  there is no auto-discovery of ca-bundle.pem (next to the exe, Git for
+  Windows, /etc/ssl), so the API has no DefaultCaFile.
 
-  Вторая группа смотрит на настоящий артефакт сборки — снимок корней,
-  вкомпилированный в exe (RT_RCDATA, `make roots`): стор непустой, известный
-  публичный корень (ISRG Root X1) находится по CN и совпадает по
-  SubjectKeyIdentifier, дата снимка лежит без времени суток и не в будущем, а
-  диагностика GetEmbeddedRootsInfo сообщает доступность, сохраняет запрошенный
-  порог устаревания, помечает снимок устаревшим только по этому порогу и
-  отвергает отрицательный порог. Как и в tests/test_roots.pas библиотеки tls,
-  при сборке с -dTLS_NO_EMBEDDED_ROOTS эти случаи не компилируются: ресурса в
-  exe тогда нет. }
+  The second group looks at a real build artefact - the root snapshot
+  compiled into the exe (RT_RCDATA, `make roots`): the store is not empty, a
+  known public root (ISRG Root X1) is found by CN and matches by
+  SubjectKeyIdentifier, the snapshot date has no time of day and is not in the
+  future, and the GetEmbeddedRootsInfo diagnostics report availability, keep the
+  requested staleness threshold, mark the snapshot stale only by that threshold
+  and reject a negative threshold. As in the tls library tests/test_roots.pas,
+  when building with -dTLS_NO_EMBEDDED_ROOTS these cases do not compile: the
+  resource is absent from the exe. }
 
 {$mode objfpc}{$H+}
 
@@ -36,7 +36,7 @@ type
     procedure TestSystemStoreWhenEmbeddedMissing;
     procedure TestNoStoreAtAll;
 {$ifndef TLS_NO_EMBEDDED_ROOTS}
-    { --- Встроенный снимок корней (tls.roots) --- }
+    { --- Embedded root snapshot (tls.roots) --- }
     procedure TestEmbeddedRootsCount;
     procedure TestEmbeddedRootsKnownRoot;
     procedure TestEmbeddedRootsDate;
@@ -52,46 +52,46 @@ uses
   SysUtils,
   tls.roots, tls.certstore, tls.x509;
 
-{ Встроенный снимок важнее системного хранилища: проверка не зависит от
-  состояния ОС. }
+{ The embedded snapshot wins over the system store: the check does not
+  depend on the state of the OS. }
 procedure TTlsClientTests.TestEmbeddedWinsOverSystemStore;
 begin
-  AssertEquals('снимок корней — tssEmbedded', Ord(tssEmbedded),
+  AssertEquals('root snapshot is tssEmbedded', Ord(tssEmbedded),
     Ord(SelectTrustStore(True, True)));
-  AssertEquals('снимок корней без системного хранилища', Ord(tssEmbedded),
+  AssertEquals('root snapshot without a system store', Ord(tssEmbedded),
     Ord(SelectTrustStore(True, False)));
 end;
 
-{ Сборка без tlsroots.res (или -dTLS_NO_EMBEDDED_ROOTS): остаётся системное
-  хранилище ОС. }
+{ A build without tlsroots.res (or with -dTLS_NO_EMBEDDED_ROOTS): the system
+  OS store is used instead. }
 procedure TTlsClientTests.TestSystemStoreWhenEmbeddedMissing;
 begin
-  AssertEquals('снимка нет — системное хранилище', Ord(tssSystem),
+  AssertEquals('no snapshot - system store', Ord(tssSystem),
     Ord(SelectTrustStore(False, True)));
 end;
 
-{ Ни снимка, ни системного хранилища: проверять цепочку нечем — tssMissing,
-  вызывающий превращает это в ошибку. }
+{ Neither a snapshot nor a system store: there is nothing to verify a chain
+  with - tssMissing, which the caller turns into an error. }
 procedure TTlsClientTests.TestNoStoreAtAll;
 begin
-  AssertEquals('ни снимка, ни системного хранилища — tssMissing',
+  AssertEquals('neither snapshot nor system store - tssMissing',
     Ord(tssMissing), Ord(SelectTrustStore(False, False)));
 end;
 
 {$ifndef TLS_NO_EMBEDDED_ROOTS}
 
 const
-  { Имя атрибута Subject по X.520 (RFC 4514): CN = 2.5.4.3. }
+  { Subject attribute name per X.520 (RFC 4514): CN = 2.5.4.3. }
   OID_COMMON_NAME = '2.5.4.3';
-  { ISRG Root X1 — корень Let's Encrypt, он есть в снимке certifi. CN и
-    SubjectKeyIdentifier — свойства самого сертификата, а не этой сборки,
-    поэтому константы переживают обновление снимка (те же значения
-    закреплены в tests/test_roots.pas библиотеки tls). }
+  { ISRG Root X1 is the Let's Encrypt root and is present in the certifi
+    snapshot. CN and SubjectKeyIdentifier are properties of the certificate
+    itself, not of this build, so the constants survive a snapshot update (the
+    same values are pinned in the tls library tests/test_roots.pas). }
   ISRG_ROOT_X1_CN = 'ISRG Root X1';
   ISRG_ROOT_X1_SKI = '79b459e67bb6e5e40173800888c81a58f6e99b6e';
 
-{ Нижний регистр hex — форма, в которой tls.x509 отдаёт SKI (и в которой
-  опубликован отпечаток ISRG Root X1). }
+{ Lowercase hex is the form in which tls.x509 returns the SKI (and in which
+  the published ISRG Root X1 fingerprint is given). }
 function HexOf(const AData: TBytes): string;
 var
   I: Integer;
@@ -101,9 +101,10 @@ begin
     Result := Result + LowerCase(Format('%.2x', [AData[I]]));
 end;
 
-{ Первый сертификат стора с CN = ACN, nil — если такого нет. Стор индексирует
-  Subject и SKI целиком, но не отдельные атрибуты, поэтому известный корень
-  ищется перебором — так же, как в tests/test_roots.pas библиотеки tls. }
+{ The first store certificate with CN = ACN, nil if there is none. The store
+  indexes Subject and SKI as a whole but not individual attributes, so a known
+  root is searched by iteration - the same way as in the tls library
+  tests/test_roots.pas. }
 function FindByCommonName(const AStore: TCertStore;
   const ACN: string): TX509Cert;
 var
@@ -123,11 +124,11 @@ procedure TTlsClientTests.TestEmbeddedRootsCount;
 var
   Store: TCertStore;
 begin
-  { Стор принадлежит юниту tls.roots и кэшируется там: вызывающий его не
-    освобождает. }
+  { The store belongs to the tls.roots unit and is cached there: the caller
+    does not free it. }
   Store := EmbeddedRoots;
-  AssertNotNull('EmbeddedRoots вернул nil', Store);
-  AssertTrue('встроенный снимок корней не должен быть пустым',
+  AssertNotNull('EmbeddedRoots returned nil', Store);
+  AssertTrue('the embedded root snapshot must not be empty',
     Store.Count > 0);
 end;
 
@@ -138,13 +139,13 @@ var
 begin
   Store := EmbeddedRoots;
   Cert := FindByCommonName(Store, ISRG_ROOT_X1_CN);
-  AssertNotNull('в снимке нет известного корня ISRG Root X1', Cert);
+  AssertNotNull('the snapshot has no known root ISRG Root X1', Cert);
   AssertEquals('SubjectKeyIdentifier ISRG Root X1', ISRG_ROOT_X1_SKI,
     HexOf(Cert.GetSubjectKeyIdentifier));
-  AssertTrue('ISRG Root X1 должен быть CA', Cert.GetBasicConstraints.IsCA);
-  { Индекс Subject тоже обязан находить этот корень — по нему ходит
-    VerifyChain при построении цепочки. }
-  AssertTrue('корень должен находиться по Subject',
+  AssertTrue('ISRG Root X1 must be a CA', Cert.GetBasicConstraints.IsCA);
+  { The Subject index must find this root too - VerifyChain walks it when
+    building the chain. }
+  AssertTrue('the root must be found by Subject',
     Cert = Store.FindBySubject(Cert.Subject.ToNameString));
 end;
 
@@ -154,14 +155,14 @@ var
   D: TDateTime;
 begin
   D := EmbeddedRootsDate;
-  AssertTrue('дата снимка должна быть положительной', D > 0);
-  AssertTrue('дата снимка должна быть без времени суток', Frac(D) = 0);
-  AssertTrue('дата снимка не должна быть в будущем', D < Now + 1);
+  AssertTrue('the snapshot date must be positive', D > 0);
+  AssertTrue('the snapshot date must have no time of day', Frac(D) = 0);
+  AssertTrue('the snapshot date must not be in the future', D < Now + 1);
 
-  { Диагностика читает ту же дату из того же кэша tls.roots. }
+  { The diagnostics read the same date from the same tls.roots cache. }
   Info := GetEmbeddedRootsInfo;
-  AssertTrue('снимок должен быть доступен', Info.Available);
-  AssertEquals('EmbeddedRootsDate и SnapshotDate из GetEmbeddedRootsInfo',
+  AssertTrue('the snapshot must be available', Info.Available);
+  AssertEquals('EmbeddedRootsDate and SnapshotDate from GetEmbeddedRootsInfo',
     FormatDateTime('yyyy-mm-dd', D),
     FormatDateTime('yyyy-mm-dd', Info.SnapshotDate));
 end;
@@ -171,42 +172,42 @@ var
   Info: TEmbeddedRootsInfo;
 begin
   Info := GetEmbeddedRootsInfo;
-  AssertTrue('встроенный снимок должен быть доступен', Info.Available);
-  AssertEquals('причина недоступности', '', Info.ErrText);
-  AssertEquals('порог устаревания по умолчанию',
+  AssertTrue('the embedded snapshot must be available', Info.Available);
+  AssertEquals('unavailability reason', '', Info.ErrText);
+  AssertEquals('default staleness threshold',
     EMBEDDED_ROOTS_MAX_AGE_DAYS, Info.MaxAgeDays);
-  AssertTrue('дата снимка прочитана', Info.SnapshotDate > 0);
+  AssertTrue('the snapshot date was read', Info.SnapshotDate > 0);
 end;
 
 procedure TTlsClientTests.TestEmbeddedRootsInfoStaleByThreshold;
 var
   Info0, Info: TEmbeddedRootsInfo;
 begin
-  { Порог 0 дней: дата снимка — полночь, а сейчас позже неё, поэтому возраст
-    больше нуля и снимок помечается устаревшим. Ожидание не зависит от того,
-    когда снят снимок, если только он не датирован будущим
+  { Threshold of 0 days: the snapshot date is midnight and now is later than
+    it, so the age is greater than zero and the snapshot is marked stale. The
+    expectation does not depend on when the snapshot was taken, unless it is dated
     (TestEmbeddedRootsDate). }
   Info0 := GetEmbeddedRootsInfo(0);
-  AssertTrue('порог 0 дней — снимок устарел', Info0.Stale);
-  AssertEquals('запрошенный порог 0 сохранён в Info', 0, Info0.MaxAgeDays);
-  AssertEquals('причина недоступности', '', Info0.ErrText);
+  AssertTrue('threshold 0 days - snapshot is stale', Info0.Stale);
+  AssertEquals('the requested threshold 0 is kept in Info', 0, Info0.MaxAgeDays);
+  AssertEquals('unavailability reason', '', Info0.ErrText);
 
-  { Порог 100 лет: ни один снимок не бывает настолько старым, флага нет. }
+  { Threshold of 100 years: no snapshot is that old, so there is no stale flag. }
   Info := GetEmbeddedRootsInfo(36500);
-  AssertFalse('порог 100 лет — снимок не устарел', Info.Stale);
-  AssertEquals('запрошенный порог 36500 сохранён в Info',
+  AssertFalse('threshold 100 years - snapshot is not stale', Info.Stale);
+  AssertEquals('the requested threshold 36500 is kept in Info',
     36500, Info.MaxAgeDays);
-  AssertEquals('причина недоступности', '', Info.ErrText);
+  AssertEquals('unavailability reason', '', Info.ErrText);
 end;
 
 procedure TTlsClientTests.TestEmbeddedRootsInfoRejectsNegativeAge;
 begin
   try
     GetEmbeddedRootsInfo(-1);
-    Fail('отрицательный порог устаревания должен быть отвергнут');
+    Fail('a negative staleness threshold must be rejected');
   except
     on E: EArgumentOutOfRangeException do
-      AssertTrue('исключение должно называть AMaxAgeDays',
+      AssertTrue('the exception must name AMaxAgeDays',
         Pos('AMaxAgeDays', E.Message) > 0);
   end;
 end;

@@ -1,7 +1,7 @@
 unit test_mcp;
-{ Тесты поддержки MCP: имена инструментов, JSON-RPC клиент (на подставном
-  транспорте), менеджер серверов, разбор mcp.json и интеграция с реальным
-  процессом-сервером bin/fakemcp. }
+{ Tests of MCP support: tool names, the JSON-RPC client (over a fake
+  transport), the server manager, mcp.json parsing and integration with a
+  real server process, bin/fakemcp. }
 
 {$mode objfpc}{$H+}
 
@@ -11,7 +11,7 @@ uses
   Classes, fpcunit, testregistry, mirmid.tools, mirmid.mcp;
 
 type
-  { Подставной транспорт: отвечает на запросы без процесса. }
+  { Fake transport: answers requests without a process. }
   TFakeTransport = class(TMCPTransport)
   private
     FQueue: TStringList;
@@ -102,19 +102,19 @@ begin
   Result := TJSONArray.Create;
   O := TJSONObject.Create;
   O.Add('name', 'echo');
-  O.Add('description', 'Повторяет текст');
+  O.Add('description', 'Echoes the text');
   O.Add('inputSchema', FakeSchema('text'));
   Result.Add(O);
 
   O := TJSONObject.Create;
   O.Add('name', 'boom');
-  O.Add('description', 'Ошибка инструмента');
+  O.Add('description', 'Tool error');
   O.Add('inputSchema', FakeSchema(''));
   Result.Add(O);
 
   O := TJSONObject.Create;
   O.Add('name', 'fail');
-  O.Add('description', 'Ошибка JSON-RPC');
+  O.Add('description', 'JSON-RPC error');
   O.Add('inputSchema', FakeSchema(''));
   Result.Add(O);
 end;
@@ -148,7 +148,7 @@ begin
   try
     Method := JStr(D, 'method', '');
     if Method = 'notifications/initialized' then
-      Exit;   { уведомление — ответа нет }
+      Exit;   { notification - no response }
     Id := JInt(D, 'id', 0);
 
     O := TJSONObject.Create;
@@ -174,9 +174,9 @@ begin
       TName := JStr(D, 'params.name', '');
       if TName = 'fail' then
       begin
-        { Через переменную: прямой литерал в Add с UTF8String-параметром
-          теряет кодировку при компиляции. }
-        EMsg := 'внутренняя ошибка';
+        { Through a variable: a direct literal in Add with a UTF8String
+          parameter loses its encoding at compile time. }
+        EMsg := 'internal error';
         ErrO := TJSONObject.Create;
         ErrO.Add('code', -32603);
         ErrO.Add('message', EMsg);
@@ -185,9 +185,9 @@ begin
       else if TName = 'echo' then
         O.Add('result', FakeTextContent(JStr(D, 'params.arguments.text', ''), False))
       else if TName = 'boom' then
-        O.Add('result', FakeTextContent('что-то пошло не так', True))
+        O.Add('result', FakeTextContent('something went wrong', True))
       else
-        O.Add('result', FakeTextContent('неизвестный инструмент', True));
+        O.Add('result', FakeTextContent('unknown tool', True));
     end
     else
     begin
@@ -211,7 +211,7 @@ begin
   Err := '';
   if FQueue.Count = 0 then
   begin
-    Err := 'нет ответа (подставной транспорт)';
+    Err := 'no response (fake transport)';
     Exit(False);
   end;
   Line := FQueue[0];
@@ -238,17 +238,17 @@ end;
 
 procedure TMcpTests.TestSanitizeName;
 begin
-  AssertEquals('пробелы и знаки', 'my_server_a-b', MCPSanitizeName('my server/a-b'));
-  AssertEquals('пустое имя', 'x', MCPSanitizeName(''));
-  { Замена идёт по байтам UTF-8: «тест» — 8 байт, все внедопустимы. }
-  AssertEquals('кириллица', '________', MCPSanitizeName('тест'));
+  AssertEquals('spaces and punctuation', 'my_server_a-b', MCPSanitizeName('my server/a-b'));
+  AssertEquals('empty name', 'x', MCPSanitizeName(''));
+  { The replacement works byte-wise on UTF-8: "grüße" is 7 bytes, none allowed. }
+  AssertEquals('multi-byte UTF-8', 'gr____e', MCPSanitizeName('grüße'));
 end;
 
 procedure TMcpTests.TestFullToolName;
 begin
-  AssertEquals('полное имя', 'mcp__demo__echo',
+  AssertEquals('full name', 'mcp__demo__echo',
     MCPFullToolName('demo', 'echo'));
-  AssertEquals('недопустимые символы заменены', 'mcp__my_srv__a_b',
+  AssertEquals('invalid characters replaced', 'mcp__my_srv__a_b',
     MCPFullToolName('my srv', 'a.b'));
 end;
 
@@ -261,11 +261,11 @@ begin
   C := TMCPClient.Create('fake', TFakeTransport.Create, 5);
   try
     AssertTrue('initialize', C.Initialize(Err));
-    AssertEquals('имя сервера', 'fake', C.ServerInfo);
+    AssertEquals('server name', 'fake', C.ServerInfo);
     AssertTrue('tools/list', C.ListTools(Tools, Err));
     try
-      AssertEquals('число инструментов', 3, Tools.Count);
-      AssertEquals('первый инструмент', 'echo', JStr(Tools.Items[0], 'name', ''));
+      AssertEquals('tool count', 3, Tools.Count);
+      AssertEquals('first tool', 'echo', JStr(Tools.Items[0], 'name', ''));
     finally
       Tools.Free;
     end;
@@ -283,9 +283,9 @@ begin
   C := TMCPClient.Create('fake', TFakeTransport.Create, 5);
   try
     AssertTrue('initialize', C.Initialize(Err));
-    AssertTrue('tools/call', C.CallTool('echo', '{"text":"привет"}', Text, IsErr, Err));
-    AssertFalse('не ошибка', IsErr);
-    AssertEquals('текст ответа', 'привет', Text);
+    AssertTrue('tools/call', C.CallTool('echo', '{"text":"grüße"}', Text, IsErr, Err));
+    AssertFalse('no error', IsErr);
+    AssertEquals('answer text', 'grüße', Text);
   finally
     C.Free;
   end;
@@ -302,7 +302,7 @@ begin
     AssertTrue('initialize', C.Initialize(Err));
     AssertTrue('tools/call', C.CallTool('boom', '{}', Text, IsErr, Err));
     AssertTrue('isError', IsErr);
-    AssertEquals('текст ошибки', 'что-то пошло не так', Text);
+    AssertEquals('error text', 'something went wrong', Text);
   finally
     C.Free;
   end;
@@ -317,9 +317,9 @@ begin
   C := TMCPClient.Create('fake', TFakeTransport.Create, 5);
   try
     AssertTrue('initialize', C.Initialize(Err));
-    AssertFalse('ответ не получен', C.CallTool('fail', '{}', Text, IsErr, Err));
-    AssertTrue('есть сообщение об ошибке: ' + Err,
-      Pos('внутренняя ошибка', Err) > 0);
+    AssertFalse('no response received', C.CallTool('fail', '{}', Text, IsErr, Err));
+    AssertTrue('there is an error message: ' + Err,
+      Pos('internal error', Err) > 0);
   finally
     C.Free;
   end;
@@ -335,12 +335,12 @@ begin
   Reg := TToolRegistry.Create;
   Mcp := TMCPManager.Create(Reg, 5);
   try
-    AssertTrue('сервер добавлен', Mcp.AddServer('fake', TFakeTransport.Create, Err));
-    AssertEquals('число инструментов', 3, Mcp.ToolCount);
-    AssertTrue('инструмент в реестре', Reg.Has('mcp__fake__echo'));
+    AssertTrue('server added', Mcp.AddServer('fake', TFakeTransport.Create, Err));
+    AssertEquals('tool count', 3, Mcp.ToolCount);
+    AssertTrue('tool in the registry', Reg.Has('mcp__fake__echo'));
     O := Reg.Invoke('mcp__fake__echo', '{"text":"ok"}', MakeToolContext(DefaultConfig));
-    AssertFalse('без ошибки', O.IsError);
-    AssertEquals('результат', 'ok', O.Text);
+    AssertFalse('no error', O.IsError);
+    AssertEquals('result', 'ok', O.Text);
   finally
     Mcp.Free;
     Reg.Free;
@@ -357,10 +357,10 @@ begin
   Reg := TToolRegistry.Create;
   Mcp := TMCPManager.Create(Reg, 5);
   try
-    AssertTrue('сервер добавлен', Mcp.AddServer('fake', TFakeTransport.Create, Err));
+    AssertTrue('server added', Mcp.AddServer('fake', TFakeTransport.Create, Err));
     O := Reg.Invoke('mcp__fake__boom', '{}', MakeToolContext(DefaultConfig));
-    AssertTrue('ошибка инструмента', O.IsError);
-    AssertTrue('текст ошибки', Pos('пошло не так', O.Text) > 0);
+    AssertTrue('tool error', O.IsError);
+    AssertTrue('error text', Pos('went wrong', O.Text) > 0);
   finally
     Mcp.Free;
     Reg.Free;
@@ -377,10 +377,10 @@ begin
   Reg := TToolRegistry.Create;
   Mcp := TMCPManager.Create(Reg, 5);
   try
-    AssertTrue('сервер добавлен', Mcp.AddServer('fake', TFakeTransport.Create, Err));
+    AssertTrue('server added', Mcp.AddServer('fake', TFakeTransport.Create, Err));
     O := Reg.Invoke('mcp__fake__fail', '{}', MakeToolContext(DefaultConfig));
-    AssertTrue('ошибка протокола', O.IsError);
-    AssertTrue('сообщение об ошибке', Pos('ошибка MCP', O.Text) > 0);
+    AssertTrue('protocol error', O.IsError);
+    AssertTrue('error message', Pos('MCP error', O.Text) > 0);
   finally
     Mcp.Free;
     Reg.Free;
@@ -398,9 +398,9 @@ begin
   W := TStringList.Create;
   try
     Mcp.LoadFromFile('/nonexistent/mirmid/mcp.json', W);
-    AssertEquals('инструментов нет', 0, Mcp.ToolCount);
-    AssertTrue('есть предупреждение', W.Count > 0);
-    AssertTrue('про файл', Pos('не найден', W.Text) > 0);
+    AssertEquals('no tools', 0, Mcp.ToolCount);
+    AssertTrue('there is a warning', W.Count > 0);
+    AssertTrue('about the file', Pos('not found', W.Text) > 0);
   finally
     W.Free;
     Mcp.Free;
@@ -415,15 +415,15 @@ var
   W: TStringList;
   F: string;
 begin
-  F := TempFile('{ это не json');
+  F := TempFile('{ not json');
   Reg := TToolRegistry.Create;
   Mcp := TMCPManager.Create(Reg, 5);
   W := TStringList.Create;
   try
     Mcp.LoadFromFile(F, W);
-    AssertEquals('инструментов нет', 0, Mcp.ToolCount);
-    AssertTrue('есть предупреждение', W.Count > 0);
-    AssertTrue('про JSON', Pos('JSON', W.Text) > 0);
+    AssertEquals('no tools', 0, Mcp.ToolCount);
+    AssertTrue('there is a warning', W.Count > 0);
+    AssertTrue('about JSON', Pos('JSON', W.Text) > 0);
   finally
     W.Free;
     Mcp.Free;
@@ -445,9 +445,9 @@ begin
   W := TStringList.Create;
   try
     Mcp.LoadFromFile(F, W);
-    AssertEquals('инструментов нет', 0, Mcp.ToolCount);
-    AssertTrue('есть предупреждение', W.Count > 0);
-    AssertTrue('про mcpServers', Pos('mcpServers', W.Text) > 0);
+    AssertEquals('no tools', 0, Mcp.ToolCount);
+    AssertTrue('there is a warning', W.Count > 0);
+    AssertTrue('about mcpServers', Pos('mcpServers', W.Text) > 0);
   finally
     W.Free;
     Mcp.Free;
@@ -468,7 +468,7 @@ var
 begin
   Exe := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'fakemcp';
   if not FileExists(Exe) then
-    Exit;   { интеграционный сервер не собран — тест пропускается }
+    Exit;   { integration server not built - test skipped }
 
   Reg := TToolRegistry.Create;
   Mcp := TMCPManager.Create(Reg, 10);
@@ -476,12 +476,12 @@ begin
   Env := TStringList.Create;
   try
     Started := Mcp.AddServer('fake', TStdioTransport.Create(Exe, Args, Env, ''), Err);
-    AssertTrue('сервер запущен: ' + Err, Started);
-    AssertTrue('инструмент зарегистрирован', Reg.Has('mcp__fake__echo'));
-    O := Reg.Invoke('mcp__fake__echo', '{"text":"через процесс"}',
+    AssertTrue('server started: ' + Err, Started);
+    AssertTrue('tool registered', Reg.Has('mcp__fake__echo'));
+    O := Reg.Invoke('mcp__fake__echo', '{"text":"via the process"}',
       MakeToolContext(DefaultConfig));
-    AssertFalse('без ошибки', O.IsError);
-    AssertEquals('результат', 'через процесс', O.Text);
+    AssertFalse('no error', O.IsError);
+    AssertEquals('result', 'via the process', O.Text);
   finally
     Env.Free;
     Args.Free;

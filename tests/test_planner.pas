@@ -1,7 +1,7 @@
 unit test_planner;
-{ Тесты планировщика (mirmid.planner): инструмент revise_plan (add/remove/
-  reorder/skip, невалидные операции, частичное применение, события) и
-  чистые части (подсказка шага, отчёт, разбор плана из текста). Без сети. }
+{ Tests of the planner (mirmid.planner): the revise_plan tool (add/remove/
+  reorder/skip, invalid operations, partial application, events) and the pure
+  parts (step prompt, report, plan parsing from text). No network. }
 
 {$mode objfpc}{$H+}
 
@@ -12,10 +12,10 @@ uses
   mirmid.cli;
 
 type
-  { Тестовый обработчик событий планировщика: считает события и
-    запоминает последний текст. Отдельно считаются события под-сессий
-    планировщика (aeSubSessionStart/aeSubSessionEnd): вход/выход в анализ и
-    шаг плана с меткой «анализ»/«шаг sN». }
+  { Test event handler of the planner: counts the events and remembers the
+    last text. The planner sub-session events (aeSubSessionStart/aeSubSessionEnd)
+    are counted separately: entering/leaving the analysis and a plan step with
+    the label "analysis"/"step sN". }
   TPlannerEventLog = class
   public
     PlanEvents: Integer;
@@ -146,12 +146,12 @@ var
   P: TPlan;
 begin
   FPlanner := TPlanner.Create(DefaultConfig, nil);
-  { План из четырёх pending-шагов; владение передаётся планировщику. }
+  { A plan of four pending steps; ownership goes to the planner. }
   P := TPlan.Create;
-  P.AddStep('первый');
-  P.AddStep('второй');
-  P.AddStep('третий');
-  P.AddStep('четвёртый');
+  P.AddStep('first');
+  P.AddStep('second');
+  P.AddStep('third');
+  P.AddStep('fourth');
   FPlanner.Plan := P;
   FReg := TToolRegistry.Create;
   RegisterRevisePlanTool(FReg, FPlanner);
@@ -173,206 +173,206 @@ begin
   Result := FReg.Invoke(REVISE_PLAN_TOOL_NAME, ArgsJson, FCtx);
 end;
 
-{ Инструмент зарегистрирован в реестре. }
+{ The tool is registered in the registry. }
 procedure TPlannerTests.TestToolRegistered;
 begin
-  AssertTrue('revise_plan зарегистрирован', FReg.Has(REVISE_PLAN_TOOL_NAME));
+  AssertTrue('revise_plan is registered', FReg.Has(REVISE_PLAN_TOOL_NAME));
 end;
 
-{ add в конец: новый шаг с авто-id добавляется в конец плана. }
+{ add to the end: a new step with an auto id is appended to the plan. }
 procedure TPlannerTests.TestReviseAddToEnd;
 var
   O: TToolOutcome;
 begin
-  O := InvokeRevise('{"ops":[{"op":"add","description":"новый шаг"}]}');
-  AssertFalse('без ошибки: ' + O.Text, O.IsError);
-  AssertEquals('пять шагов', 5, Length(FPlanner.Plan.Steps));
+  O := InvokeRevise('{"ops":[{"op":"add","description":"new step"}]}');
+  AssertFalse('no error: ' + O.Text, O.IsError);
+  AssertEquals('five steps', 5, Length(FPlanner.Plan.Steps));
   AssertEquals('id', 's5', FPlanner.Plan.Steps[4].Id);
-  AssertEquals('описание', 'новый шаг', FPlanner.Plan.Steps[4].Description);
-  AssertEquals('статус', Ord(psPending), Ord(FPlanner.Plan.Steps[4].Status));
+  AssertEquals('description', 'new step', FPlanner.Plan.Steps[4].Description);
+  AssertEquals('status', Ord(psPending), Ord(FPlanner.Plan.Steps[4].Status));
 end;
 
-{ add после шага: новый шаг встаёт после указанного. }
+{ add after a step: the new step lands after the given one. }
 procedure TPlannerTests.TestReviseAddAfter;
 var
   O: TToolOutcome;
 begin
-  O := InvokeRevise('{"ops":[{"op":"add","description":"новый","after":"s2"}]}');
-  AssertFalse('без ошибки: ' + O.Text, O.IsError);
-  AssertEquals('пять шагов', 5, Length(FPlanner.Plan.Steps));
-  AssertEquals('s1 на месте', 'первый', FPlanner.Plan.Steps[0].Description);
-  AssertEquals('s2 на месте', 'второй', FPlanner.Plan.Steps[1].Description);
-  AssertEquals('новый после s2', 'новый', FPlanner.Plan.Steps[2].Description);
-  AssertEquals('s3 сдвинут', 'третий', FPlanner.Plan.Steps[3].Description);
-  AssertEquals('s4 сдвинут', 'четвёртый', FPlanner.Plan.Steps[4].Description);
+  O := InvokeRevise('{"ops":[{"op":"add","description":"new","after":"s2"}]}');
+  AssertFalse('no error: ' + O.Text, O.IsError);
+  AssertEquals('five steps', 5, Length(FPlanner.Plan.Steps));
+  AssertEquals('s1 in place', 'first', FPlanner.Plan.Steps[0].Description);
+  AssertEquals('s2 in place', 'second', FPlanner.Plan.Steps[1].Description);
+  AssertEquals('new one after s2', 'new', FPlanner.Plan.Steps[2].Description);
+  AssertEquals('s3 shifted', 'third', FPlanner.Plan.Steps[3].Description);
+  AssertEquals('s4 shifted', 'fourth', FPlanner.Plan.Steps[4].Description);
 end;
 
-{ add после удаления: авто-id sN может столкнуться — планировщик
-  присваивает свободный id. }
+{ add after remove: the auto id sN may collide - the planner assigns a free id. }
 procedure TPlannerTests.TestReviseAddAfterRemove;
 var
   O: TToolOutcome;
 begin
-  O := InvokeRevise('{"ops":[{"op":"remove","id":"s2"},{"op":"add","description":"новый"}]}');
-  AssertFalse('без ошибки: ' + O.Text, O.IsError);
-  AssertEquals('четыре шага', 4, Length(FPlanner.Plan.Steps));
-  AssertEquals('новый id свободен', 's5', FPlanner.Plan.Steps[3].Id);
-  AssertEquals('описание', 'новый', FPlanner.Plan.Steps[3].Description);
+  O := InvokeRevise('{"ops":[{"op":"remove","id":"s2"},{"op":"add","description":"new"}]}');
+  AssertFalse('no error: ' + O.Text, O.IsError);
+  AssertEquals('four steps', 4, Length(FPlanner.Plan.Steps));
+  AssertEquals('the new id is free', 's5', FPlanner.Plan.Steps[3].Id);
+  AssertEquals('description', 'new', FPlanner.Plan.Steps[3].Description);
 end;
 
-{ remove: шаг удаляется, порядок остальных сохраняется. }
+{ remove: the step is deleted, the order of the rest is kept. }
 procedure TPlannerTests.TestReviseRemove;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{"ops":[{"op":"remove","id":"s2"}]}');
-  AssertFalse('без ошибки: ' + O.Text, O.IsError);
-  AssertEquals('три шага', 3, Length(FPlanner.Plan.Steps));
-  AssertEquals('s1', 'первый', FPlanner.Plan.Steps[0].Description);
-  AssertEquals('s3', 'третий', FPlanner.Plan.Steps[1].Description);
-  AssertEquals('s4', 'четвёртый', FPlanner.Plan.Steps[2].Description);
+  AssertFalse('no error: ' + O.Text, O.IsError);
+  AssertEquals('three steps', 3, Length(FPlanner.Plan.Steps));
+  AssertEquals('s1', 'first', FPlanner.Plan.Steps[0].Description);
+  AssertEquals('s3', 'third', FPlanner.Plan.Steps[1].Description);
+  AssertEquals('s4', 'fourth', FPlanner.Plan.Steps[2].Description);
 end;
 
-{ reorder: новый порядок шагов. }
+{ reorder: a new order of the steps. }
 procedure TPlannerTests.TestReviseReorder;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{"ops":[{"op":"reorder","order":["s4","s1","s2","s3"]}]}');
-  AssertFalse('без ошибки: ' + O.Text, O.IsError);
-  AssertEquals('порядок 1', 'четвёртый', FPlanner.Plan.Steps[0].Description);
-  AssertEquals('порядок 2', 'первый', FPlanner.Plan.Steps[1].Description);
-  AssertEquals('порядок 3', 'второй', FPlanner.Plan.Steps[2].Description);
-  AssertEquals('порядок 4', 'третий', FPlanner.Plan.Steps[3].Description);
+  AssertFalse('no error: ' + O.Text, O.IsError);
+  AssertEquals('order 1', 'fourth', FPlanner.Plan.Steps[0].Description);
+  AssertEquals('order 2', 'first', FPlanner.Plan.Steps[1].Description);
+  AssertEquals('order 3', 'second', FPlanner.Plan.Steps[2].Description);
+  AssertEquals('order 4', 'third', FPlanner.Plan.Steps[3].Description);
 end;
 
-{ skip: pending-шаг помечается пропущенным. }
+{ skip: a pending step is marked as skipped. }
 procedure TPlannerTests.TestReviseSkip;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{"ops":[{"op":"skip","id":"s4"}]}');
-  AssertFalse('без ошибки: ' + O.Text, O.IsError);
-  AssertEquals('статус', Ord(psSkipped), Ord(FPlanner.Plan.Steps[3].Status));
+  AssertFalse('no error: ' + O.Text, O.IsError);
+  AssertEquals('status', Ord(psSkipped), Ord(FPlanner.Plan.Steps[3].Status));
 end;
 
-{ skip для непустого pending-шага — ошибка. }
+{ skip on a non-pending step is an error. }
 procedure TPlannerTests.TestReviseSkipNonPending;
 var
   O: TToolOutcome;
 begin
-  FPlanner.Plan.SetStatus('s1', psDone, 'готово');
+  FPlanner.Plan.SetStatus('s1', psDone, 'done');
   O := InvokeRevise('{"ops":[{"op":"skip","id":"s1"}]}');
-  AssertTrue('ошибка', O.IsError);
-  AssertTrue('сообщение о pending', Pos('pending', O.Text) > 0);
+  AssertTrue('error', O.IsError);
+  AssertTrue('message about pending', Pos('pending', O.Text) > 0);
 end;
 
-{ Неизвестный id — ошибка, план не меняется. }
+{ Unknown id: an error, the plan stays unchanged. }
 procedure TPlannerTests.TestReviseUnknownId;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{"ops":[{"op":"remove","id":"s9"}]}');
-  AssertTrue('ошибка', O.IsError);
-  AssertTrue('сообщение о шаге', Pos('s9', O.Text) > 0);
-  AssertEquals('план не изменился', 4, Length(FPlanner.Plan.Steps));
+  AssertTrue('error', O.IsError);
+  AssertTrue('message about the step', Pos('s9', O.Text) > 0);
+  AssertEquals('plan unchanged', 4, Length(FPlanner.Plan.Steps));
 end;
 
-{ Неизвестный op — ошибка. }
+{ Unknown op: an error. }
 procedure TPlannerTests.TestReviseUnknownOp;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{"ops":[{"op":"teleport","id":"s1"}]}');
-  AssertTrue('ошибка', O.IsError);
-  AssertTrue('сообщение об op', Pos('teleport', O.Text) > 0);
+  AssertTrue('error', O.IsError);
+  AssertTrue('message about the op', Pos('teleport', O.Text) > 0);
 end;
 
-{ Пустой ops — ошибка. }
+{ Empty ops: an error. }
 procedure TPlannerTests.TestReviseEmptyOps;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{"ops":[]}');
-  AssertTrue('ошибка', O.IsError);
-  AssertTrue('сообщение об ops', Pos('ops', O.Text) > 0);
+  AssertTrue('error', O.IsError);
+  AssertTrue('message about ops', Pos('ops', O.Text) > 0);
 end;
 
-{ Отсутствующий ops — ошибка. }
+{ Missing ops: an error. }
 procedure TPlannerTests.TestReviseMissingOps;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{}');
-  AssertTrue('ошибка', O.IsError);
-  AssertTrue('сообщение об ops', Pos('ops', O.Text) > 0);
+  AssertTrue('error', O.IsError);
+  AssertTrue('message about ops', Pos('ops', O.Text) > 0);
 end;
 
-{ Невалидная операция после валидной: валидная применяется,
-  в результате — текст ошибки. }
+{ An invalid operation after a valid one: the valid one is applied and the
+  outcome is the error text. }
 procedure TPlannerTests.TestRevisePartialApply;
 var
   O: TToolOutcome;
 begin
-  O := InvokeRevise('{"ops":[{"op":"add","description":"новый"},{"op":"remove","id":"s9"}]}');
-  AssertTrue('ошибка', O.IsError);
-  AssertTrue('сообщение о s9', Pos('s9', O.Text) > 0);
-  AssertEquals('add применён', 5, Length(FPlanner.Plan.Steps));
-  AssertEquals('новый шаг в конце', 'новый', FPlanner.Plan.Steps[4].Description);
+  O := InvokeRevise('{"ops":[{"op":"add","description":"new"},{"op":"remove","id":"s9"}]}');
+  AssertTrue('error', O.IsError);
+  AssertTrue('message about s9', Pos('s9', O.Text) > 0);
+  AssertEquals('add applied', 5, Length(FPlanner.Plan.Steps));
+  AssertEquals('new step at the end', 'new', FPlanner.Plan.Steps[4].Description);
 end;
 
-{ Успех: события aePlan и OnPlanChanged срабатывают, текст события —
-  отрендеренный план. }
+{ Success: the aePlan and OnPlanChanged events fire, the event text is the
+  rendered plan. }
 procedure TPlannerTests.TestReviseEvents;
 var
   O: TToolOutcome;
 begin
-  O := InvokeRevise('{"ops":[{"op":"add","description":"новый шаг"}]}');
-  AssertFalse('без ошибки: ' + O.Text, O.IsError);
-  AssertEquals('aePlan сработал', 1, FLog.PlanEvents);
-  AssertEquals('OnPlanChanged сработал', 1, FLog.PlanChanged);
-  AssertTrue('текст плана в событии', Pos('новый шаг', FLog.LastPlanText) > 0);
-  AssertTrue('результат упоминает изменение', Pos('add', O.Text) > 0);
-  { revise_plan не открывает под-сессию планировщика. }
-  AssertEquals('aeSubSessionStart не шлётся', 0, FLog.SubSessionStartEvents);
-  AssertEquals('aeSubSessionEnd не шлётся', 0, FLog.SubSessionEndEvents);
+  O := InvokeRevise('{"ops":[{"op":"add","description":"new step"}]}');
+  AssertFalse('no error: ' + O.Text, O.IsError);
+  AssertEquals('aePlan fired', 1, FLog.PlanEvents);
+  AssertEquals('OnPlanChanged fired', 1, FLog.PlanChanged);
+  AssertTrue('plan text in the event', Pos('new step', FLog.LastPlanText) > 0);
+  AssertTrue('outcome mentions the change', Pos('add', O.Text) > 0);
+  { revise_plan does not open a planner sub-session. }
+  AssertEquals('aeSubSessionStart not sent', 0, FLog.SubSessionStartEvents);
+  AssertEquals('aeSubSessionEnd not sent', 0, FLog.SubSessionEndEvents);
 end;
 
-{ Ошибка без изменения плана: события не шлются. }
+{ Error without a plan change: no events are sent. }
 procedure TPlannerTests.TestReviseNoEventsOnUnchangedError;
 var
   O: TToolOutcome;
 begin
   O := InvokeRevise('{"ops":[{"op":"remove","id":"s9"}]}');
-  AssertTrue('ошибка', O.IsError);
-  AssertEquals('aePlan не шлётся', 0, FLog.PlanEvents);
-  AssertEquals('OnPlanChanged не шлётся', 0, FLog.PlanChanged);
+  AssertTrue('error', O.IsError);
+  AssertEquals('aePlan not sent', 0, FLog.PlanEvents);
+  AssertEquals('OnPlanChanged not sent', 0, FLog.PlanChanged);
 end;
 
-{ События под-сессий планировщика (анализ и шаг плана): тестовый обработчик
-  считает aeSubSessionStart/aeSubSessionEnd и запоминает метки. Сами фазы без
-  сети не запустить (нужен ответ модели), поэтому проверяется контракт меток,
-  которые шлют AnalysisPhase/RunStep: «анализ» и «шаг sN». }
+{ Planner sub-session events (analysis and a plan step): the test handler counts
+  aeSubSessionStart/aeSubSessionEnd and remembers the labels. The phases
+  themselves cannot run without network (a model answer is needed), so the
+  contract of the labels sent by AnalysisPhase/RunStep is verified: "analysis"
+  and "step sN". }
 procedure TPlannerTests.TestSubSessionEvents;
 begin
-  FLog.OnEvent(aeSubSessionStart, 'анализ');
-  FLog.OnEvent(aeSubSessionEnd, 'анализ');
-  FLog.OnEvent(aeSubSessionStart, 'шаг s1');
-  FLog.OnEvent(aeSubSessionEnd, 'шаг s1');
-  AssertEquals('два старта под-сессий', 2, FLog.SubSessionStartEvents);
-  AssertEquals('два конца под-сессий', 2, FLog.SubSessionEndEvents);
-  AssertEquals('последняя метка старта', 'шаг s1', FLog.LastSubSessionStartText);
-  AssertEquals('последняя метка конца', 'шаг s1', FLog.LastSubSessionEndText);
-  { События под-сессий не подменяют события шагов и плана. }
-  AssertEquals('aeStepStart не путается', 0, FLog.StepStartEvents);
-  AssertEquals('aeStepEnd не путается', 0, FLog.StepEndEvents);
-  AssertEquals('aePlan не путается', 0, FLog.PlanEvents);
+  FLog.OnEvent(aeSubSessionStart, 'analysis');
+  FLog.OnEvent(aeSubSessionEnd, 'analysis');
+  FLog.OnEvent(aeSubSessionStart, 'step s1');
+  FLog.OnEvent(aeSubSessionEnd, 'step s1');
+  AssertEquals('two sub-session starts', 2, FLog.SubSessionStartEvents);
+  AssertEquals('two sub-session ends', 2, FLog.SubSessionEndEvents);
+  AssertEquals('last start label', 'step s1', FLog.LastSubSessionStartText);
+  AssertEquals('last end label', 'step s1', FLog.LastSubSessionEndText);
+  { Sub-session events do not replace the step and plan events. }
+  AssertEquals('aeStepStart not mixed up', 0, FLog.StepStartEvents);
+  AssertEquals('aeStepEnd not mixed up', 0, FLog.StepEndEvents);
+  AssertEquals('aePlan not mixed up', 0, FLog.PlanEvents);
 end;
 
-{ Регрессия (task1.md): фаза анализа наследует набор инструментов
-  родительской сессии. Раньше AnalysisPhase жёстко выключала пишущие и
-  сетевые инструменты, поэтому при включённом ключе shell инструмент отвечал
-  «выполнение команд запрещено». }
+{ Regression (task1.md): the analysis phase inherits the tool set of the parent
+  session. AnalysisPhase used to switch the writing and network tools off
+  unconditionally, so with the shell key enabled the tool answered
+  "running commands is not allowed". }
 procedure TPlannerTests.TestAnalysisConfigInheritsPolicies;
 var
   Cfg, AC: TMirmidConfig;
@@ -381,36 +381,36 @@ begin
   SetToolEnabled(Cfg, 'edit_text_file', True);
   SetToolEnabled(Cfg, 'shell', True);
   SetToolEnabled(Cfg, 'http_request', True);
-  Cfg.Model := 'модель-анализа';
+  Cfg.Model := 'analysis-model';
   Cfg.MaxSteps := 7;
   AC := AnalysisConfig(Cfg);
-  AssertTrue('edit_text_file наследуется', ToolEnabled(AC, 'edit_text_file'));
-  AssertTrue('shell наследуется', ToolEnabled(AC, 'shell'));
-  AssertTrue('http_request наследуется', ToolEnabled(AC, 'http_request'));
-  AssertEquals('модель наследуется', 'модель-анализа', AC.Model);
-  AssertEquals('бюджет шагов наследуется', 7, AC.MaxSteps);
-  AssertEquals('подсказка аналитика', PLANNER_ANALYSIS_PROMPT, AC.SystemPrompt);
-  { Родительский конфиг — запись, поэтому копия не меняет его. }
+  AssertTrue('edit_text_file is inherited', ToolEnabled(AC, 'edit_text_file'));
+  AssertTrue('shell is inherited', ToolEnabled(AC, 'shell'));
+  AssertTrue('http_request is inherited', ToolEnabled(AC, 'http_request'));
+  AssertEquals('model is inherited', 'analysis-model', AC.Model);
+  AssertEquals('step budget is inherited', 7, AC.MaxSteps);
+  AssertEquals('analyst prompt', PLANNER_ANALYSIS_PROMPT, AC.SystemPrompt);
+  { The parent config is a record, so the copy does not change it. }
   SetToolEnabled(AC, 'shell', False);
-  AssertTrue('родитель не изменён', ToolEnabled(Cfg, 'shell'));
-  { Выключенный в родителе инструмент остаётся выключенным и в анализе. }
+  AssertTrue('parent unchanged', ToolEnabled(Cfg, 'shell'));
+  { A tool disabled in the parent stays disabled in the analysis. }
   SetToolEnabled(Cfg, 'shell', False);
-  AssertFalse('запрет наследуется',
+  AssertFalse('the prohibition is inherited',
     ToolEnabled(AnalysisConfig(Cfg), 'shell'));
 end;
 
-{ Подсказка шага: общая задача, текущий план, цель шага. }
+{ Step prompt: the overall task, the current plan, the goal of the step. }
 procedure TPlannerTests.TestStepPrompt;
 var
   SP: string;
 begin
-  SP := BuildStepPrompt('задача', '1. [pending] шаг', 'шаг');
-  AssertTrue('задача в подсказке', Pos('задача', SP) > 0);
-  AssertTrue('план в подсказке', Pos('1. [pending] шаг', SP) > 0);
-  AssertTrue('цель в подсказке', Pos('Цель текущего шага: шаг', SP) > 0);
+  SP := BuildStepPrompt('task', '1. [pending] step', 'step');
+  AssertTrue('task in the prompt', Pos('task', SP) > 0);
+  AssertTrue('plan in the prompt', Pos('1. [pending] step', SP) > 0);
+  AssertTrue('goal in the prompt', Pos('Goal of the current step: step', SP) > 0);
 end;
 
-{ Отчёт: задача, отрендеренный план, сводка. }
+{ Report: the task, the rendered plan, the summary. }
 procedure TPlannerTests.TestPlanReport;
 var
   P: TPlan;
@@ -418,39 +418,39 @@ var
 begin
   P := TPlan.Create;
   try
-    P.AddStep('сделать');
-    P.SetStatus('s1', psDone, 'готово');
-    R := BuildPlanReport(P, 'задача');
-    AssertTrue('задача в отчёте', Pos('Задача: задача', R) > 0);
-    AssertTrue('план в отчёте', Pos('1. [done] сделать — готово', R) > 0);
-    AssertTrue('сводка в отчёте', Pos('Сводка: 1/1 выполнено', R) > 0);
+    P.AddStep('do it');
+    P.SetStatus('s1', psDone, 'done');
+    R := BuildPlanReport(P, 'task');
+    AssertTrue('task in the report', Pos('Task: task', R) > 0);
+    AssertTrue('plan in the report', Pos('1. [done] do it — done', R) > 0);
+    AssertTrue('summary in the report', Pos('Summary: 1/1 done', R) > 0);
   finally
     P.Free;
   end;
 end;
 
-{ Разбор плана из текста: валидный план и ошибка. }
+{ Plan parsing from text: a valid plan and an error. }
 procedure TPlannerTests.TestParsePlanFromText;
 var
   P: TPlan;
   Err: string;
 begin
-  P := ParsePlanFromText('План: {"steps":[{"description":"a"},{"description":"b"}]}', Err);
-  AssertTrue('план разобран', P <> nil);
+  P := ParsePlanFromText('Plan: {"steps":[{"description":"a"},{"description":"b"}]}', Err);
+  AssertTrue('plan parsed', P <> nil);
   try
-    AssertEquals('два шага', 2, Length(P.Steps));
+    AssertEquals('two steps', 2, Length(P.Steps));
     AssertEquals('id 1', 's1', P.Steps[0].Id);
     AssertEquals('id 2', 's2', P.Steps[1].Id);
   finally
     P.Free;
   end;
-  P := ParsePlanFromText('JSON здесь нет', Err);
-  AssertNull('нет JSON — nil', P);
-  AssertTrue('ошибка', Err <> '');
+  P := ParsePlanFromText('there is no JSON here', Err);
+  AssertNull('no JSON - nil', P);
+  AssertTrue('error', Err <> '');
 end;
 
-{ Сессия шага сохраняется в файл <база>_step_<id>.json (по аналогии с
-  основной сессией); при пустом SessionBase файл не создаётся. }
+{ The step session is saved to <base>_step_<id>.json (similar to the main
+  session); with an empty SessionBase no file is created. }
 procedure TPlannerTests.TestStepSessionSaved;
 var
   Cfg: TMirmidConfig;
@@ -474,48 +474,48 @@ begin
       P.SessionBase := 'testsess';
       Plan := TPlan.Create;
       try
-        Plan.AddStep('сделать');
+        Plan.AddStep('do it');
         Step := Plan.Steps[0];
         SetLength(Msgs, 1);
         Msgs[0].Role := mrUser;
-        Msgs[0].Content := 'сделать';
+        Msgs[0].Content := 'do it';
 
-        { Первая попытка — прежнее имя <база>_step_<id>. }
+        { First attempt: the former name <base>_step_<id>. }
         P.SaveStepSession(Step, Msgs, 1);
-        AssertTrue('файл создан', FileExists(FilePath));
+        AssertTrue('file created', FileExists(FilePath));
         Msgs2 := nil;
         Plan2 := nil;
-        AssertTrue('загрузка: ' + Err,
+        AssertTrue('load: ' + Err,
           LoadSession(SessDir, 'testsess_step_s1', Msgs2, Plan2, Err));
-        AssertEquals('число сообщений', 1, Length(Msgs2));
-        AssertEquals('текст', 'сделать', Msgs2[0].Content);
-        AssertNull('план nil', Plan2);
+        AssertEquals('message count', 1, Length(Msgs2));
+        AssertEquals('text', 'do it', Msgs2[0].Content);
+        AssertNull('plan nil', Plan2);
 
-        { Повторная попытка — отдельный файл с номером попытки, сессия первой
-          попытки не перезаписана. }
-        Msgs[0].Content := 'сделать (повтор)';
+        { Retry: a separate file with the attempt number, the session of the
+          first attempt is not overwritten. }
+        Msgs[0].Content := 'do it (retry)';
         P.SaveStepSession(Step, Msgs, 2);
-        AssertTrue('файл попытки 2 создан',
+        AssertTrue('attempt 2 file created',
           FileExists(IncludeTrailingPathDelimiter(SessDir) +
             'testsess_step_s1_try2.json'));
         Msgs2 := nil;
         Plan2 := nil;
-        AssertTrue('загрузка попытки 2: ' + Err,
+        AssertTrue('load attempt 2: ' + Err,
           LoadSession(SessDir, 'testsess_step_s1_try2', Msgs2, Plan2, Err));
-        AssertEquals('текст попытки 2', 'сделать (повтор)', Msgs2[0].Content);
+        AssertEquals('attempt 2 text', 'do it (retry)', Msgs2[0].Content);
         Msgs2 := nil;
         Plan2 := nil;
-        AssertTrue('загрузка попытки 1: ' + Err,
+        AssertTrue('load attempt 1: ' + Err,
           LoadSession(SessDir, 'testsess_step_s1', Msgs2, Plan2, Err));
-        AssertEquals('попытка 1 не перезаписана', 'сделать', Msgs2[0].Content);
+        AssertEquals('attempt 1 not overwritten', 'do it', Msgs2[0].Content);
         DeleteFile(IncludeTrailingPathDelimiter(SessDir) +
           'testsess_step_s1_try2.json');
 
-        { Пустой SessionBase — файл не создаётся. }
+        { Empty SessionBase: no file is created. }
         DeleteFile(FilePath);
         P.SessionBase := '';
         P.SaveStepSession(Step, Msgs, 1);
-        AssertFalse('без базы файл не создаётся', FileExists(FilePath));
+        AssertFalse('no base - no file', FileExists(FilePath));
       finally
         Plan.Free;
       end;
@@ -530,10 +530,11 @@ begin
   end;
 end;
 
-{ Гейтинг результата шага в aeStepEnd: планировщик кладёт в событие
-  «s1: done — результат» (StepEndText), а CLI печатает результат только по
-  --show-step-result / --show-reasoning. По умолчанию от шага остаётся строка
-  статуса без результата: событие результат содержит, но он скрыт. }
+{ Gating of the step result in aeStepEnd: the planner puts "s1: done - result"
+  into the event (StepEndText), while the CLI prints the result only with
+  --show-step-result / --show-reasoning. By default a step leaves just the
+  status line without the result: the event contains the result, but it stays
+  hidden. }
 procedure TPlannerTests.TestStepEndResultGating;
 var
   P: TPlan;
@@ -541,257 +542,260 @@ var
 begin
   P := TPlan.Create;
   try
-    P.AddStep('сделать');
-    P.SetStatus('s1', psDone, 'готово');
+    P.AddStep('do it');
+    P.SetStatus('s1', psDone, 'file read');
     Txt := StepEndText(P.Steps[0]);
-    AssertEquals('событие aeStepEnd с результатом', 's1: done — готово', Txt);
+    AssertEquals('aeStepEnd event with the result', 's1: done — file read', Txt);
 
-    { Без флагов печатается только статус шага. }
-    AssertFalse('по умолчанию текст шага скрыт', StepTextVisible(False, False));
-    AssertEquals('статус без результата', 's1: done', FormatStepEndStatus(Txt));
-    AssertEquals('результата в строке статуса нет', 0,
-      Pos('готово', FormatStepEndStatus(Txt)));
+    { Without the flags only the step status is printed. }
+    AssertFalse('the step text is hidden by default', StepTextVisible(False, False));
+    AssertEquals('status without the result', 's1: done', FormatStepEndStatus(Txt));
+    AssertEquals('no result in the status line', 0,
+      Pos('file read', FormatStepEndStatus(Txt)));
 
-    { Любой из флагов показывает полный текст события (результат не усечён). }
+    { Any of the flags shows the whole event text (the result is not cut). }
     AssertTrue('--show-step-result', StepTextVisible(True, False));
     AssertTrue('--show-reasoning', StepTextVisible(False, True));
-    AssertTrue('оба флага', StepTextVisible(True, True));
-    AssertEquals('полный текст события', Txt, FormatStepEnd(Txt));
+    AssertTrue('both flags', StepTextVisible(True, True));
+    AssertEquals('full event text', Txt, FormatStepEnd(Txt));
 
-    { Шаг без результата: разделителя нет, статус совпадает с событием. }
+    { A step without a result: no separator, the status matches the event. }
     P.SetStatus('s1', psFailed, '');
     Txt := StepEndText(P.Steps[0]);
-    AssertEquals('событие без результата', 's1: failed', Txt);
-    AssertEquals('статус = событие', Txt, FormatStepEndStatus(Txt));
+    AssertEquals('event without a result', 's1: failed', Txt);
+    AssertEquals('status = event', Txt, FormatStepEndStatus(Txt));
 
-    { Шаг, удалённый из плана в подцикле: тоже без результата, гейтинг
-      оставляет текст как есть. }
-    Txt := 's1: удалён из плана';
-    AssertEquals('удалённый шаг без изменений', Txt, FormatStepEndStatus(Txt));
+    { A step removed from the plan inside the sub-loop: also without a result,
+      the gating leaves the text as is. }
+    Txt := 's1: removed from the plan';
+    AssertEquals('removed step unchanged', Txt, FormatStepEndStatus(Txt));
   finally
     P.Free;
   end;
 end;
 
-{ Классификация нештатного результата шага: три класса (turn/empty/error) и
-  штатный sfNone. Проверяются приоритеты: отказ хода перекрывает текст,
-  пустой ответ отличается от текста ошибки инструмента. }
+{ Classification of an abnormal step result: three classes (turn/empty/error)
+  and the normal sfNone. The priorities are checked: a failed turn overrides the
+  text, an empty answer differs from a tool error text. }
 procedure TPlannerTests.TestClassifyStepResult;
 var
   Reason: string;
 begin
-  { Штатный результат. }
-  AssertTrue('успех — sfNone',
-    ClassifyStepResult(True, 'готово', '') = sfNone);
-  AssertEquals('имя класса успеха', 'ok', StepFailureName(sfNone));
-  AssertEquals('причины у успеха нет', '', StepFailureReason(sfNone, 'готово', ''));
+  { Normal result. }
+  AssertTrue('success - sfNone',
+    ClassifyStepResult(True, 'done', '') = sfNone);
+  AssertEquals('success class name', 'ok', StepFailureName(sfNone));
+  AssertEquals('success has no reason', '', StepFailureReason(sfNone, 'done', ''));
 
-  { Отказ хода: Err — причина. }
-  AssertTrue('отказ хода — sfTurn',
-    ClassifyStepResult(False, '', 'нет сети') = sfTurn);
-  AssertEquals('имя класса отказа', 'turn', StepFailureName(sfTurn));
-  Reason := StepFailureReason(sfTurn, '', 'нет сети');
-  AssertEquals('причина отказа с Err', 'ход завершился неудачей: нет сети', Reason);
+  { Failed turn: Err is the reason. }
+  AssertTrue('failed turn - sfTurn',
+    ClassifyStepResult(False, '', 'no network') = sfTurn);
+  AssertEquals('failed turn class name', 'turn', StepFailureName(sfTurn));
+  Reason := StepFailureReason(sfTurn, '', 'no network');
+  AssertEquals('turn reason with Err', 'the turn failed: no network', Reason);
   Reason := StepFailureReason(sfTurn, '', '  ');
-  AssertEquals('причина отказа без Err',
-    'ход завершился неудачей без указания причины', Reason);
+  AssertEquals('turn reason without Err',
+    'the turn failed without a stated reason', Reason);
 
-  { Пустой и пробельный ответ при успешном ходе. }
-  AssertTrue('пустой ответ — sfEmpty',
+  { Empty and blank answer after a successful turn. }
+  AssertTrue('empty answer - sfEmpty',
     ClassifyStepResult(True, '', '') = sfEmpty);
-  AssertTrue('пробельный ответ — sfEmpty',
+  AssertTrue('blank answer - sfEmpty',
     ClassifyStepResult(True, '  ' + LineEnding, '') = sfEmpty);
-  AssertEquals('имя класса пустого ответа', 'empty', StepFailureName(sfEmpty));
+  AssertEquals('empty answer class name', 'empty', StepFailureName(sfEmpty));
   Reason := StepFailureReason(sfEmpty, '', '');
-  AssertEquals('причина пустого ответа',
-    'ответ модели пуст: шаг не вернул результата', Reason);
+  AssertEquals('empty answer reason',
+    'the model answer is empty: the step returned no result', Reason);
 
-  { Текст ошибки инструмента стал финальным ответом шага (в т.ч. с ведущим
-    переводом строки/пробелами). }
-  AssertTrue('ERROR: в ответе — sfError',
-    ClassifyStepResult(True, 'ERROR: нет доступа', '') = sfError);
-  AssertTrue('ERROR: после пробелов — sfError',
-    ClassifyStepResult(True, ' ' + LineEnding + 'ERROR: нет доступа', '') = sfError);
-  AssertTrue('ERROR: не в начале — штатный результат',
-    ClassifyStepResult(True, 'инструмент вернул ERROR: но шаг продолжен', '') = sfNone);
-  AssertEquals('имя класса ошибки', 'error', StepFailureName(sfError));
-  Reason := StepFailureReason(sfError, 'ERROR: нет доступа', '');
-  AssertEquals('причина ошибки инструмента',
-    'шаг завершился ошибкой инструмента: ERROR: нет доступа', Reason);
+  { A tool error text became the final answer of the step (including a leading
+    newline/spaces). }
+  AssertTrue('ERROR: in the answer - sfError',
+    ClassifyStepResult(True, 'ERROR: no access', '') = sfError);
+  AssertTrue('ERROR: after spaces - sfError',
+    ClassifyStepResult(True, ' ' + LineEnding + 'ERROR: no access', '') = sfError);
+  AssertTrue('ERROR: not at the start - normal result',
+    ClassifyStepResult(True, 'the tool returned ERROR: but the step went on', '') = sfNone);
+  AssertEquals('error class name', 'error', StepFailureName(sfError));
+  Reason := StepFailureReason(sfError, 'ERROR: no access', '');
+  AssertEquals('tool error reason',
+    'the step failed with a tool error: ERROR: no access', Reason);
 
-  { Приоритет: при RunTurn=False текст ответа не важен. }
-  AssertTrue('отказ хода важнее текста',
-    ClassifyStepResult(False, 'ERROR: что-то', 'нет сети') = sfTurn);
+  { Priority: with RunTurn=False the answer text does not matter. }
+  AssertTrue('a failed turn outweighs the text',
+    ClassifyStepResult(False, 'ERROR: something', 'no network') = sfTurn);
 end;
 
-{ Повтор шага: подсказка второй попытки содержит причину неудачи и требование
-  устранить её, а не повторять неудачное действие; пустая (пробельная) причина
-  ничего не добавляет — первая попытка совпадает с BuildStepPrompt. Длинная
-  причина усекается, чтобы «простыня» ответа не раздувала системную подсказку
-  каждой следующей попытки. }
+{ Step retry: the prompt of the second attempt contains the failure reason and
+  the requirement to eliminate it instead of repeating the failed action; an
+  empty (blank) reason adds nothing - the first attempt equals BuildStepPrompt.
+  A long reason is truncated so that a "sheet" of an answer does not bloat the
+  system prompt of every next attempt. }
 procedure TPlannerTests.TestStepPromptWithFixHint;
 const
-  TASK = 'задача';
-  PLAN = '1. [in_progress] шаг';
-  DESC = 'шаг';
+  TASK = 'task';
+  PLAN = '1. [in_progress] step';
+  DESC = 'step';
 var
   Base, SP, Hint: string;
 begin
   Base := BuildStepPrompt(TASK, PLAN, DESC);
-  AssertEquals('без причины — как BuildStepPrompt', Base,
+  AssertEquals('no reason - same as BuildStepPrompt', Base,
     StepPrompt(TASK, PLAN, DESC, ''));
-  AssertEquals('пробельная причина игнорируется', Base,
+  AssertEquals('a blank reason is ignored', Base,
     StepPrompt(TASK, PLAN, DESC, '  ' + LineEnding));
-  AssertEquals('табуляция вместо причины игнорируется', Base,
+  AssertEquals('a tab instead of a reason is ignored', Base,
     StepPrompt(TASK, PLAN, DESC, #9));
 
-  { Причина прошлой попытки — в подсказке повтора, вместе с требованием
-    исправить ситуацию и прежним текстом шага. }
-  Hint := 'ход завершился неудачей: нет сети';
+  { The reason of the previous attempt goes into the retry prompt together with
+    the requirement to fix the situation and the former step text. }
+  Hint := 'the turn failed: no network';
   SP := StepPrompt(TASK, PLAN, DESC, Hint);
-  AssertEquals('прежняя подсказка в начале', 1, Pos(Base, SP));
-  AssertTrue('причина прошлой попытки', Pos(Hint, SP) > 0);
-  AssertTrue('требование исправить', Pos('Устрани причину неудачи', SP) > 0);
-  AssertTrue('запрет повторять действие', Pos('Не повторяй', SP) > 0);
+  AssertEquals('the former prompt comes first', 1, Pos(Base, SP));
+  AssertTrue('reason of the previous attempt', Pos(Hint, SP) > 0);
+  AssertTrue('requirement to fix it',
+    Pos('Eliminate the cause of the failure', SP) > 0);
+  AssertTrue('no repeating the action', Pos('Do not repeat', SP) > 0);
 
-  { Усечение: 900-байтовый ответ целиком в подсказку не попадает. }
+  { Truncation: a 900-byte answer does not go into the prompt as a whole. }
   Hint := StringOfChar('x', 900);
   SP := StepPrompt(TASK, PLAN, DESC, Hint);
-  AssertTrue('начало причины сохранено',
+  AssertTrue('the beginning of the reason is kept',
     Pos(StringOfChar('x', PLAN_STEP_RESULT_MAX), SP) > 0);
-  AssertEquals('простыня не попала целиком', 0, Pos(Hint, SP));
-  AssertTrue('признак усечения', Pos('…', SP) > 0);
+  AssertEquals('the sheet did not get in whole', 0, Pos(Hint, SP));
+  AssertTrue('truncation marker', Pos('…', SP) > 0);
 end;
 
-{ Цепочка повтора: класс нештатного результата → причина (StepFailureReason)
-  → подсказка следующей попытки (StepPrompt). Проверяются все три нештатных
-  класса: отказ хода, пустой ответ и текст ошибки инструмента. }
+{ Retry chain: the class of the abnormal result -> the reason
+  (StepFailureReason) -> the prompt of the next attempt (StepPrompt). All three
+  abnormal classes are checked: a failed turn, an empty answer and a tool error
+  text. }
 procedure TPlannerTests.TestStepRetryHintChain;
 var
   Kind: TStepFailure;
   Reason, SP: string;
 begin
-  { Ход завершился неудачей: причина — Err провайдера. }
+  { The turn failed: the reason is the provider Err. }
   Kind := ClassifyStepResult(False, '', 'HTTP 500');
-  AssertTrue('отказ хода', Kind = sfTurn);
+  AssertTrue('failed turn', Kind = sfTurn);
   Reason := StepFailureReason(Kind, '', 'HTTP 500');
-  SP := StepPrompt('задача', '1. [failed] шаг', 'шаг', Reason);
-  AssertTrue('причина отказа в подсказке повтора', Pos('HTTP 500', SP) > 0);
+  SP := StepPrompt('task', '1. [failed] step', 'step', Reason);
+  AssertTrue('turn reason in the retry prompt', Pos('HTTP 500', SP) > 0);
 
-  { Пустой ответ при успешном ходе — тоже повод для повтора. }
+  { An empty answer after a successful turn is a reason to retry too. }
   Kind := ClassifyStepResult(True, '  ' + LineEnding, '');
-  AssertTrue('пустой ответ', Kind = sfEmpty);
+  AssertTrue('empty answer', Kind = sfEmpty);
   Reason := StepFailureReason(Kind, '  ' + LineEnding, '');
-  SP := StepPrompt('задача', '1. [failed] шаг', 'шаг', Reason);
-  AssertTrue('причина пустого ответа в подсказке', Pos('пуст', SP) > 0);
+  SP := StepPrompt('task', '1. [failed] step', 'step', Reason);
+  AssertTrue('empty answer reason in the prompt', Pos('empty', SP) > 0);
 
-  { Ошибка инструмента стала финальным ответом шага. }
-  Kind := ClassifyStepResult(True, 'ERROR: нет доступа', '');
-  AssertTrue('ошибка инструмента', Kind = sfError);
-  Reason := StepFailureReason(Kind, 'ERROR: нет доступа', '');
-  SP := StepPrompt('задача', '1. [failed] шаг', 'шаг', Reason);
-  AssertTrue('текст ошибки инструмента в подсказке',
-    Pos('ERROR: нет доступа', SP) > 0);
+  { A tool error became the final answer of the step. }
+  Kind := ClassifyStepResult(True, 'ERROR: no access', '');
+  AssertTrue('tool error', Kind = sfError);
+  Reason := StepFailureReason(Kind, 'ERROR: no access', '');
+  SP := StepPrompt('task', '1. [failed] step', 'step', Reason);
+  AssertTrue('tool error text in the prompt',
+    Pos('ERROR: no access', SP) > 0);
 
-  { Штатный результат повтора не требует: причины нет, подсказка — первая
-    попытка, причину прошлой попытки RunPlannedTurn сбрасывает (FixHint=''). }
-  Kind := ClassifyStepResult(True, 'готово', '');
-  AssertEquals('успех — без причины', '', StepFailureReason(Kind, 'готово', ''));
-  AssertEquals('после успеха подсказка обычная',
-    BuildStepPrompt('задача', '1. [done] шаг', 'шаг'),
-    StepPrompt('задача', '1. [done] шаг', 'шаг', ''));
+  { A normal result needs no retry: no reason, the prompt is the first attempt,
+    the reason of the previous attempt is reset by RunPlannedTurn (FixHint). }
+  Kind := ClassifyStepResult(True, 'done', '');
+  AssertEquals('success - no reason', '', StepFailureReason(Kind, 'done', ''));
+  AssertEquals('after success the prompt is the usual one',
+    BuildStepPrompt('task', '1. [done] step', 'step'),
+    StepPrompt('task', '1. [done] step', 'step', ''));
 end;
 
-{ Политика повторов шага: предел попыток = 1 + PlanStepFixAttempts (первая
-  попытка плюс повторы исправления); 0 — повторов нет, отрицательное значение
-  из INI не отменяет первую попытку. По умолчанию — один повтор. }
+{ Step retry policy: the attempt limit is 1 + PlanStepFixAttempts (the first
+  attempt plus the fix retries); 0 means no retries, a negative value from the
+  INI file does not cancel the first attempt. By default there is one retry. }
 procedure TPlannerTests.TestStepMaxTries;
 var
   Cfg: TMirmidConfig;
 begin
   Cfg := DefaultConfig;
-  AssertEquals('по умолчанию один повтор', 1, Cfg.PlanStepFixAttempts);
-  AssertEquals('две попытки по умолчанию', 2, StepMaxTries(Cfg));
+  AssertEquals('one retry by default', 1, Cfg.PlanStepFixAttempts);
+  AssertEquals('two attempts by default', 2, StepMaxTries(Cfg));
   Cfg.PlanStepFixAttempts := 0;
-  AssertEquals('без повторов одна попытка', 1, StepMaxTries(Cfg));
+  AssertEquals('no retries - one attempt', 1, StepMaxTries(Cfg));
   Cfg.PlanStepFixAttempts := 3;
-  AssertEquals('три повтора — четыре попытки', 4, StepMaxTries(Cfg));
+  AssertEquals('three retries - four attempts', 4, StepMaxTries(Cfg));
   Cfg.PlanStepFixAttempts := -5;
-  AssertEquals('отрицательное — всё равно одна попытка', 1,
+  AssertEquals('negative - still one attempt', 1,
     StepMaxTries(Cfg));
 end;
 
-{ Имена сессий попыток шага: первая попытка — прежнее имя <база>_step_<id>,
-  повторы — с суффиксом _try<N>, поэтому попытки не затирают друг друга.
-  Такие файлы остаются вспомогательными сессиями и в список основных не
-  попадают. }
+{ Session names of the step attempts: the first attempt keeps the former name
+  <base>_step_<id>, the retries get the _try<N> suffix, so the attempts do not
+  overwrite each other. Such files stay auxiliary sessions and are not listed
+  among the main ones. }
 procedure TPlannerTests.TestStepRetrySessionIds;
 begin
-  AssertEquals('первая попытка — имя шага', StepSessionId('base', 's1'),
+  AssertEquals('first attempt - the step name', StepSessionId('base', 's1'),
     StepSessionIdTry('base', 's1', 1));
-  AssertEquals('нулевой номер — как первая', 'base_step_s1',
+  AssertEquals('zero number - as the first one', 'base_step_s1',
     StepSessionIdTry('base', 's1', 0));
-  AssertEquals('вторая попытка', 'base_step_s1_try2',
+  AssertEquals('second attempt', 'base_step_s1_try2',
     StepSessionIdTry('base', 's1', 2));
-  AssertEquals('третья попытка', 'base_step_s1_try3',
+  AssertEquals('third attempt', 'base_step_s1_try3',
     StepSessionIdTry('base', 's1', 3));
-  AssertTrue('сессия повтора — вспомогательная',
+  AssertTrue('the retry session is auxiliary',
     IsAuxSessionFile('base_step_s1_try2.json'));
-  AssertTrue('сессия шага — вспомогательная',
+  AssertTrue('the step session is auxiliary',
     IsAuxSessionFile('base_step_s1.json'));
-  AssertFalse('основная сессия — не вспомогательная',
+  AssertFalse('the main session is not auxiliary',
     IsAuxSessionFile('base.json'));
 end;
 
-{ Обработка сбоя шага на уровне плана — на этом держится цикл повторов
-  RunPlannedTurn:
-  - проваленный шаг перестаёт быть pending (следующий шаг берётся из
-    NextPending, а когда pending не осталось — цикл завершается);
-  - повторный заход разрешён: failed → in_progress ставится перед каждой
-    новой попыткой;
-  - шаг, удалённый revise_plan внутри подцикла, повторять нечего: FindStep < 0,
-    а SetStatus возвращает False (по этому признаку цикл делает Break);
-  - пропустить проваленный шаг нельзя (правило pending), его удаляют или
-    переставляют план. }
+{ Handling of a step failure at the plan level - this is what the retry loop of
+  RunPlannedTurn rests on:
+  - a failed step stops being pending (the next step comes from NextPending,
+    and when no pending steps are left the loop ends);
+  - a repeated entry is allowed: failed -> in_progress is set before every new
+    attempt;
+  - a step removed by revise_plan inside the sub-loop has nothing to retry:
+    FindStep < 0 and SetStatus returns False (the loop breaks on that sign);
+  - a failed step cannot be skipped (the pending rule), it is removed or the
+    plan is reordered. }
 procedure TPlannerTests.TestFailedStepHandling;
 var
   P: TPlan;
   O: TToolOutcome;
 begin
   P := FPlanner.Plan;
-  AssertTrue('s1 взят в работу', P.SetStatus('s1', psInProgress, ''));
-  AssertTrue('s1 провален',
-    P.SetStatus('s1', psFailed, 'ход завершился неудачей: нет сети'));
-  AssertEquals('следующий pending — s2', 's2', P.Steps[P.NextPending].Id);
-  AssertEquals('проваленный шаг не pending', 1, P.CountByStatus(psFailed));
-  AssertEquals('pending остались s2..s4', 3, P.CountByStatus(psPending));
+  AssertTrue('s1 taken into work', P.SetStatus('s1', psInProgress, ''));
+  AssertTrue('s1 failed',
+    P.SetStatus('s1', psFailed, 'the turn failed: no network'));
+  AssertEquals('next pending is s2', 's2', P.Steps[P.NextPending].Id);
+  AssertEquals('the failed step is not pending', 1, P.CountByStatus(psFailed));
+  AssertEquals('pending left: s2..s4', 3, P.CountByStatus(psPending));
 
-  { Повтор: цикл попыток ставит шаг снова в работу. }
-  AssertTrue('повтор разрешён', P.SetStatus('s1', psInProgress, ''));
-  AssertEquals('статус повтора', Ord(psInProgress), Ord(P.Steps[0].Status));
+  { Retry: the attempt loop puts the step back into work. }
+  AssertTrue('retry allowed', P.SetStatus('s1', psInProgress, ''));
+  AssertEquals('retry status', Ord(psInProgress), Ord(P.Steps[0].Status));
 
-  { Проваленный шаг не пропускается — как и любой не-pending шаг. }
-  AssertTrue('снова провален', P.SetStatus('s1', psFailed, 'причина'));
+  { A failed step is not skipped - like any non-pending step. }
+  AssertTrue('failed again', P.SetStatus('s1', psFailed, 'reason'));
   O := InvokeRevise('{"ops":[{"op":"skip","id":"s1"}]}');
-  AssertTrue('skip проваленного шага — ошибка', O.IsError);
-  AssertTrue('сообщение о pending', Pos('pending', O.Text) > 0);
-  AssertEquals('статус не изменился', Ord(psFailed), Ord(P.Steps[0].Status));
+  AssertTrue('skip of a failed step is an error', O.IsError);
+  AssertTrue('message about pending', Pos('pending', O.Text) > 0);
+  AssertEquals('status unchanged', Ord(psFailed), Ord(P.Steps[0].Status));
 
-  { Шаг удалён из плана внутри подцикла (revise_plan): повторять нечего. }
+  { The step was removed from the plan inside the sub-loop (revise_plan):
+    there is nothing to retry. }
   O := InvokeRevise('{"ops":[{"op":"remove","id":"s1"}]}');
-  AssertFalse('remove без ошибки: ' + O.Text, O.IsError);
-  AssertTrue('шага нет в плане', P.FindStep('s1') < 0);
-  AssertFalse('SetStatus удалённого шага — False (признак Break)',
+  AssertFalse('remove without an error: ' + O.Text, O.IsError);
+  AssertTrue('the step is not in the plan', P.FindStep('s1') < 0);
+  AssertFalse('SetStatus of a removed step - False (the break sign)',
     P.SetStatus('s1', psInProgress, ''));
 
-  { План доведён до терминального состояния: ход считается успешным
-    (pending/in_progress нет), новых шагов цикл не берёт. }
-  AssertTrue('s2 выполнен', P.SetStatus('s2', psDone, 'готово'));
-  AssertTrue('s3 пропущен', P.SetStatus('s3', psSkipped, 'не нужно'));
-  AssertTrue('s4 провален', P.SetStatus('s4', psFailed, 'причина'));
-  AssertEquals('pending нет', 0, P.CountByStatus(psPending));
-  AssertEquals('in_progress нет', 0, P.CountByStatus(psInProgress));
-  AssertTrue('следующего шага нет', P.NextPending < 0);
+  { The plan reached a terminal state: the turn counts as successful (no
+    pending/in_progress), the loop takes no new steps. }
+  AssertTrue('s2 done', P.SetStatus('s2', psDone, 'done'));
+  AssertTrue('s3 skipped', P.SetStatus('s3', psSkipped, 'not needed'));
+  AssertTrue('s4 failed', P.SetStatus('s4', psFailed, 'reason'));
+  AssertEquals('no pending', 0, P.CountByStatus(psPending));
+  AssertEquals('no in_progress', 0, P.CountByStatus(psInProgress));
+  AssertTrue('no next step', P.NextPending < 0);
 end;
 
 initialization

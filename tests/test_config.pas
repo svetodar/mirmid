@@ -1,5 +1,5 @@
 unit test_config;
-{ Тесты загрузки и сохранения конфигурации. }
+{ Tests for loading and saving the configuration. }
 
 {$mode objfpc}{$H+}
 
@@ -11,9 +11,9 @@ uses
 type
   TConfigTests = class(TTestCase)
   private
-    { Читает INI и требует успешного разбора: тесты разбора значений не должны
-      проходить на файле, который LoadIni отверг (например из-за опечатки в
-      имени секции [tools]). }
+    { Reads the INI and requires successful parsing: value parsing tests must
+      not pass on a file that LoadIni rejected (for example because of a typo in
+      the [tools] section name). }
     procedure LoadIniOk(const FileName: string; var C: TMirmidConfig);
   published
     procedure TestIniRoundTrip;
@@ -48,7 +48,7 @@ var
   Ok: Boolean;
 begin
   Ok := LoadIni(FileName, C, Err);
-  AssertTrue('INI не разобран: ' + Err, Ok);
+  AssertTrue('INI was not parsed: ' + Err, Ok);
 end;
 
 procedure TConfigTests.TestIniRoundTrip;
@@ -58,7 +58,7 @@ var
   FileName, Err: string;
   OldSep: Char;
 begin
-  { Локаль с запятой-разделителем не должна ломать формат INI. }
+  { A comma-decimal locale must not break the INI format. }
   OldSep := DefaultFormatSettings.DecimalSeparator;
   DefaultFormatSettings.DecimalSeparator := ',';
   FileName := IncludeTrailingPathDelimiter(TempDir) + 'mirmid-test.ini';
@@ -71,13 +71,13 @@ begin
   Base.MaxSteps := 5;
   SetToolEnabled(Base, 'shell', True);
   Base.Reasoning := 'high';
-  AssertTrue('сохранение', SaveSampleIni(FileName, Base, Err));
+  AssertTrue('save', SaveSampleIni(FileName, Base, Err));
 
-  { В файле число записано с точкой — значение переносимо между локалями. }
+  { The number is written with a dot — the value is portable across locales. }
   L := TStringList.Create;
   try
     L.LoadFromFile(FileName);
-    AssertTrue('в файле температура записана с точкой',
+    AssertTrue('temperature is written with a dot',
       L.IndexOf('temperature=0.7') >= 0);
   finally
     L.Free;
@@ -89,8 +89,8 @@ begin
   AssertEquals('model', Base.Model, C2.Model);
   AssertEquals('temperature', Base.Temperature, C2.Temperature, 0.0001);
   AssertEquals('max_steps', Base.MaxSteps, C2.MaxSteps);
-  AssertTrue('shell из [tools]', ToolEnabled(C2, 'shell'));
-  AssertFalse('edit_text_file по умолчанию выключен',
+  AssertTrue('shell from [tools]', ToolEnabled(C2, 'shell'));
+  AssertFalse('edit_text_file is off by default',
     ToolEnabled(C2, 'edit_text_file'));
   AssertEquals('reasoning', 'high', C2.Reasoning);
 
@@ -105,15 +105,15 @@ begin
   C := DefaultConfig;
   C.Model := 'keep-me';
   LoadIniOk('/nonexistent/mirmid.ini', C);
-  AssertEquals('значение не изменилось', 'keep-me', C.Model);
+  AssertEquals('value is unchanged', 'keep-me', C.Model);
 end;
 
 procedure TConfigTests.TestPathsInMirmidDir;
 begin
-  AssertEquals('каталог конфигурации',
+  AssertEquals('config directory',
     IncludeTrailingPathDelimiter(GetCurrentDir) + '.mirmid',
     ConfigDir(GetCurrentDir));
-  AssertEquals('файл конфигурации',
+  AssertEquals('config file',
     IncludeTrailingPathDelimiter(GetCurrentDir) + '.mirmid' + PathDelim + 'mirmid.ini',
     ProjectConfigPath(GetCurrentDir));
 end;
@@ -136,7 +136,7 @@ var
   FileName: string;
   L: TStringList;
 begin
-  { Ключи plan/plan_step_max_steps в [agent] читаются. }
+  { The plan/plan_step_max_steps keys of [agent] are read. }
   FileName := IncludeTrailingPathDelimiter(TempDir) + 'mirmid-test-plan.ini';
   DeleteFile(FileName);
   L := TStringList.Create;
@@ -151,8 +151,8 @@ begin
 
   C := DefaultConfig;
   LoadIniOk(FileName, C);
-  AssertTrue('plan=1 читается', C.PlanMode);
-  AssertEquals('plan_step_max_steps=5 читается', 5, C.PlanStepMaxSteps);
+  AssertTrue('plan=1 is read', C.PlanMode);
+  AssertEquals('plan_step_max_steps=5 is read', 5, C.PlanStepMaxSteps);
   DeleteFile(FileName);
 end;
 
@@ -162,7 +162,7 @@ var
   FileName: string;
   L: TStringList;
 begin
-  { Отсутствующие ключи не меняют значения по умолчанию. }
+  { Missing keys do not change the default values. }
   FileName := IncludeTrailingPathDelimiter(TempDir) + 'mirmid-test-plan-missing.ini';
   DeleteFile(FileName);
   L := TStringList.Create;
@@ -176,8 +176,8 @@ begin
 
   C := DefaultConfig;
   LoadIniOk(FileName, C);
-  AssertFalse('plan по умолчанию выкл.', C.PlanMode);
-  AssertEquals('plan_step_max_steps по умолчанию 0 (без ограничений)', 0, C.PlanStepMaxSteps);
+  AssertFalse('plan is off by default', C.PlanMode);
+  AssertEquals('plan_step_max_steps defaults to 0 (no limit)', 0, C.PlanStepMaxSteps);
   DeleteFile(FileName);
 end;
 
@@ -187,16 +187,16 @@ var
   FileName, Err: string;
   L: TStringList;
 begin
-  { Лимит строк вывода инструмента: по умолчанию — DEFAULT_TOOL_OUTPUT_LINES
-    (середина длинного вывода сокращается), 0 — без ограничения. }
+  { Tool output line limit: DEFAULT_TOOL_OUTPUT_LINES by default (the middle of
+    a long output is cut out), 0 — no limit. }
   C := DefaultConfig;
-  AssertEquals('по умолчанию — DEFAULT_TOOL_OUTPUT_LINES',
+  AssertEquals('DEFAULT_TOOL_OUTPUT_LINES by default',
     DEFAULT_TOOL_OUTPUT_LINES, C.ToolOutputLines);
 
   FileName := IncludeTrailingPathDelimiter(TempDir) + 'mirmid-test-tool-lines.ini';
   DeleteFile(FileName);
 
-  { Ключа нет — значение по умолчанию сохраняется. }
+  { No key — the default value is kept. }
   L := TStringList.Create;
   try
     L.Add('[agent]');
@@ -208,10 +208,10 @@ begin
 
   C := DefaultConfig;
   LoadIniOk(FileName, C);
-  AssertEquals('без ключа — значение по умолчанию',
+  AssertEquals('without the key — the default value',
     DEFAULT_TOOL_OUTPUT_LINES, C.ToolOutputLines);
 
-  { Ключ читается из [agent]. }
+  { The key is read from [agent]. }
   L := TStringList.Create;
   try
     L.Add('[agent]');
@@ -223,9 +223,9 @@ begin
 
   C := DefaultConfig;
   LoadIniOk(FileName, C);
-  AssertEquals('tool_output_lines=15 читается', 15, C.ToolOutputLines);
+  AssertEquals('tool_output_lines=15 is read', 15, C.ToolOutputLines);
 
-  { 0 — без ограничения (значение не подменяется дефолтом). }
+  { 0 — no limit (the value is not replaced by the default). }
   L := TStringList.Create;
   try
     L.Add('[agent]');
@@ -237,31 +237,31 @@ begin
 
   C := DefaultConfig;
   LoadIniOk(FileName, C);
-  AssertEquals('tool_output_lines=0 — без ограничения', 0, C.ToolOutputLines);
+  AssertEquals('tool_output_lines=0 — no limit', 0, C.ToolOutputLines);
 
-  { Образец конфигурации (--init) содержит ключ и читается обратно. }
+  { The sample configuration (--init) contains the key and reads back. }
   C := DefaultConfig;
   C.ToolOutputLines := 12;
-  AssertTrue('сохранение примера', SaveSampleIni(FileName, C, Err));
+  AssertTrue('save the sample', SaveSampleIni(FileName, C, Err));
   L := TStringList.Create;
   try
     L.LoadFromFile(FileName);
-    AssertTrue('в примере есть tool_output_lines=12',
+    AssertTrue('the sample contains tool_output_lines=12',
       L.IndexOf('tool_output_lines=12') >= 0);
   finally
     L.Free;
   end;
   C := DefaultConfig;
   LoadIniOk(FileName, C);
-  AssertEquals('tool_output_lines из примера', 12, C.ToolOutputLines);
+  AssertEquals('tool_output_lines from the sample', 12, C.ToolOutputLines);
 
   DeleteFile(FileName);
 end;
 
 procedure TConfigTests.TestEnvPlan;
 begin
-  { Логика разбора MIRMID_PLAN, используемая в ApplyEnv:
-    1/true/yes/on → True, 0/false/no/off → False, иначе — без изменений. }
+  { The MIRMID_PLAN parsing logic used by ApplyEnv:
+    1/true/yes/on -> True, 0/false/no/off -> False, anything else — unchanged. }
   AssertTrue('MIRMID_PLAN=1', ParseBoolStr('1', False));
   AssertFalse('MIRMID_PLAN=0', ParseBoolStr('0', True));
   AssertTrue('MIRMID_PLAN=true', ParseBoolStr('true', False));
@@ -270,17 +270,17 @@ begin
   AssertFalse('MIRMID_PLAN=no', ParseBoolStr('no', True));
   AssertTrue('MIRMID_PLAN=on', ParseBoolStr('on', False));
   AssertFalse('MIRMID_PLAN=off', ParseBoolStr('off', True));
-  AssertFalse('пустое значение не меняет (выкл.)', ParseBoolStr('', False));
-  AssertTrue('пустое значение не меняет (вкл.)', ParseBoolStr('', True));
-  AssertTrue('нераспознанное не меняет (вкл.)', ParseBoolStr('garbage', True));
-  AssertFalse('нераспознанное не меняет (выкл.)', ParseBoolStr('garbage', False));
-  AssertTrue('регистр и пробелы игнорируются', ParseBoolStr('  ON  ', False));
+  AssertFalse('an empty value changes nothing (off)', ParseBoolStr('', False));
+  AssertTrue('an empty value changes nothing (on)', ParseBoolStr('', True));
+  AssertTrue('an unrecognised value changes nothing (on)', ParseBoolStr('garbage', True));
+  AssertFalse('an unrecognised value changes nothing (off)', ParseBoolStr('garbage', False));
+  AssertTrue('case and spaces are ignored', ParseBoolStr('  ON  ', False));
 end;
 
 procedure TConfigTests.TestResolveApiKey;
 begin
-  { Строка без префикса «&» — литеральный ключ, даже если совпадает с именем
-    существующей переменной окружения (PATH в окружении всегда есть). }
+  { A string without the "&" prefix is a literal key, even when it matches the
+    name of an existing environment variable (PATH is always present). }
   AssertEquals('literal key', 'sk-12345', ResolveApiKey('sk-12345'));
   AssertEquals('empty', '', ResolveApiKey(''));
   AssertEquals('spaces', '', ResolveApiKey('   '));
@@ -290,19 +290,19 @@ begin
   AssertEquals('trimmed literal', 'sk-12345', ResolveApiKey('  sk-12345  '));
   AssertEquals('name without ampersand is literal', 'PATH', ResolveApiKey('PATH'));
 
-  { Ссылка на переменную — только с префиксом «&». }
+  { A variable reference is recognised only with the "&" prefix. }
   AssertEquals('env ref', GetEnvironmentVariable('PATH'),
     ResolveApiKey('&PATH'));
   AssertEquals('env ref with spaces', GetEnvironmentVariable('PATH'),
     ResolveApiKey('  &  PATH  '));
   {$IFDEF WINDOWS}
-    { На Windows имена переменных окружения регистронезависимы. }
+    { On Windows environment variable names are case-insensitive. }
     AssertEquals('case-insensitive', GetEnvironmentVariable('PATH'),
       ResolveApiKey('&path'));
   {$ENDIF}
 
-  { Переменной с таким именем нет — строка остаётся как есть (литеральный
-    ключ вместе с «&»); «&» без имени тоже не разрешается. }
+  { There is no variable with that name — the string stays as is (a literal
+    key together with the "&"); a bare "&" is not resolved either. }
   AssertEquals('unset var', '&MIRMID_TEST_API_KEY_NOPE_9X7',
     ResolveApiKey('&MIRMID_TEST_API_KEY_NOPE_9X7'));
   AssertEquals('bare ampersand', '&', ResolveApiKey('&'));
@@ -315,27 +315,27 @@ var
   Err: string;
   Args: array of string;
 begin
-  { --plan включает режим планирования. }
+  { --plan enables the plan mode. }
   SetLength(Args, 2);
   Args[0] := '--plan';
-  Args[1] := 'привет';
+  Args[1] := 'hello';
   AssertTrue('ParseCli --plan', ParseCli(Args, Cli, Err));
   AssertTrue('HasPlanMode (--plan)', Cli.HasPlanMode);
   AssertTrue('PlanMode (--plan)', Cli.PlanMode);
 
-  { --no-plan выключает режим планирования. }
+  { --no-plan disables the plan mode. }
   SetLength(Args, 2);
   Args[0] := '--no-plan';
-  Args[1] := 'привет';
+  Args[1] := 'hello';
   AssertTrue('ParseCli --no-plan', ParseCli(Args, Cli, Err));
   AssertTrue('HasPlanMode (--no-plan)', Cli.HasPlanMode);
   AssertFalse('PlanMode (--no-plan)', Cli.PlanMode);
 
-  { Без флага HasPlanMode = False. }
+  { Without the flag HasPlanMode = False. }
   SetLength(Args, 1);
-  Args[0] := 'привет';
-  AssertTrue('ParseCli без флага', ParseCli(Args, Cli, Err));
-  AssertFalse('HasPlanMode (без флага)', Cli.HasPlanMode);
+  Args[0] := 'hello';
+  AssertTrue('ParseCli without the flag', ParseCli(Args, Cli, Err));
+  AssertFalse('HasPlanMode (no flag)', Cli.HasPlanMode);
 end;
 
 procedure TConfigTests.TestIniToolsSection;
@@ -344,8 +344,8 @@ var
   FileName, Err: string;
   L: TStringList;
 begin
-  { Секция [tools]: значения 1/0/true/false читаются, нераспознанное и пустое
-    значение оставляют значение по умолчанию (1/true/yes/on, 0/false/no/off). }
+  { [tools] section: the values 1/0/true/false are read, an unrecognised or
+    empty value keeps the default (1/true/yes/on, 0/false/no/off). }
   FileName := IncludeTrailingPathDelimiter(TempDir) + 'mirmid-test-tools.ini';
   DeleteFile(FileName);
   L := TStringList.Create;
@@ -363,19 +363,19 @@ begin
   end;
 
   C := DefaultConfig;
-  AssertTrue('разбор [tools]', LoadIni(FileName, C, Err));
-  AssertEquals('ошибки нет', '', Err);
+  AssertTrue('parse [tools]', LoadIni(FileName, C, Err));
+  AssertEquals('no error', '', Err);
   AssertTrue('shell=1', ToolEnabled(C, 'shell'));
   AssertTrue('http_request=true', ToolEnabled(C, 'http_request'));
   AssertFalse('edit_text_file=0', ToolEnabled(C, 'edit_text_file'));
   AssertFalse('copy_file=false', ToolEnabled(C, 'copy_file'));
-  AssertTrue('пустое значение — умолчание (grep=1)', ToolEnabled(C, 'grep'));
-  AssertFalse('нераспознанное — умолчание (subagent=0)',
+  AssertTrue('an empty value — the default (grep=1)', ToolEnabled(C, 'grep'));
+  AssertFalse('an unrecognised value — the default (subagent=0)',
     ToolEnabled(C, 'subagent'));
-  AssertFalse('не упомянутый ключ — умолчание (screen_shoot=0)',
+  AssertFalse('an unmentioned key — the default (screen_shoot=0)',
     ToolEnabled(C, 'screen_shoot'));
 
-  { Значение ключа перекрывает умолчание в обе стороны. }
+  { A key value overrides the default in both directions. }
   DeleteFile(FileName);
   L := TStringList.Create;
   try
@@ -387,15 +387,15 @@ begin
     L.Free;
   end;
   C := DefaultConfig;
-  AssertTrue('разбор [tools] (2)', LoadIni(FileName, C, Err));
-  AssertFalse('grep=0 выключает инструмент', ToolEnabled(C, 'grep'));
-  AssertTrue('screen_shoot=1 включает инструмент', ToolEnabled(C, 'screen_shoot'));
+  AssertTrue('parse [tools] (2)', LoadIni(FileName, C, Err));
+  AssertFalse('grep=0 disables the tool', ToolEnabled(C, 'grep'));
+  AssertTrue('screen_shoot=1 enables the tool', ToolEnabled(C, 'screen_shoot'));
 
   DeleteFile(FileName);
 end;
 
-{ Неизвестный ключ в [tools] — ошибка чтения INI с перечислением известных
-  имён: опечатка не должна молча оставить инструмент с умолчанием. }
+{ An unknown key in [tools] is an INI read error listing the known names: a
+  typo must not silently leave a tool at its default. }
 procedure TConfigTests.TestIniToolsUnknownKey;
 var
   C: TMirmidConfig;
@@ -414,18 +414,18 @@ begin
   end;
 
   C := DefaultConfig;
-  AssertFalse('неизвестный ключ — отказ', LoadIni(FileName, C, Err));
-  AssertTrue('в сообщении имя ключа: ' + Err, Pos('"shel"', Err) > 0);
-  AssertTrue('в сообщении есть перечень известных: ' + Err,
+  AssertFalse('unknown key — rejection', LoadIni(FileName, C, Err));
+  AssertTrue('the message names the key: ' + Err, Pos('"shel"', Err) > 0);
+  AssertTrue('the message lists the known ones: ' + Err,
     Pos('known tools: ', Err) > 0);
-  AssertTrue('перечень начинается с file_list: ' + Err,
+  AssertTrue('the list starts with file_list: ' + Err,
     Pos(ToolNamesCsv, Err) > 0);
 
   DeleteFile(FileName);
 end;
 
-{ Секции [tools] нет: все инструменты работают со значениями по умолчанию из
-  таблицы mirmid.tools. }
+{ There is no [tools] section: every tool works with the defaults from the
+  mirmid.tools table. }
 procedure TConfigTests.TestIniToolsDefaults;
 var
   C: TMirmidConfig;
@@ -445,18 +445,18 @@ begin
   end;
 
   C := DefaultConfig;
-  AssertTrue('разбор INI без [tools]', LoadIni(FileName, C, Err));
-  AssertEquals('переключателей нет', 0, Length(C.Tools));
+  AssertTrue('parse an INI without [tools]', LoadIni(FileName, C, Err));
+  AssertEquals('no switches', 0, Length(C.Tools));
   for I := 0 to ToolSwitchCount - 1 do
-    AssertEquals('умолчание ' + ToolSwitchAt(I).Name,
+    AssertEquals('default for ' + ToolSwitchAt(I).Name,
       ToolSwitchAt(I).Default, ToolEnabled(C, ToolSwitchAt(I).Name));
 
   DeleteFile(FileName);
 end;
 
-{ Образец конфигурации (--init) содержит секцию [tools] со всеми ключами
-  таблицы и не содержит убранных ключей; файл читается обратно и
-  воспроизводит те же переключатели. }
+{ The sample configuration (--init) contains the [tools] section with every key
+  of the table and none of the removed keys; the file reads back and reproduces
+  the same switches. }
 procedure TConfigTests.TestSampleIniToolsBlock;
 var
   C: TMirmidConfig;
@@ -470,45 +470,46 @@ begin
   C := DefaultConfig;
   SetToolEnabled(C, 'shell', True);
   SetToolEnabled(C, 'grep', False);
-  AssertTrue('сохранение примера', SaveSampleIni(FileName, C, Err));
+  AssertTrue('save the sample', SaveSampleIni(FileName, C, Err));
 
   L := TStringList.Create;
   try
     L.LoadFromFile(FileName);
-    AssertTrue('есть секция [tools]', L.IndexOf('[tools]') >= 0);
-    { Каждый ключ таблицы присутствует в образце (значение — из настроек). }
+    AssertTrue('[tools] section present', L.IndexOf('[tools]') >= 0);
+    { Every key of the table is present in the sample (the value comes from the
+      settings). }
     for I := 0 to ToolSwitchCount - 1 do
     begin
       Found := False;
       for J := 0 to L.Count - 1 do
         if Pos(ToolSwitchAt(I).Name + '=', L[J]) = 1 then
           Found := True;
-      AssertTrue('в образце есть ключ ' + ToolSwitchAt(I).Name, Found);
+      AssertTrue('the sample contains the key ' + ToolSwitchAt(I).Name, Found);
     end;
-    AssertTrue('shell=1 из настроек',
+    AssertTrue('shell=1 from the settings',
       L.IndexOf('shell=1') >= 0);
-    AssertTrue('grep=0 из настроек', L.IndexOf('grep=0') >= 0);
-    AssertFalse('нет ключа записи', L.IndexOf('allow' + '_write=1') >= 0);
-    AssertFalse('нет ключа команд', L.IndexOf('allow' + '_shell=1') >= 0);
-    AssertFalse('нет ключа HTTP', L.IndexOf('allow' + '_http=1') >= 0);
-    AssertFalse('нет ключа доверия', L.IndexOf('ca' + '_file=') >= 0);
+    AssertTrue('grep=0 from the settings', L.IndexOf('grep=0') >= 0);
+    AssertFalse('no write key', L.IndexOf('allow' + '_write=1') >= 0);
+    AssertFalse('no shell key', L.IndexOf('allow' + '_shell=1') >= 0);
+    AssertFalse('no HTTP key', L.IndexOf('allow' + '_http=1') >= 0);
+    AssertFalse('no trust key', L.IndexOf('ca' + '_file=') >= 0);
   finally
     L.Free;
   end;
 
   C := DefaultConfig;
-  AssertTrue('пример читается обратно', LoadIni(FileName, C, Err));
-  AssertTrue('shell=1 из образца', ToolEnabled(C, 'shell'));
-  AssertFalse('grep=0 из образца', ToolEnabled(C, 'grep'));
-  AssertFalse('edit_text_file по умолчанию', ToolEnabled(C, 'edit_text_file'));
+  AssertTrue('the sample reads back', LoadIni(FileName, C, Err));
+  AssertTrue('shell=1 from the sample', ToolEnabled(C, 'shell'));
+  AssertFalse('grep=0 from the sample', ToolEnabled(C, 'grep'));
+  AssertFalse('edit_text_file by default', ToolEnabled(C, 'edit_text_file'));
 
   DeleteFile(FileName);
 end;
 
-{ Опечатка в имени секции («[tool]», «[tools ]» с пробелом) — отказ чтения:
-  раньше ключи такой секции молча игнорировались и инструменты оставались с
-  умолчаниями (написанное «grep=0» ничего не выключало). Регистр при этом не
-  важен: «[Tools]» TIniFile читает, поэтому это не ошибка. }
+{ A typo in the section name ("[tool]", "[tools ]" with a space) — read
+  rejection: previously the keys of such a section were silently ignored and the
+  tools kept their defaults (the written "grep=0" disabled nothing). Case does
+  not matter here: TIniFile reads "[Tools]", so that is not an error. }
 procedure TConfigTests.TestIniToolsSectionNameTypo;
 var
   C: TMirmidConfig;
@@ -527,11 +528,12 @@ begin
   end;
 
   C := DefaultConfig;
-  AssertFalse('[tool] — отказ', LoadIni(FileName, C, Err));
-  AssertTrue('в сообщении имя секции: ' + Err, Pos('"[tool]"', Err) > 0);
-  AssertTrue('в сообщении подсказка [tools]: ' + Err, Pos('[tools]', Err) > 0);
+  AssertFalse('[tool] — rejection', LoadIni(FileName, C, Err));
+  AssertTrue('the message names the section: ' + Err, Pos('"[tool]"', Err) > 0);
+  AssertTrue('the message hints at [tools]: ' + Err, Pos('[tools]', Err) > 0);
 
-  { Пробел в имени секции: TIniFile такую секцию с [tools] уже не сопоставит. }
+  { A space in the section name: TIniFile will no longer match such a section
+    against [tools]. }
   L := TStringList.Create;
   try
     L.Add('[tools ]');
@@ -541,10 +543,10 @@ begin
     L.Free;
   end;
   C := DefaultConfig;
-  AssertFalse('[tools ] — отказ', LoadIni(FileName, C, Err));
-  AssertTrue('в сообщении про пробелы: ' + Err, Pos('stray spaces', Err) > 0);
+  AssertFalse('[tools ] — rejection', LoadIni(FileName, C, Err));
+  AssertTrue('the message mentions stray spaces: ' + Err, Pos('stray spaces', Err) > 0);
 
-  { Регистр имени секции не ошибка: ключи читаются. }
+  { The section name case is not an error: the keys are read. }
   L := TStringList.Create;
   try
     L.Add('[Tools]');
@@ -554,14 +556,14 @@ begin
     L.Free;
   end;
   C := DefaultConfig;
-  AssertTrue('[Tools] читается', LoadIni(FileName, C, Err));
-  AssertFalse('[Tools] grep=0 выключает инструмент', ToolEnabled(C, 'grep'));
+  AssertTrue('[Tools] is read', LoadIni(FileName, C, Err));
+  AssertFalse('[Tools] grep=0 disables the tool', ToolEnabled(C, 'grep'));
 
   DeleteFile(FileName);
 end;
 
-{ Дубликат ключа в [tools] — отказ: TIniFile читает первое значение, а
-  последнее («shell=0») пользователь написал ниже и ждёт именно его. }
+{ A duplicate key in [tools] — rejection: TIniFile reads the first value while
+  the user wrote the last one ("shell=0") below and expects exactly that. }
 procedure TConfigTests.TestIniToolsDuplicateKey;
 var
   C: TMirmidConfig;
@@ -581,14 +583,14 @@ begin
   end;
 
   C := DefaultConfig;
-  AssertFalse('дубликат ключа — отказ', LoadIni(FileName, C, Err));
-  AssertTrue('в сообщении имя ключа: ' + Err,
+  AssertFalse('duplicate key — rejection', LoadIni(FileName, C, Err));
+  AssertTrue('the message names the key: ' + Err,
     Pos('duplicate tool "shell"', Err) > 0);
 
   DeleteFile(FileName);
 end;
 
-{ Контракт ResolveConfig: корректный INI — True и пустая причина. }
+{ ResolveConfig contract: a valid INI — True and an empty reason. }
 procedure TConfigTests.TestResolveConfigValidIni;
 var
   C: TMirmidConfig;
@@ -611,18 +613,18 @@ begin
   SetLength(Args, 2);
   Args[0] := '--config';
   Args[1] := FileName;
-  AssertTrue('командная строка разобрана', ParseCli(Args, Cli, Err));
+  AssertTrue('command line parsed', ParseCli(Args, Cli, Err));
   WorkDir := GetCurrentDir;
-  AssertTrue('корректный INI принят', ResolveConfig(Cli, C, WorkDir, Err));
-  AssertEquals('причины нет', '', Err);
-  AssertTrue('shell=1 из INI', ToolEnabled(C, 'shell'));
+  AssertTrue('a valid INI is accepted', ResolveConfig(Cli, C, WorkDir, Err));
+  AssertEquals('no reason', '', Err);
+  AssertTrue('shell=1 from the INI', ToolEnabled(C, 'shell'));
 
   DeleteFile(FileName);
 end;
 
-{ Неизвестный ключ в [tools] возвращается из ResolveConfig как отказ с причиной:
-  по этому контракту Main печатает ошибку и выходит с кодом 1 (E2E-тест в
-  test_cli проверяет собранный бинарник, но пропускается, если его нет). }
+{ An unknown key in [tools] comes back from ResolveConfig as a rejection with a
+  reason: by that contract Main prints the error and exits with code 1 (the E2E
+  test in test_cli checks the built binary, but is skipped when it is absent). }
 procedure TConfigTests.TestResolveConfigUnknownToolKey;
 var
   C: TMirmidConfig;
@@ -645,17 +647,17 @@ begin
   SetLength(Args, 2);
   Args[0] := '--config';
   Args[1] := FileName;
-  AssertTrue('командная строка разобрана', ParseCli(Args, Cli, Err));
+  AssertTrue('command line parsed', ParseCli(Args, Cli, Err));
   WorkDir := GetCurrentDir;
-  AssertFalse('неизвестный ключ — отказ', ResolveConfig(Cli, C, WorkDir, Err));
-  AssertTrue('в причине имя ключа: ' + Err, Pos('"shel"', Err) > 0);
-  AssertTrue('в причине список известных: ' + Err, Pos('known tools: ', Err) > 0);
+  AssertFalse('unknown key — rejection', ResolveConfig(Cli, C, WorkDir, Err));
+  AssertTrue('the reason names the key: ' + Err, Pos('"shel"', Err) > 0);
+  AssertTrue('the reason lists the known ones: ' + Err, Pos('known tools: ', Err) > 0);
 
   DeleteFile(FileName);
 end;
 
-{ --init обязан работать и со сломанным INI: он и нужен, чтобы починить файл,
-  поэтому отказ разбора не должен мешать генерации образца. }
+{ --init must work even with a broken INI: it is exactly what is needed to fix
+  the file, so a parse rejection must not prevent generating the sample. }
 procedure TConfigTests.TestResolveConfigInitToleratesBrokenIni;
 var
   C: TMirmidConfig;
@@ -679,11 +681,11 @@ begin
   Args[0] := '--init';
   Args[1] := '--config';
   Args[2] := FileName;
-  AssertTrue('командная строка разобрана', ParseCli(Args, Cli, Err));
+  AssertTrue('command line parsed', ParseCli(Args, Cli, Err));
   WorkDir := GetCurrentDir;
-  AssertTrue('--init со сломанным INI', ResolveConfig(Cli, C, WorkDir, Err));
-  AssertEquals('причины нет — образец пишется', '', Err);
-  AssertTrue('инструменты — умолчания (grep=1)', ToolEnabled(C, 'grep'));
+  AssertTrue('--init with a broken INI', ResolveConfig(Cli, C, WorkDir, Err));
+  AssertEquals('no reason — the sample is written', '', Err);
+  AssertTrue('tools keep their defaults (grep=1)', ToolEnabled(C, 'grep'));
 
   DeleteFile(FileName);
 end;

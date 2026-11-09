@@ -1,7 +1,7 @@
 program fakemcp;
-{ Мини-MCP-сервер для интеграционных тестов mirmid.
-  Транспорт stdio: JSON-RPC 2.0, по одному объекту в строке.
-  Инструменты: echo (возвращает текст), boom (isError), fail (ошибка JSON-RPC). }
+{ Minimal MCP server for the mirmid integration tests.
+  stdio transport: JSON-RPC 2.0, one object per line.
+  Tools: echo (returns the text), boom (isError), fail (JSON-RPC error). }
 
 {$mode objfpc}{$H+}
 
@@ -142,7 +142,7 @@ begin
         else if TName = 'boom' then
           O.Add('result', TextContent('tool failed', True))
         else
-          O.Add('result', TextContent('неизвестный инструмент', True));
+          O.Add('result', TextContent('unknown tool', True));
       end
       else
         O.Add('error', ErrorObject(-32601, 'method not found'));

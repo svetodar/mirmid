@@ -1,5 +1,5 @@
 unit test_json;
-{ Тесты JSON-хелперов и сериализации сообщений. }
+{ Tests for the JSON helpers and message serialisation. }
 
 {$mode objfpc}{$H+}
 
@@ -32,12 +32,12 @@ var
   D: TJSONData;
   Err: string;
 begin
-  AssertTrue('разбор JSON', ParseJSON('{"a":{"b":5},"s":"привет","f":1.5}', D, Err));
+  AssertTrue('JSON parse', ParseJSON('{"a":{"b":5},"s":"grüße","f":1.5}', D, Err));
   try
-    AssertEquals('вложенное число', 5, JInt(D, 'a.b', 0));
-    AssertEquals('строка', 'привет', JStr(D, 's', ''));
-    AssertEquals('дробное', 1.5, JFloat(D, 'f', 0.0), 0.0001);
-    AssertEquals('значение по умолчанию', 'нет', JStr(D, 'missing', 'нет'));
+    AssertEquals('nested number', 5, JInt(D, 'a.b', 0));
+    AssertEquals('string', 'grüße', JStr(D, 's', ''));
+    AssertEquals('fractional', 1.5, JFloat(D, 'f', 0.0), 0.0001);
+    AssertEquals('default value', 'none', JStr(D, 'missing', 'none'));
   finally
     D.Free;
   end;
@@ -49,14 +49,14 @@ var
   Err: string;
   OldSep: Char;
 begin
-  { Число, пришедшее в JSON строкой, читается при любой локали. }
-  AssertTrue('разбор JSON', ParseJSON('{"f":"0.5","bad":"abc"}', D, Err));
+  { A number that arrives as a JSON string is read under any locale. }
+  AssertTrue('JSON parse', ParseJSON('{"f":"0.5","bad":"abc"}', D, Err));
   try
     OldSep := DefaultFormatSettings.DecimalSeparator;
     DefaultFormatSettings.DecimalSeparator := ',';
     try
-      AssertEquals('строка "0.5"', 0.5, JFloat(D, 'f', -1.0), 0.0001);
-      AssertEquals('мусор — значение по умолчанию', -1.0, JFloat(D, 'bad', -1.0), 0.0001);
+      AssertEquals('string "0.5"', 0.5, JFloat(D, 'f', -1.0), 0.0001);
+      AssertEquals('garbage — default value', -1.0, JFloat(D, 'bad', -1.0), 0.0001);
     finally
       DefaultFormatSettings.DecimalSeparator := OldSep;
     end;
@@ -78,23 +78,23 @@ begin
   M.ToolCalls[0] := TC;
 
   M2 := JSONToMessage(MessageToJSON(M));
-  AssertEquals('роль', Ord(mrAssistant), Ord(M2.Role));
-  AssertEquals('число вызовов', 1, Length(M2.ToolCalls));
-  AssertEquals('имя инструмента', 'shell', M2.ToolCalls[0].Name);
-  AssertEquals('аргументы', '{"command":"ls"}', M2.ToolCalls[0].Arguments);
-  AssertEquals('id вызова', 'call_1', M2.ToolCalls[0].Id);
+  AssertEquals('role', Ord(mrAssistant), Ord(M2.Role));
+  AssertEquals('tool call count', 1, Length(M2.ToolCalls));
+  AssertEquals('tool name', 'shell', M2.ToolCalls[0].Name);
+  AssertEquals('arguments', '{"command":"ls"}', M2.ToolCalls[0].Arguments);
+  AssertEquals('call id', 'call_1', M2.ToolCalls[0].Id);
 end;
 
 procedure TJsonTests.TestToolMessage;
 var
   M, M2: TMessage;
 begin
-  M := MakeMessage(mrTool, 'результат');
+  M := MakeMessage(mrTool, 'result');
   M.ToolCallId := 'call_9';
   M.Name := 'read_text_file';
   M2 := JSONToMessage(MessageToJSON(M));
-  AssertEquals('роль', Ord(mrTool), Ord(M2.Role));
-  AssertEquals('содержимое', 'результат', M2.Content);
+  AssertEquals('role', Ord(mrTool), Ord(M2.Role));
+  AssertEquals('content', 'result', M2.Content);
   AssertEquals('tool_call_id', 'call_9', M2.ToolCallId);
   AssertEquals('name', 'read_text_file', M2.Name);
 end;
@@ -105,78 +105,78 @@ var
   O: TJSONObject;
   Body: string;
 begin
-  { Результат инструмента мог быть обрезан на середине символа: в тело
-    запроса не должен попасть некорректный UTF-8-байт. }
-  M := MakeMessage(mrTool, 'текст' + #$D0);
+  { A tool result may have been cut in the middle of a character: an invalid
+    UTF-8 byte must not reach the request body. }
+  M := MakeMessage(mrTool, 'text' + #$D0);
   O := MessageToJSON(M);
   try
     Body := O.AsJSON;
   finally
     O.Free;
   end;
-  AssertTrue('тело запроса — корректный UTF-8', IsValidUTF8(Body));
+  AssertTrue('request body is valid UTF-8', IsValidUTF8(Body));
 end;
 
-{ Помощник: разобрать через ParseJSONRepair и вернуть значение ключа. }
+{ Helper: parse through ParseJSONRepair and return the value of a key. }
 function RepairedValue(const S, Path: string): string;
 var
   D: TJSONData;
   Err: string;
 begin
-  Result := '<ошибка: ' + S + '>';
+  Result := '<error: ' + S + '>';
   if not ParseJSONRepair(S, D, Err) then
     Exit;
   try
-    Result := JStr(D, Path, '<нет>');
+    Result := JStr(D, Path, '<missing>');
   finally
     D.Free;
   end;
 end;
 
-{ Баг из реальной работы: "path""..." — пропущено двоеточие. }
+{ Bug seen in real use: "path""..." — the colon is missing. }
 procedure TJsonTests.TestRepairMissingColon;
 begin
-  AssertEquals('пропущенное двоеточие', 'docs/index.md',
+  AssertEquals('missing colon', 'docs/index.md',
     RepairedValue('{"path""docs/index.md"}', 'path'));
-  AssertEquals('двоеточие перед числом', '7',
+  AssertEquals('colon before a number', '7',
     RepairedValue('{"n"7}', 'n'));
-  AssertEquals('двоеточие перед объектом', 'x',
+  AssertEquals('colon before an object', 'x',
     RepairedValue('{"a"{"b":"x"}}', 'a.b'));
-  AssertEquals('пробелы вокруг', 'v',
+  AssertEquals('whitespace around it', 'v',
     RepairedValue('{ "a"   "v" }', 'a'));
 end;
 
 procedure TJsonTests.TestRepairCommonMalformations;
 begin
-  AssertEquals('висячая запятая', '1',
+  AssertEquals('trailing comma', '1',
     RepairedValue('{"a":1,}', 'a'));
-  AssertEquals('ключ без кавычек', '2',
+  AssertEquals('unquoted key', '2',
     RepairedValue('{a:2}', 'a'));
-  AssertEquals('одинарные кавычки', 'v',
+  AssertEquals('single quotes', 'v',
     RepairedValue('{''a'':''v''}', 'a'));
-  AssertEquals('markdown-забор и текст', 'v',
-    RepairedValue('Вот аргументы:' + sLineBreak + '```json' + sLineBreak +
-      '{"a":"v"}' + sLineBreak + '```' + sLineBreak + 'готово', 'a'));
-  AssertEquals('незакрытая структура', 'v',
+  AssertEquals('markdown fence and text', 'v',
+    RepairedValue('Here are the arguments:' + sLineBreak + '```json' + sLineBreak +
+      '{"a":"v"}' + sLineBreak + '```' + sLineBreak + 'done', 'a'));
+  AssertEquals('unclosed structure', 'v',
     RepairedValue('{"a":"v"', 'a'));
 end;
 
-{ Корректный JSON не должен меняться. }
+{ Valid JSON must not change. }
 procedure TJsonTests.TestRepairKeepsValidJSON;
 begin
-  AssertEquals('корректный JSON не меняется',
-    '{"a":{"b":5},"s":"привет"}',
-    RepairJSON('{"a":{"b":5},"s":"привет"}'));
+  AssertEquals('valid JSON stays untouched',
+    '{"a":{"b":5},"s":"grüße"}',
+    RepairJSON('{"a":{"b":5},"s":"grüße"}'));
 end;
 
-{ Мусор без начала объекта или массива по-прежнему ошибка. }
+{ Garbage without an opening object or array is still an error. }
 procedure TJsonTests.TestRepairRejectsGarbage;
 var
   D: TJSONData;
   Err: string;
 begin
-  AssertFalse('текст без структуры', ParseJSONRepair('просто текст', D, Err));
-  AssertFalse('только закрывающая скобка', ParseJSONRepair('}', D, Err));
+  AssertFalse('text without a structure', ParseJSONRepair('just text', D, Err));
+  AssertFalse('closing brace only', ParseJSONRepair('}', D, Err));
 end;
 
 initialization

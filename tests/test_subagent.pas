@@ -1,6 +1,6 @@
 unit test_subagent;
-{ Тесты инструментов subagent и http_request (без сети: проверяются
-  регистрация, политики и ранние проверки аргументов). }
+{ Tests for the subagent and http_request tools (no network: registration,
+  policies and early argument checks are verified). }
 
 {$mode objfpc}{$H+}
 
@@ -36,8 +36,8 @@ implementation
 uses
   SysUtils, Classes, fpjson, mirmid.types, mirmid.subagent, mirmid.httprequest;
 
-{ Имена инструментов из массива tools запроса — по одной строке, через
-  перевод строки. }
+{ Tool names from the tools array of the request -- one per line, separated by
+  line breaks. }
 function RequestToolNames(const R: TToolRegistry): string;
 var
   A: TJSONArray;
@@ -65,8 +65,8 @@ procedure TSubAgentToolTests.SetUp;
 var
   Cfg: TMirmidConfig;
 begin
-  { subagent по умолчанию выключен ([tools]), а тесты ниже проверяют его
-    обработку — включаем ключ и собираем набор с ним. }
+  { subagent is disabled by default ([tools]), and the tests below exercise its
+    handler -- switch the key on and build a set that includes it. }
   Cfg := DefaultConfig;
   SetToolEnabled(Cfg, SUBAGENT_TOOL_NAME, True);
   FReg := TToolRegistry.Create;
@@ -79,8 +79,8 @@ begin
   FReg.Free;
 end;
 
-{ Набор по умолчанию: читающие инструменты и revise_plan есть, пишущие,
-  сетевые и вложенные — нет (значения из таблицы mirmid.tools). }
+{ Default set: the read-only tools and revise_plan are there, the writing,
+  network and nested ones are not (values from the mirmid.tools table). }
 procedure TSubAgentToolTests.TestSessionToolsDefault;
 var
   R: TToolRegistry;
@@ -88,16 +88,16 @@ begin
   R := TToolRegistry.Create;
   try
     RegisterSessionTools(R, DefaultConfig);
-    AssertFalse('subagent выключен по умолчанию', R.Has(SUBAGENT_TOOL_NAME));
-    AssertFalse('http_request выключен по умолчанию', R.Has(HTTP_TOOL_NAME));
-    AssertFalse('shell выключен по умолчанию', R.Has('shell'));
-    AssertTrue('grep включён по умолчанию', R.Has('grep'));
+    AssertFalse('subagent is disabled by default', R.Has(SUBAGENT_TOOL_NAME));
+    AssertFalse('http_request is disabled by default', R.Has(HTTP_TOOL_NAME));
+    AssertFalse('shell is disabled by default', R.Has('shell'));
+    AssertTrue('grep is enabled by default', R.Has('grep'));
   finally
     R.Free;
   end;
 end;
 
-{ Ключи [tools] включают инструменты в наборе сессии. }
+{ The [tools] keys enable tools in the session set. }
 procedure TSubAgentToolTests.TestSessionToolsHttpEnabled;
 var
   Cfg: TMirmidConfig;
@@ -109,16 +109,17 @@ begin
   R2 := TToolRegistry.Create;
   try
     RegisterSessionTools(R2, Cfg);
-    AssertTrue('http_request доступен с ключом http_request=1',
+    AssertTrue('http_request is available with the key http_request=1',
       R2.Has(HTTP_TOOL_NAME));
-    AssertTrue('subagent тоже на месте', R2.Has(SUBAGENT_TOOL_NAME));
+    AssertTrue('subagent is in place too', R2.Has(SUBAGENT_TOOL_NAME));
   finally
     R2.Free;
   end;
 end;
 
-{ Защита в глубину: инструмент зарегистрирован (набор собран при включённом
-  ключе), но контекст с выключенным ключом получает отказ обработчика. }
+{ Defence in depth: the tool is registered (the set was built with the key
+  switched on), but a context with the key switched off gets a refusal from the
+  handler. }
 procedure TSubAgentToolTests.TestDisabledToolRefusesInHandler;
 var
   O: TToolOutcome;
@@ -126,53 +127,53 @@ var
 begin
   CtxOff := FCtx;
   SetToolEnabled(CtxOff.Cfg, SUBAGENT_TOOL_NAME, False);
-  O := FReg.Invoke(SUBAGENT_TOOL_NAME, '{"prompt":"тест"}', CtxOff);
-  AssertTrue('выключенный инструмент отказывает', O.IsError);
-  AssertTrue('сообщение называет инструмент: ' + O.Text,
+  O := FReg.Invoke(SUBAGENT_TOOL_NAME, '{"prompt":"test"}', CtxOff);
+  AssertTrue('a disabled tool refuses', O.IsError);
+  AssertTrue('the message names the tool: ' + O.Text,
     Pos('tool "subagent" is disabled', O.Text) > 0);
 end;
 
-{ Пустой prompt отклоняется до обращения к модели. }
+{ An empty prompt is rejected before the model is called. }
 procedure TSubAgentToolTests.TestSubagentEmptyPrompt;
 var
   O: TToolOutcome;
 begin
   O := FReg.Invoke(SUBAGENT_TOOL_NAME, '{}', FCtx);
-  AssertTrue('пустой prompt отклонён', O.IsError);
-  AssertTrue('сообщение о prompt', Pos('prompt', O.Text) > 0);
+  AssertTrue('an empty prompt is rejected', O.IsError);
+  AssertTrue('message about prompt', Pos('prompt', O.Text) > 0);
 end;
 
-{ Глубина вложенности субагентов ограничена. }
+{ The subagent nesting depth is limited. }
 procedure TSubAgentToolTests.TestSubagentDepthLimit;
 var
   O: TToolOutcome;
 begin
   FCtx.SubAgentDepth := MAX_SUBAGENT_DEPTH;
-  O := FReg.Invoke(SUBAGENT_TOOL_NAME, '{"prompt":"тест"}', FCtx);
-  AssertTrue('глубина ограничена', O.IsError);
-  AssertTrue('сообщение о глубине', Pos('глубин', O.Text) > 0);
+  O := FReg.Invoke(SUBAGENT_TOOL_NAME, '{"prompt":"test"}', FCtx);
+  AssertTrue('the depth is limited', O.IsError);
+  AssertTrue('message about the depth', Pos('nesting depth', O.Text) > 0);
 end;
 
-{ Пустой финальный ответ субагента — ошибка, а не молчание: иначе строка
-  результата в UI не появлялась бы вовсе. }
+{ An empty final answer of the subagent is an error, not silence: otherwise no
+  result line would appear in the UI at all. }
 procedure TSubAgentToolTests.TestSubagentEmptyAnswer;
 var
   O: TToolOutcome;
 begin
   O := SubagentOutcome('');
-  AssertTrue('пустой ответ — ошибка', O.IsError);
-  AssertTrue('в сообщении упомянут текст', Pos('текст', O.Text) > 0);
+  AssertTrue('an empty answer is an error', O.IsError);
+  AssertTrue('the message mentions the text', Pos('final text', O.Text) > 0);
 
   O := SubagentOutcome('   ');
-  AssertTrue('пробелы — тоже пустой ответ', O.IsError);
+  AssertTrue('spaces are an empty answer too', O.IsError);
 
-  O := SubagentOutcome('  ответ  ');
-  AssertFalse('непустой ответ не ошибка: ' + O.Text, O.IsError);
-  AssertEquals('ответ обрезан по краям', 'ответ', O.Text);
+  O := SubagentOutcome('  answer  ');
+  AssertFalse('a non-empty answer is not an error: ' + O.Text, O.IsError);
+  AssertEquals('the answer is trimmed', 'answer', O.Text);
 end;
 
-{ Инструмент зарегистрирован, но ключ http_request=0 в [tools] запрещает
-  запрос. }
+{ The tool is registered, but the key http_request=0 in [tools] forbids the
+  request. }
 procedure TSubAgentToolTests.TestHttpPolicyDenied;
 var
   O: TToolOutcome;
@@ -183,35 +184,36 @@ begin
     RegisterHttpTool(R2);
     SetToolEnabled(FCtx.Cfg, 'http_request', False);
     O := R2.Invoke(HTTP_TOOL_NAME, '{"url":"http://example.com"}', FCtx);
-    AssertTrue('http выключен ключом', O.IsError);
-    AssertTrue('сообщение называет инструмент: ' + O.Text,
+    AssertTrue('http is disabled by the key', O.IsError);
+    AssertTrue('the message names the tool: ' + O.Text,
       Pos('tool "http_request" is disabled', O.Text) > 0);
   finally
     R2.Free;
   end;
 end;
 
-{ По умолчанию OnSubAgentEvent в контексте не назначен (nil). }
+{ By default OnSubAgentEvent is not assigned in the context (nil). }
 procedure TSubAgentToolTests.TestContextOnSubAgentEventDefault;
 begin
-  AssertFalse('OnSubAgentEvent по умолчанию nil',
+  AssertFalse('OnSubAgentEvent is nil by default',
     Assigned(FCtx.OnSubAgentEvent));
 end;
 
-{ Непустой финальный ответ субагента — не ошибка, текст обрезан. }
+{ A non-empty final answer of the subagent is not an error, the text is
+  trimmed. }
 procedure TSubAgentToolTests.TestSubagentOutcomeNonEmpty;
 var
   O: TToolOutcome;
 begin
-  O := SubagentOutcome('  результат работы  ');
-  AssertFalse('непустой ответ не ошибка', O.IsError);
-  AssertEquals('текст обрезан по краям', 'результат работы', O.Text);
+  O := SubagentOutcome('  work result  ');
+  AssertFalse('a non-empty answer is not an error', O.IsError);
+  AssertEquals('the text is trimmed', 'work result', O.Text);
 end;
 
-{ Массив tools запроса совпадает с таблицей [tools]: все имена известны
-  таблице, и каждый её ключ попадает в запрос — кроме revise_plan, который
-  регистрирует планировщик, а не набор сессии. Так тест ловит расхождение
-  таблицы и реестра. }
+{ The tools array of the request matches the [tools] table: every name is known
+  to the table, and every key of it reaches the request -- except revise_plan,
+  which is registered by the planner rather than by the session set. This way
+  the test catches a mismatch between the table and the registry. }
 procedure TSubAgentToolTests.TestRequestToolsMatchTable;
 var
   Cfg: TMirmidConfig;
@@ -228,18 +230,18 @@ begin
   try
     RegisterSessionTools(R, Cfg);
     Names.Text := RequestToolNames(R);
-    AssertTrue('запрос не пуст', Names.Count > 0);
-    { Вверх: ни одного имени вне таблицы. }
+    AssertTrue('the request is not empty', Names.Count > 0);
+    { Upwards: no name outside the table. }
     for I := 0 to Names.Count - 1 do
-      AssertTrue('имя из таблицы: ' + Names[I],
+      AssertTrue('a name from the table: ' + Names[I],
         IsKnownToolName(Names[I]));
-    { Вниз: каждый ключ таблицы, кроме revise_plan, в запросе. }
+    { Downwards: every key of the table, except revise_plan, is in the request. }
     for I := 0 to ToolSwitchCount - 1 do
     begin
       Name := ToolSwitchAt(I).Name;
       if Name = 'revise_plan' then
         Continue;
-      AssertTrue('в запросе есть ' + Name, Names.IndexOf(Name) >= 0);
+      AssertTrue('the request contains ' + Name, Names.IndexOf(Name) >= 0);
     end;
   finally
     Names.Free;
@@ -247,36 +249,36 @@ begin
   end;
 end;
 
-{ Выключенный ключом инструмент не попадает в массив tools запроса, а
-  включённый — попадает. }
+{ A tool disabled by its key does not get into the tools array of the request,
+  while an enabled one does. }
 procedure TSubAgentToolTests.TestDisabledToolAbsentFromRequest;
 var
   Cfg: TMirmidConfig;
   R: TToolRegistry;
   S: string;
 begin
-  { По умолчанию shell выключен: его нет в массиве tools запроса. }
+  { By default shell is disabled: it is not in the tools array of the request. }
   Cfg := DefaultConfig;
   R := TToolRegistry.Create;
   try
     RegisterSessionTools(R, Cfg);
     S := RequestToolNames(R);
-    AssertEquals('shell выключен — нет в запросе', -1,
+    AssertEquals('shell is disabled -- absent from the request', -1,
       S.IndexOf('shell'));
-    AssertTrue('file_list включён — есть в запросе',
+    AssertTrue('file_list is enabled -- present in the request',
       S.IndexOf('file_list') >= 0);
   finally
     R.Free;
   end;
 
-  { Ключ shell=1 — инструмент снова в запросе. }
+  { The key shell=1 -- the tool is back in the request. }
   Cfg := DefaultConfig;
   SetToolEnabled(Cfg, 'shell', True);
   R := TToolRegistry.Create;
   try
     RegisterSessionTools(R, Cfg);
     S := RequestToolNames(R);
-    AssertTrue('shell включён — есть в запросе',
+    AssertTrue('shell is enabled -- present in the request',
       S.IndexOf('shell') >= 0);
   finally
     R.Free;

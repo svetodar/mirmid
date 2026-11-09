@@ -1,7 +1,7 @@
 unit test_llm;
-{ Тесты без сети: аккумулятор дельт (SSE) вместе с буферизацией частично
-  пришедших JSON-строк, оценка размера контекста, разбор и форматирование
-  списка моделей. }
+{ Network-free tests: the delta accumulator (SSE) together with buffering of
+  partially received JSON lines, context size estimation, and parsing and
+  formatting of the model list. }
 
 {$mode objfpc}{$H+}
 
@@ -17,9 +17,10 @@ type
     procedure OnDelta(const ContentDelta, ReasoningDelta: string);
   published
     procedure TestContentAndUsage;
-    { usage в стриме: при stream_options.include_usage провайдер присылает
-      его отдельным чанком с пустым choices (перед [DONE]). Плюс поведение
-      без usage и после Reset — счётчики нулевые, а не залипшие. }
+    { usage in a stream: with stream_options.include_usage the provider sends
+      it as a separate chunk with an empty choices array (before [DONE]).
+      Plus the behaviour without usage and after Reset — the counters are
+      zero, not stuck. }
     procedure TestUsageOnlyChunkEmptyChoices;
     procedure TestUsageArrivesBeforeDone;
     procedure TestUsageWithoutTotalTokens;
@@ -37,9 +38,9 @@ type
     procedure TestPartialChunkDoneAcrossChunks;
   end;
 
-  { Регрессия к дефекту: JSON-блок, разрезанный между двумя сетевыми
-    чанками, не должен теряться при разборе. Тест идёт через реальную точку
-    входа TLLMClient.SSEChunk, а не через аккумулятор напрямую. }
+  { Regression for the defect: a JSON block cut between two network chunks
+    must not get lost during parsing. The test goes through the real entry
+    point TLLMClient.SSEChunk rather than the accumulator directly. }
   TLLMClientSSEChunkTests = class(TTestCase)
   private
     FClient: TLLMClient;
@@ -100,15 +101,15 @@ begin
   Ac := TSSEAccumulator.Create;
   try
     Ac.OnDelta := @OnDelta;
-    AssertTrue('первый чанк', Ac.FeedLine(MakeChunk('{"content":"Прив"}')));
-    AssertTrue('второй чанк', Ac.FeedLine(MakeChunk('{"content":"ет!"}')));
-    AssertTrue('чанк finish+usage', Ac.FeedLine(
+    AssertTrue('first chunk', Ac.FeedLine(MakeChunk('{"content":"Grü"}')));
+    AssertTrue('second chunk', Ac.FeedLine(MakeChunk('{"content":"ße!"}')));
+    AssertTrue('finish+usage chunk', Ac.FeedLine(
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}],' +
       '"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}'));
-    AssertFalse('[DONE] завершает поток', Ac.FeedLine('data: [DONE]'));
+    AssertFalse('[DONE] ends the stream', Ac.FeedLine('data: [DONE]'));
     Ac.Collect(Resp);
-    AssertEquals('текст склеен', 'Привет!', Resp.Content);
-    AssertEquals('дельты переданы в UI', 'Привет!', FDeltaContent);
+    AssertEquals('text glued together', 'Grüße!', Resp.Content);
+    AssertEquals('deltas passed to the UI', 'Grüße!', FDeltaContent);
     AssertEquals('finish_reason', 'stop', Resp.FinishReason);
     AssertEquals('prompt_tokens', 10, Resp.PromptTokens);
     AssertEquals('completion_tokens', 5, Resp.CompletionTokens);
@@ -118,8 +119,8 @@ begin
   end;
 end;
 
-{ usage при include_usage приходит отдельным чанком с пустым choices:
-  ни текста, ни finish_reason в нём нет, только счётчики. }
+{ with include_usage the usage arrives as a separate chunk with an empty
+  choices array: no text, no finish_reason, only the counters. }
 procedure TSSEAccumulatorTests.TestUsageOnlyChunkEmptyChoices;
 var
   Ac: TSSEAccumulator;
@@ -129,7 +130,7 @@ begin
   Ac := TSSEAccumulator.Create;
   try
     Ac.OnDelta := @OnDelta;
-    AssertTrue('чанк usage', Ac.FeedLine(
+    AssertTrue('usage chunk', Ac.FeedLine(
       'data: {"id":"chunk_usage","object":"chat.completion.chunk",' +
       '"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":0,' +
       '"total_tokens":42}}'));
@@ -137,16 +138,16 @@ begin
     AssertEquals('prompt_tokens', 42, Resp.PromptTokens);
     AssertEquals('completion_tokens', 0, Resp.CompletionTokens);
     AssertEquals('total_tokens', 42, Resp.TotalTokens);
-    AssertEquals('текста нет', '', Resp.Content);
-    AssertEquals('дельта не вызвана', '', FDeltaContent);
+    AssertEquals('no text', '', Resp.Content);
+    AssertEquals('delta not fired', '', FDeltaContent);
   finally
     Ac.Free;
   end;
 end;
 
-{ Реальный порядок потока: текст, finish_reason, usage-чанк, [DONE].
-  usage не сбрасывает уже собранное, [DONE] его не теряет. Total при этом
-  может отсутствовать — тогда остаётся 0 и это не ошибка. }
+{ The real stream order: text, finish_reason, usage chunk, [DONE].
+  usage does not drop what is already collected, and [DONE] does not lose it.
+  Total may be absent — then it stays 0, which is not an error. }
 procedure TSSEAccumulatorTests.TestUsageArrivesBeforeDone;
 var
   Ac: TSSEAccumulator;
@@ -154,15 +155,15 @@ var
 begin
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('текст', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
+    AssertTrue('text', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
     AssertTrue('finish_reason', Ac.FeedLine(
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}'));
-    AssertTrue('usage-чанк', Ac.FeedLine(
+    AssertTrue('usage chunk', Ac.FeedLine(
       'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":3}}'));
-    AssertFalse('[DONE] завершает поток', Ac.FeedLine('data: [DONE]'));
+    AssertFalse('[DONE] ends the stream', Ac.FeedLine('data: [DONE]'));
     Ac.Collect(Resp);
-    AssertEquals('текст сохранён', 'ok', Resp.Content);
-    AssertEquals('finish_reason сохранён', 'stop', Resp.FinishReason);
+    AssertEquals('text kept', 'ok', Resp.Content);
+    AssertEquals('finish_reason kept', 'stop', Resp.FinishReason);
     AssertEquals('prompt_tokens', 100, Resp.PromptTokens);
     AssertEquals('completion_tokens', 3, Resp.CompletionTokens);
   finally
@@ -170,8 +171,8 @@ begin
   end;
 end;
 
-{ Провайдер прислал usage без total_tokens (бывает в стриме): prompt и
-  completion заполнены, total остаётся 0 как «не сообщён». }
+{ The provider sent usage without total_tokens (this happens in a stream):
+  prompt and completion are filled in, total stays 0 as "not reported". }
 procedure TSSEAccumulatorTests.TestUsageWithoutTotalTokens;
 var
   Ac: TSSEAccumulator;
@@ -179,19 +180,19 @@ var
 begin
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('usage без total', Ac.FeedLine(
+    AssertTrue('usage without total', Ac.FeedLine(
       'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2}}'));
     Ac.Collect(Resp);
     AssertEquals('prompt_tokens', 7, Resp.PromptTokens);
     AssertEquals('completion_tokens', 2, Resp.CompletionTokens);
-    AssertEquals('total_tokens не сообщён', 0, Resp.TotalTokens);
+    AssertEquals('total_tokens not reported', 0, Resp.TotalTokens);
   finally
     Ac.Free;
   end;
 end;
 
-{ Без usage (провайдер не поддержал include_usage) все счётчики нулевые:
-  агент должен понять, что точный размер запроса неизвестен. }
+{ Without usage (the provider did not honour include_usage) all counters are
+  zero: the agent must understand that the exact request size is unknown. }
 procedure TSSEAccumulatorTests.TestUsageZeroWhenAbsent;
 var
   Ac: TSSEAccumulator;
@@ -199,7 +200,7 @@ var
 begin
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('текст', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
+    AssertTrue('text', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
     AssertTrue('finish_reason', Ac.FeedLine(
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}'));
     Ac.Collect(Resp);
@@ -211,8 +212,8 @@ begin
   end;
 end;
 
-{ Аккумулятор переиспользуется (живёт в TLLMClient), поэтому Reset обязан
-  обнулять и usage прежнего потока, иначе счётчики «залипнут». }
+{ The accumulator is reused (it lives in TLLMClient), so Reset must zero the
+  usage of the previous stream too, otherwise the counters get stuck. }
 procedure TSSEAccumulatorTests.TestResetClearsUsage;
 var
   Ac: TSSEAccumulator;
@@ -220,16 +221,16 @@ var
 begin
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('usage первого потока', Ac.FeedLine(
+    AssertTrue('usage of the first stream', Ac.FeedLine(
       'data: {"choices":[],"usage":{"prompt_tokens":50,"completion_tokens":9,' +
       '"total_tokens":59}}'));
     Ac.Reset;
-    AssertTrue('второй поток: текст', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
+    AssertTrue('second stream: text', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
     Ac.Collect(Resp);
-    AssertEquals('prompt_tokens сброшен', 0, Resp.PromptTokens);
-    AssertEquals('completion_tokens сброшен', 0, Resp.CompletionTokens);
-    AssertEquals('total_tokens сброшен', 0, Resp.TotalTokens);
-    AssertEquals('текст второго потока', 'ok', Resp.Content);
+    AssertEquals('prompt_tokens reset', 0, Resp.PromptTokens);
+    AssertEquals('completion_tokens reset', 0, Resp.CompletionTokens);
+    AssertEquals('total_tokens reset', 0, Resp.TotalTokens);
+    AssertEquals('text of the second stream', 'ok', Resp.Content);
   finally
     Ac.Free;
   end;
@@ -246,11 +247,11 @@ begin
   try
     Ac.OnDelta := @OnDelta;
     AssertTrue('reasoning_content',
-      Ac.FeedLine(MakeChunk('{"reasoning_content":"дум"}')));
-    AssertTrue('алиас reasoning',
-      Ac.FeedLine(MakeChunk('{"reasoning":"аюк"}')));
+      Ac.FeedLine(MakeChunk('{"reasoning_content":"thin"}')));
+    AssertTrue('reasoning alias',
+      Ac.FeedLine(MakeChunk('{"reasoning":"king"}')));
     Ac.Collect(Resp);
-    AssertEquals('размышления склеены', 'думаюк', Resp.Reasoning);
+    AssertEquals('reasoning glued together', 'thinking', Resp.Reasoning);
   finally
     Ac.Free;
   end;
@@ -263,21 +264,21 @@ var
 begin
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('id и name', Ac.FeedLine(
+    AssertTrue('id and name', Ac.FeedLine(
       'data: {"choices":[{"delta":{"tool_calls":[' +
       '{"index":0,"id":"call_1","function":{"name":"shell","arguments":""}}]}}]}'));
-    AssertTrue('аргументы первой части', Ac.FeedLine(
+    AssertTrue('arguments of the first part', Ac.FeedLine(
       'data: {"choices":[{"delta":{"tool_calls":[' +
       '{"index":0,"function":{"arguments":"{\"command\":\"ls\"}"}}]}}]}'));
-    AssertTrue('второй вызов (index 1)', Ac.FeedLine(
+    AssertTrue('second call (index 1)', Ac.FeedLine(
       'data: {"choices":[{"delta":{"tool_calls":[' +
       '{"index":1,"id":"call_2","function":{"name":"file_list","arguments":"{}"}}]}}]}'));
     Ac.Collect(Resp);
-    AssertEquals('два вызова', 2, Length(Resp.ToolCalls));
-    AssertEquals('id первого', 'call_1', Resp.ToolCalls[0].Id);
-    AssertEquals('имя первого', 'shell', Resp.ToolCalls[0].Name);
-    AssertEquals('аргументы склеены', '{"command":"ls"}', Resp.ToolCalls[0].Arguments);
-    AssertEquals('имя второго', 'file_list', Resp.ToolCalls[1].Name);
+    AssertEquals('two calls', 2, Length(Resp.ToolCalls));
+    AssertEquals('id of the first', 'call_1', Resp.ToolCalls[0].Id);
+    AssertEquals('name of the first', 'shell', Resp.ToolCalls[0].Name);
+    AssertEquals('arguments glued together', '{"command":"ls"}', Resp.ToolCalls[0].Arguments);
+    AssertEquals('name of the second', 'file_list', Resp.ToolCalls[1].Name);
   finally
     Ac.Free;
   end;
@@ -290,7 +291,7 @@ begin
   Ac := TSSEAccumulator.Create;
   try
     AssertTrue('[DONE]', not Ac.FeedLine('data: [DONE]'));
-    AssertFalse('после DONE строки игнорируются',
+    AssertFalse('lines after DONE are ignored',
       Ac.FeedLine(MakeChunk('{"content":"x"}')));
   finally
     Ac.Free;
@@ -304,10 +305,10 @@ var
 begin
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('битый чанк пропускается', Ac.FeedLine('data: {не json'));
-    AssertTrue('поток продолжается', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
+    AssertTrue('broken chunk is skipped', Ac.FeedLine('data: {not json'));
+    AssertTrue('stream continues', Ac.FeedLine(MakeChunk('{"content":"ok"}')));
     Ac.Collect(Resp);
-    AssertEquals('текст сохранён', 'ok', Resp.Content);
+    AssertEquals('text kept', 'ok', Resp.Content);
   finally
     Ac.Free;
   end;
@@ -320,20 +321,20 @@ var
 begin
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('пустая строка', Ac.FeedLine(''));
-    AssertTrue('комментарий SSE', Ac.FeedLine(': keepalive'));
-    AssertTrue('чанк после комментариев', Ac.FeedLine(MakeChunk('{"content":"hi"}')));
+    AssertTrue('empty line', Ac.FeedLine(''));
+    AssertTrue('SSE comment', Ac.FeedLine(': keepalive'));
+    AssertTrue('chunk after the comments', Ac.FeedLine(MakeChunk('{"content":"hi"}')));
     Ac.Collect(Resp);
-    AssertEquals('текст сохранён', 'hi', Resp.Content);
+    AssertEquals('text kept', 'hi', Resp.Content);
   finally
     Ac.Free;
   end;
 end;
 
-{ --- Регрессия: сетевой чанк может разрезать JSON-строку на части --- }
+{ --- Regression: a network chunk may cut a JSON line into pieces --- }
 
-{ Кормит поток кусками ровно по PartSize байт. Возврат False — FeedChunk
-  сообщил о завершении потока ([DONE]). }
+{ Feeds the stream in pieces of exactly PartSize bytes. A False result means
+  FeedChunk reported the end of the stream ([DONE]). }
 function FeedInParts(Ac: TSSEAccumulator; const S: RawByteString;
   PartSize: Integer): Boolean;
 var
@@ -352,15 +353,15 @@ end;
 
 procedure TSSEAccumulatorTests.TestPartialChunksReassembled;
 const
-  PART_SIZES: array[0..5] of Integer = (1, 2, 3, 4, 7, 0);  { 0 — весь поток }
+  PART_SIZES: array[0..5] of Integer = (1, 2, 3, 4, 7, 0);  { 0 — whole stream }
 var
   Ac: TSSEAccumulator;
   Resp: TLLMResponse;
   Stream: RawByteString;
   I, PartSize: Integer;
 begin
-  { JSON-строка приходит кусками произвольного размера. Проверяем нарезку
-    на всех границах, включая «по одному байту». }
+  { The JSON line arrives in pieces of an arbitrary size. We check every
+    cutting boundary, including "one byte at a time". }
   Stream :=
     'data: {"choices":[{"delta":{"content":"Hello, "}}]}' + #10 +
     'data: {"choices":[{"delta":{"content":"world"}}]}' + #10 +
@@ -372,12 +373,12 @@ begin
       PartSize := Length(Stream);
     Ac := TSSEAccumulator.Create;
     try
-      AssertTrue(Format('поток разобран (куски по %d байт)', [PartSize]),
+      AssertTrue(Format('stream parsed (pieces of %d bytes)', [PartSize]),
         FeedInParts(Ac, Stream, PartSize));
       Ac.Collect(Resp);
-      AssertEquals(Format('текст (куски по %d байт)', [PartSize]),
+      AssertEquals(Format('text (pieces of %d bytes)', [PartSize]),
         'Hello, world', Resp.Content);
-      AssertEquals(Format('finish_reason (куски по %d байт)', [PartSize]),
+      AssertEquals(Format('finish_reason (pieces of %d bytes)', [PartSize]),
         'stop', Resp.FinishReason);
     finally
       Ac.Free;
@@ -391,14 +392,14 @@ var
   Resp: TLLMResponse;
   Stream: RawByteString;
 begin
-  { Буквы кириллицы занимают по два байта: при подаче по одному байту
-    граница чанка попадает внутрь символа UTF-8. }
-  Stream := MakeChunk('{"content":"Привет, мир!"}') + #10;
+  { The letters of "grüße" take two bytes each, so feeding one byte at a time
+    puts a chunk boundary inside a UTF-8 character. }
+  Stream := MakeChunk('{"content":"Grüße, Welt!"}') + #10;
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('разрезание по байтам', FeedInParts(Ac, Stream, 1));
+    AssertTrue('splitting by bytes', FeedInParts(Ac, Stream, 1));
     Ac.Collect(Resp);
-    AssertEquals('UTF-8 не повреждён', 'Привет, мир!', Resp.Content);
+    AssertEquals('UTF-8 not corrupted', 'Grüße, Welt!', Resp.Content);
   finally
     Ac.Free;
   end;
@@ -410,15 +411,15 @@ var
   Resp: TLLMResponse;
   Stream: RawByteString;
 begin
-  { В SSE строки разделяются CRLF, при этом граница чанка может пройти
-    между #13 и #10. }
+  { In SSE lines are separated by CRLF, and a chunk boundary may pass between
+    #13 and #10. }
   Stream := 'data: {"choices":[{"delta":{"content":"a"}}]}' + #13#10 +
             'data: {"choices":[{"delta":{"content":"b"}}]}' + #13#10;
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('поток с CRLF', FeedInParts(Ac, Stream, 1));
+    AssertTrue('stream with CRLF', FeedInParts(Ac, Stream, 1));
     Ac.Collect(Resp);
-    AssertEquals('текст склеен', 'ab', Resp.Content);
+    AssertEquals('text glued together', 'ab', Resp.Content);
   finally
     Ac.Free;
   end;
@@ -430,18 +431,18 @@ var
   Resp: TLLMResponse;
   Stream: RawByteString;
 begin
-  { Последняя строка потока может не иметь завершающего #10: до Flush она
-    остаётся в буфере. }
+  { The last line of the stream may have no terminating #10: until Flush it
+    stays in the buffer. }
   Stream := MakeChunk('{"content":"tail"}');
   Ac := TSSEAccumulator.Create;
   try
-    AssertTrue('поток без завершающего перевода строки',
+    AssertTrue('stream without a terminating newline',
       FeedInParts(Ac, Stream, 1));
     Ac.Collect(Resp);
-    AssertEquals('до Flush строка не разобрана', '', Resp.Content);
-    AssertTrue('Flush разбирает остаток', Ac.Flush);
+    AssertEquals('line not parsed before Flush', '', Resp.Content);
+    AssertTrue('Flush parses the remainder', Ac.Flush);
     Ac.Collect(Resp);
-    AssertEquals('текст после Flush', 'tail', Resp.Content);
+    AssertEquals('text after Flush', 'tail', Resp.Content);
   finally
     Ac.Free;
   end;
@@ -452,21 +453,21 @@ var
   Ac: TSSEAccumulator;
   Stream: RawByteString;
 begin
-  { Маркер [DONE] распознаётся, даже если приходит по кускам. }
+  { The [DONE] marker is recognised even when it arrives in pieces. }
   Stream := 'data: {"choices":[{"delta":{"content":"x"}}]}' + #10 +
             'data: [DONE]' + #10;
   Ac := TSSEAccumulator.Create;
   try
-    AssertFalse('[DONE] обнаружен', FeedInParts(Ac, Stream, 1));
-    AssertTrue('поток завершён', Ac.Done);
+    AssertFalse('[DONE] detected', FeedInParts(Ac, Stream, 1));
+    AssertTrue('stream finished', Ac.Done);
   finally
     Ac.Free;
   end;
 end;
 
-{ --- Регрессия: TLLMClient.SSEChunk (обработчик HttpRequestStream).
-  Существующие тесты дёргают TSSEAccumulator.FeedChunk напрямую, поэтому
-  сама точка входа SSEChunk ими не покрывалась. --- }
+{ --- Regression: TLLMClient.SSEChunk (the HttpRequestStream handler).
+  The existing tests drive TSSEAccumulator.FeedChunk directly, so the SSEChunk
+  entry point itself was not covered by them. --- }
 
 procedure TLLMClientSSEChunkTests.SetUp;
 var
@@ -491,25 +492,26 @@ begin
   FDeltaReasoning := FDeltaReasoning + ReasoningDelta;
 end;
 
-{ Граница сетевого чанка проходит внутри JSON-объекта первой дельты. Раньше
-  такой JSON не разбирался, и текст терялся. }
+{ The network chunk boundary passes inside the JSON object of the first delta.
+  Such JSON used to be unparsed and the text was lost. }
 procedure TLLMClientSSEChunkTests.TestJsonSplitAcrossTwoChunks;
 var
   Resp: TLLMResponse;
 begin
-  AssertTrue('первый фрагмент', FClient.SSEChunk(
+  AssertTrue('first fragment', FClient.SSEChunk(
     'data: {"choices":[{"delta":{"content":"Hello, "}}]}' + #10 +
     'data: {"choices":[{"delta":{"cont'));
-  AssertTrue('второй фрагмент (продолжение JSON)', FClient.SSEChunk(
+  AssertTrue('second fragment (JSON continuation)', FClient.SSEChunk(
     'ent":"world"}}]}' + #10 +
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}' + #10));
   FClient.Accumulator.Collect(Resp);
-  AssertEquals('JSON собран из двух чанков', 'Hello, world', Resp.Content);
-  AssertEquals('дельты отданы в UI', 'Hello, world', FDeltaContent);
+  AssertEquals('JSON assembled from two chunks', 'Hello, world', Resp.Content);
+  AssertEquals('deltas handed to the UI', 'Hello, world', FDeltaContent);
   AssertEquals('finish_reason', 'stop', Resp.FinishReason);
 end;
 
-{ JSON разрезается на каждом байте, включая границы CRLF и символов UTF-8. }
+{ The JSON is cut at every byte, including CRLF boundaries and UTF-8
+  character boundaries. }
 procedure TLLMClientSSEChunkTests.TestJsonSplitAtEveryByte;
 var
   Stream: RawByteString;
@@ -518,24 +520,24 @@ var
   Ok: Boolean;
 begin
   Stream :=
-    'data: {"choices":[{"delta":{"content":"Привет, "}}]}' + #13#10 +
-    'data: {"choices":[{"delta":{"reasoning_content":"дум"}}]}' + #13#10 +
-    'data: {"choices":[{"delta":{"content":"мир!"}}]}' + #13#10 +
+    'data: {"choices":[{"delta":{"content":"Grüße, "}}]}' + #13#10 +
+    'data: {"choices":[{"delta":{"reasoning_content":"thin"}}]}' + #13#10 +
+    'data: {"choices":[{"delta":{"content":"Welt!"}}]}' + #13#10 +
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}' + #13#10;
   Ok := True;
   for I := 1 to Length(Stream) do
     if not FClient.SSEChunk(Copy(Stream, I, 1)) then
       Ok := False;
-  AssertTrue('поток не завершился раньше [DONE]', Ok);
+  AssertTrue('stream did not end before [DONE]', Ok);
   FClient.Accumulator.Collect(Resp);
-  AssertEquals('текст не повреждён', 'Привет, мир!', Resp.Content);
-  AssertEquals('размышления не повреждены', 'дум', Resp.Reasoning);
-  AssertEquals('UI получил полный текст', 'Привет, мир!', FDeltaContent);
+  AssertEquals('text not corrupted', 'Grüße, Welt!', Resp.Content);
+  AssertEquals('reasoning not corrupted', 'thin', Resp.Reasoning);
+  AssertEquals('UI received the full text', 'Grüße, Welt!', FDeltaContent);
   AssertEquals('finish_reason', 'stop', Resp.FinishReason);
 end;
 
-{ Аргументы tool_calls склеиваются из дельт, даже если JSON разрезан между
-  чанками. }
+{ The tool_calls arguments are glued together from the deltas even when the
+  JSON is cut between chunks. }
 procedure TLLMClientSSEChunkTests.TestToolCallArgsSplitAcrossChunks;
 var
   Stream: RawByteString;
@@ -547,50 +549,50 @@ begin
     '{"index":0,"id":"call_1","function":{"name":"shell","arguments":""}}]}}]}' + #10 +
     'data: {"choices":[{"delta":{"tool_calls":[' +
     '{"index":0,"function":{"arguments":"{\"command\":\"ls\"}"}}]}}]}' + #10;
-  { Разрезаем внутри JSON второй строки, уже после завершённой первой. }
+  { Cut inside the JSON of the second line, after the first one is complete. }
   Split := Pos(#10, Stream) + 20;
-  AssertTrue('первый фрагмент', FClient.SSEChunk(Copy(Stream, 1, Split)));
-  AssertTrue('второй фрагмент', FClient.SSEChunk(Copy(Stream, Split + 1, MaxInt)));
+  AssertTrue('first fragment', FClient.SSEChunk(Copy(Stream, 1, Split)));
+  AssertTrue('second fragment', FClient.SSEChunk(Copy(Stream, Split + 1, MaxInt)));
   FClient.Accumulator.Collect(Resp);
-  AssertEquals('один вызов', 1, Length(Resp.ToolCalls));
+  AssertEquals('one call', 1, Length(Resp.ToolCalls));
   AssertEquals('id', 'call_1', Resp.ToolCalls[0].Id);
-  AssertEquals('имя', 'shell', Resp.ToolCalls[0].Name);
-  AssertEquals('аргументы собраны', '{"command":"ls"}', Resp.ToolCalls[0].Arguments);
+  AssertEquals('name', 'shell', Resp.ToolCalls[0].Name);
+  AssertEquals('arguments assembled', '{"command":"ls"}', Resp.ToolCalls[0].Arguments);
 end;
 
-{ Маркер [DONE] распознаётся, даже если разрезан между чанками. }
+{ The [DONE] marker is recognised even when it is cut between chunks. }
 procedure TLLMClientSSEChunkTests.TestDoneSplitAcrossChunks;
 begin
-  AssertTrue('чанк с началом [DONE]', FClient.SSEChunk(
+  AssertTrue('chunk with the start of [DONE]', FClient.SSEChunk(
     'data: {"choices":[{"delta":{"content":"x"}}]}' + #10 + 'data: [DO'));
-  AssertFalse('[DONE] распознан по частям', FClient.SSEChunk('NE]' + #10));
-  AssertTrue('поток завершён', FClient.Accumulator.Done);
+  AssertFalse('[DONE] recognised in parts', FClient.SSEChunk('NE]' + #10));
+  AssertTrue('stream finished', FClient.Accumulator.Done);
 end;
 
-{ Последняя строка потока без завершающего #10 разбирается только Flush; при
-  этом её JSON пришёл разрезанным между чанками. }
+{ The last line of the stream without a terminating #10 is parsed only by
+  Flush, and its JSON arrived cut between chunks. }
 procedure TLLMClientSSEChunkTests.TestTrailingLineSplitWithoutNewline;
 var
   Resp: TLLMResponse;
 begin
-  AssertTrue('первый фрагмент', FClient.SSEChunk('data: {"choices":[{"delta":{"con'));
-  AssertTrue('второй фрагмент без #10', FClient.SSEChunk('tent":"tail"}}]}'));
+  AssertTrue('first fragment', FClient.SSEChunk('data: {"choices":[{"delta":{"con'));
+  AssertTrue('second fragment without #10', FClient.SSEChunk('tent":"tail"}}]}'));
   FClient.Accumulator.Collect(Resp);
-  AssertEquals('до Flush строка не разобрана', '', Resp.Content);
-  AssertTrue('Flush разбирает остаток', FClient.Accumulator.Flush);
+  AssertEquals('line not parsed before Flush', '', Resp.Content);
+  AssertTrue('Flush parses the remainder', FClient.Accumulator.Flush);
   FClient.Accumulator.Collect(Resp);
-  AssertEquals('текст после Flush', 'tail', Resp.Content);
-  AssertEquals('UI получил текст', 'tail', FDeltaContent);
+  AssertEquals('text after Flush', 'tail', Resp.Content);
+  AssertEquals('UI received the text', 'tail', FDeltaContent);
 end;
 
-{ --------------------------------------------------------------- контекст }
+{ --------------------------------------------------------------- context }
 
 procedure TContextEstimateTests.TestCountUTF8Chars;
 begin
   AssertEquals('ASCII', 5, CountUTF8Chars('hello'));
-  AssertEquals('кириллица UTF-8', 3, CountUTF8Chars('кот'));
-  AssertEquals('смешанная строка', 6, CountUTF8Chars('aбвгдe'));
-  AssertEquals('пустая строка', 0, CountUTF8Chars(''));
+  AssertEquals('multi-byte UTF-8', 5, CountUTF8Chars('grüße'));
+  AssertEquals('mixed string', 6, CountUTF8Chars('aäöüßz'));
+  AssertEquals('empty string', 0, CountUTF8Chars(''));
 end;
 
 procedure TContextEstimateTests.TestAgentContextTokens;
@@ -603,16 +605,16 @@ begin
   Agent := TAgent.Create(Cfg, nil);
   try
     Before := Agent.ContextTokens;
-    AssertTrue('есть базовый контекст (системная подсказка)', Before > 0);
-    Agent.AddUser('Небольшой вопрос.');
+    AssertTrue('there is a base context (system prompt)', Before > 0);
+    Agent.AddUser('A short question.');
     After := Agent.ContextTokens;
-    AssertTrue('контекст растёт с сообщением', After > Before);
+    AssertTrue('context grows with the message', After > Before);
   finally
     Agent.Free;
   end;
 end;
 
-{ --------------------------------------------------------------- модели }
+{ --------------------------------------------------------------- models }
 
 function MakeJson(const S: string): TJSONData;
 begin
@@ -621,11 +623,11 @@ end;
 
 procedure TModelListTests.TestNativeModelsUrl;
 begin
-  AssertEquals('с суффиксом /v1', 'http://127.0.0.1:1234/api/v0/models',
+  AssertEquals('with the /v1 suffix', 'http://127.0.0.1:1234/api/v0/models',
     NativeModelsUrl('http://127.0.0.1:1234/v1'));
-  AssertEquals('с хвостовым слэшем', 'http://127.0.0.1:1234/api/v0/models',
+  AssertEquals('with a trailing slash', 'http://127.0.0.1:1234/api/v0/models',
     NativeModelsUrl('http://127.0.0.1:1234/v1/'));
-  AssertEquals('без /v1', 'http://127.0.0.1:1234/api/v0/models',
+  AssertEquals('without /v1', 'http://127.0.0.1:1234/api/v0/models',
     NativeModelsUrl('http://127.0.0.1:1234'));
 end;
 
@@ -637,11 +639,11 @@ begin
     '"max_context_length":32768,"loaded_context_length":8192,' +
     '"state":"loaded"}'));
   AssertEquals('id', 'qwen3-8b', M.Id);
-  AssertEquals('тип', 'llm', M.Kind);
+  AssertEquals('type', 'llm', M.Kind);
   AssertEquals('max_context_length', 32768, M.ContextLength);
   AssertEquals('loaded_context_length', 8192, M.LoadedContextLength);
   AssertEquals('state', 'loaded', M.State);
-  AssertTrue('есть детали', M.Details);
+  AssertTrue('details present', M.Details);
 end;
 
 procedure TModelListTests.TestParseModelInfoStandard;
@@ -651,8 +653,8 @@ begin
   M := ParseModelInfo(MakeJson('{"id":"deepseek-chat","context_window":65536}'));
   AssertEquals('id', 'deepseek-chat', M.Id);
   AssertEquals('context_window', 65536, M.ContextLength);
-  AssertEquals('типа нет', '', M.Kind);
-  AssertTrue('есть детали', M.Details);
+  AssertEquals('no type', '', M.Kind);
+  AssertTrue('details present', M.Details);
 end;
 
 procedure TModelListTests.TestParseModelInfoIdOnly;
@@ -661,7 +663,7 @@ var
 begin
   M := ParseModelInfo(MakeJson('{"id":"gpt-x"}'));
   AssertEquals('id', 'gpt-x', M.Id);
-  AssertFalse('деталей нет', M.Details);
+  AssertFalse('no details', M.Details);
 end;
 
 procedure TModelListTests.TestEffectiveContext;
@@ -671,11 +673,11 @@ begin
   M.Id := 'm';
   M.ContextLength := 32768;
   M.LoadedContextLength := 8192;
-  AssertEquals('минимум из двух', 8192, EffectiveContext(M));
+  AssertEquals('minimum of the two', 8192, EffectiveContext(M));
   M.LoadedContextLength := 0;
-  AssertEquals('только максимум', 32768, EffectiveContext(M));
+  AssertEquals('only the maximum', 32768, EffectiveContext(M));
   M.ContextLength := 0;
-  AssertEquals('ничего не сообщено', 0, EffectiveContext(M));
+  AssertEquals('nothing reported', 0, EffectiveContext(M));
 end;
 
 procedure TModelListTests.TestFormatModelsTable;
@@ -690,10 +692,10 @@ begin
   L := TStringList.Create;
   try
     L.Text := FormatModelsTable(Models);
-    AssertEquals('три строки', 3, L.Count);
-    AssertEquals('заголовок', 'MODEL    TYPE  CONTEXT  STATE', L[0]);
-    AssertEquals('строка с деталями', 'a-model  llm   32768    loaded', L[1]);
-    AssertEquals('строка без деталей', 'b        -     -        -', L[2]);
+    AssertEquals('three lines', 3, L.Count);
+    AssertEquals('header', 'MODEL    TYPE  CONTEXT  STATE', L[0]);
+    AssertEquals('line with details', 'a-model  llm   32768    loaded', L[1]);
+    AssertEquals('line without details', 'b        -     -        -', L[2]);
   finally
     L.Free;
   end;

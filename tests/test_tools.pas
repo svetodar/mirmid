@@ -1,14 +1,14 @@
 unit test_tools;
-{ Тесты встроенных инструментов и политик безопасности.
-  Новый контракт файловых инструментов:
-   - write_text_file удалён; файл создаётся edit_text_file без hash
-     (offset = 0);
-   - read_text_file всегда возвращает шапку («[mirmid] файл: ... | размер: N байт |
-     строк: N | хеш: ...»), а со второй строки — содержимое;
-   - edit_text_file правит диапазон строк, описываемый offset/limit (offset —
-     1-базированный номер строки, 0 — дописать в конец, отрицательный — отсчёт
-     от конца; limit — сколько строк заменить, не отрицательное) и требует
-     hash из шапки для существующего файла. }
+{ Tests of the built-in tools and of the access policies.
+  The file tool contract:
+   - write_text_file is removed; a file is created by edit_text_file without a
+     hash (offset = 0);
+   - read_text_file always returns a header ("[mirmid] file: ... | size: N
+     bytes | lines: N | hash: ..."), the content starts on the second line;
+   - edit_text_file replaces the line range described by offset/limit (offset -
+     1-based line number, 0 - append to the end, negative - counted from the
+     end; limit - how many lines to replace, not negative) and requires the
+     hash from the header for an existing file. }
 
 {$mode objfpc}{$H+}
 
@@ -23,11 +23,11 @@ type
     FDir: string;
     FReg: TToolRegistry;
     FCtx: TToolContext;
-    { Полный путь к файлу внутри рабочей папки теста. }
+    { Full path to a file inside the working folder of the test. }
     function FullPath(const Name: string): string;
-    { Тело ответа read_text_file: всё после первой строки-шапки. }
+    { Body of the read_text_file answer: everything after the header line. }
     function ReadBody(const S: string): string;
-    { Хеш из шапки ответа read_text_file: 8 символов после «хеш: ». }
+    { Hash from the read_text_file header: 8 characters after "hash: ". }
     function ReadHash(const S: string): string;
   protected
     procedure SetUp; override;
@@ -86,7 +86,7 @@ implementation
 uses
   Classes, SysUtils, mirmid.types, mirmid.toolbuiltin, mirmid.util;
 
-{ True, если строка — ровно 8 шестнадцатеричных символов. }
+{ True if the string is exactly 8 hexadecimal characters. }
 function IsHex8(const S: string): Boolean;
 var
   I: Integer;
@@ -99,15 +99,15 @@ begin
       Exit(False);
 end;
 
-{ Содержимое файла, прочитанное в обход инструментов (для проверок «файл не
-  изменён»). При ошибке чтения возвращает диагностическую строку. }
+{ Content of a file read around the tools (for the "file was not changed"
+  checks). On a read error it returns a diagnostic string. }
 function ReadFileText(const Path: string): string;
 var
   Err: string;
 begin
   Result := '';
   if not ReadTextFile(Path, Result, Err) then
-    Result := '<ошибка чтения: ' + Err + '>';
+    Result := '<read error: ' + Err + '>';
 end;
 
 function TToolTests.FullPath(const Name: string): string;
@@ -129,10 +129,10 @@ function TToolTests.ReadHash(const S: string): string;
 var
   N: Integer;
 begin
-  N := Pos('хеш: ', S);
+  N := Pos('hash: ', S);
   if N = 0 then
     Exit('');
-  Result := Copy(S, N + Length('хеш: '), 8);
+  Result := Copy(S, N + Length('hash: '), 8);
 end;
 
 procedure TToolTests.SetUp;
@@ -175,40 +175,42 @@ begin
   RemoveDir(FDir);
 end;
 
-{ Создание файла через edit_text_file (режим создания, hash не нужен) и чтение
-  через read_text_file: проверяем шапку и тело. }
+{ Creating a file through edit_text_file (creation mode, no hash needed) and
+  reading it through read_text_file: the header and the body are checked. }
 procedure TToolTests.TestCreateAndRead;
 var
   O: TToolOutcome;
   Hash: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"hello","offset":0}', FCtx);
-  AssertFalse('создание файла: ' + O.Text, O.IsError);
-  AssertTrue('ответ сообщает о создании: ' + O.Text, Pos('создан файл: ', O.Text) > 0);
+  AssertFalse('file creation: ' + O.Text, O.IsError);
+  AssertTrue('the answer reports the creation: ' + O.Text,
+    Pos('file created: ', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertFalse('чтение файла: ' + O.Text, O.IsError);
-  AssertEquals('первая строка — шапка', 1, Pos('[mirmid] файл: ', O.Text));
-  AssertTrue('размер в шапке: ' + O.Text, Pos('размер: 5 байт', O.Text) > 0);
-  AssertTrue('число строк в шапке: ' + O.Text, Pos('строк: 1', O.Text) > 0);
+  AssertFalse('file reading: ' + O.Text, O.IsError);
+  AssertEquals('the first line is the header', 1, Pos('[mirmid] file: ', O.Text));
+  AssertTrue('size in the header: ' + O.Text, Pos('size: 5 bytes', O.Text) > 0);
+  AssertTrue('line count in the header: ' + O.Text, Pos('lines: 1', O.Text) > 0);
 
   Hash := ReadHash(O.Text);
-  AssertTrue('хеш в шапке — 8 hex-символов: "' + Hash + '"', IsHex8(Hash));
-  AssertEquals('тело файла', 'hello', ReadBody(O.Text));
+  AssertTrue('the hash in the header is 8 hex characters: "' + Hash + '"', IsHex8(Hash));
+  AssertEquals('file body', 'hello', ReadBody(O.Text));
 end;
 
-{ write_text_file удалён: инструмент не зарегистрирован, вызов — ошибка. }
+{ write_text_file is removed: the tool is not registered and a call is an
+  error. }
 procedure TToolTests.TestWriteToolRemoved;
 var
   O: TToolOutcome;
 begin
-  AssertFalse('write_text_file не зарегистрирован', FReg.Has('write_text_file'));
+  AssertFalse('write_text_file is not registered', FReg.Has('write_text_file'));
 
   O := FReg.Invoke('write_text_file', '{"path":"a.txt","content":"hello"}', FCtx);
-  AssertTrue('вызов удалённого инструмента — ошибка: ' + O.Text, O.IsError);
-  AssertTrue('сообщение о неизвестном инструменте: ' + O.Text,
-    Pos('неизвестный инструмент', O.Text) > 0);
-  AssertFalse('файл не создан', FileExists(FullPath('a.txt')));
+  AssertTrue('a call of the removed tool is an error: ' + O.Text, O.IsError);
+  AssertTrue('the message reports an unknown tool: ' + O.Text,
+    Pos('unknown tool', O.Text) > 0);
+  AssertFalse('the file is not created', FileExists(FullPath('a.txt')));
 end;
 
 procedure TToolTests.TestReadMissing;
@@ -216,347 +218,350 @@ var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('read_text_file', '{"path":"missing.txt"}', FCtx);
-  AssertTrue('несуществующий файл — ошибка: ' + O.Text, O.IsError);
-  AssertTrue('сообщение «файл не найден»: ' + O.Text,
-    Pos('файл не найден', O.Text) > 0);
+  AssertTrue('a missing file is an error: ' + O.Text, O.IsError);
+  AssertTrue('the message says "file not found": ' + O.Text,
+    Pos('file not found', O.Text) > 0);
 end;
 
-{ Модель может прислать аргументы с мелкими огрехами JSON (например,
-  пропущенным двоеточием) — реестр должен их починить, а не падать. }
+{ The model may send arguments with small JSON slips (a missing colon, for
+  example) - the registry has to repair them instead of failing. }
 procedure TToolTests.TestInvokeRepairsMalformedArgs;
 var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"hello","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path""a.txt"}', FCtx);
-  AssertFalse('пропущенное двоеточие исправлено: ' + O.Text, O.IsError);
-  AssertEquals('тело файла', 'hello', ReadBody(O.Text));
+  AssertFalse('the missing colon is repaired: ' + O.Text, O.IsError);
+  AssertEquals('file body', 'hello', ReadBody(O.Text));
 
   O := FReg.Invoke('read_text_file', '{path:"a.txt",}', FCtx);
-  AssertFalse('ключ без кавычек и висячая запятая: ' + O.Text, O.IsError);
-  AssertEquals('тело файла', 'hello', ReadBody(O.Text));
+  AssertFalse('a bare key and a trailing comma: ' + O.Text, O.IsError);
+  AssertEquals('file body', 'hello', ReadBody(O.Text));
 end;
 
-{ numbered=true: номера строк соответствуют реальным строкам файла. }
+{ numbered=true: the line numbers match the real lines of the file. }
 procedure TToolTests.TestReadNumbered;
 var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\nc","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt","offset":2,"numbered":true}', FCtx);
-  AssertFalse('чтение с нумерацией: ' + O.Text, O.IsError);
-  AssertEquals('номера строк реальные (offset=2)',
+  AssertFalse('reading with numbers: ' + O.Text, O.IsError);
+  AssertEquals('the line numbers are real (offset=2)',
     '     2| b' + sLineBreak + '     3| c', ReadBody(O.Text));
 end;
 
-{ Пустой диапазон (offset за концом файла) и пустой файл: только шапка, без
-  перевода строки в конце. }
+{ An empty range (offset past the end of the file) and an empty file: only the
+  header, without a trailing line break. }
 procedure TToolTests.TestReadEmptyRange;
 var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"hello","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt","offset":5}', FCtx);
-  AssertFalse('чтение за концом файла: ' + O.Text, O.IsError);
-  AssertEquals('тело пустой выборки', '', ReadBody(O.Text));
-  AssertEquals('шапка без перевода строки в конце', 0, Pos(sLineBreak, O.Text));
+  AssertFalse('reading past the end of the file: ' + O.Text, O.IsError);
+  AssertEquals('body of the empty selection', '', ReadBody(O.Text));
+  AssertEquals('the header has no trailing line break', 0, Pos(sLineBreak, O.Text));
 
-  { Пустой файл: тоже только шапка. }
+  { An empty file: only the header as well. }
   O := FReg.Invoke('edit_text_file', '{"path":"c.txt","content":"","offset":0}', FCtx);
-  AssertFalse('создание пустого файла: ' + O.Text, O.IsError);
+  AssertFalse('creating an empty file: ' + O.Text, O.IsError);
   O := FReg.Invoke('read_text_file', '{"path":"c.txt"}', FCtx);
-  AssertFalse('чтение пустого файла: ' + O.Text, O.IsError);
-  AssertTrue('размер 0 байт: ' + O.Text, Pos('размер: 0 байт', O.Text) > 0);
-  AssertTrue('строк 0: ' + O.Text, Pos('строк: 0', O.Text) > 0);
-  AssertEquals('тело пустого файла', '', ReadBody(O.Text));
+  AssertFalse('reading the empty file: ' + O.Text, O.IsError);
+  AssertTrue('size 0 bytes: ' + O.Text, Pos('size: 0 bytes', O.Text) > 0);
+  AssertTrue('0 lines: ' + O.Text, Pos('lines: 0', O.Text) > 0);
+  AssertEquals('body of the empty file', '', ReadBody(O.Text));
 end;
 
-{ Правка диапазона: строки 2..3 заменяются одной (offset=2, limit=2). }
+{ Range edit: lines 2..3 are replaced by one line (offset=2, limit=2). }
 procedure TToolTests.TestEditRange;
 var
   O: TToolOutcome;
   Hash: string;
 begin
-  { Файл из 4 строк без завершающего перевода строки. }
+  { A file of 4 lines without a trailing line break. }
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\nc\nd","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertFalse('чтение до правки: ' + O.Text, O.IsError);
-  AssertEquals('тело до правки',
+  AssertFalse('reading before the edit: ' + O.Text, O.IsError);
+  AssertEquals('body before the edit',
     'a' + sLineBreak + 'b' + sLineBreak + 'c' + sLineBreak + 'd', ReadBody(O.Text));
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":2,"limit":2,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('правка диапазона: ' + O.Text, O.IsError);
-  AssertTrue('отчёт об удалении и вставке: ' + O.Text,
-    Pos('удалено строк: 2, вставлено: 1', O.Text) > 0);
+  AssertFalse('range edit: ' + O.Text, O.IsError);
+  AssertTrue('the report mentions the removal and the insertion: ' + O.Text,
+    Pos('lines removed: 2, inserted: 1', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertEquals('тело после правки',
+  AssertEquals('body after the edit',
     'a' + sLineBreak + 'X' + sLineBreak + 'd', ReadBody(O.Text));
 end;
 
-{ Вставка без удаления (limit=0) сохраняет признак перевода строки в конце
-  файла. }
+{ Insertion without removal (limit=0) keeps the trailing line break flag of the
+  file. }
 procedure TToolTests.TestEditInsertKeepsTrailingBreak;
 var
   O: TToolOutcome;
   Hash, Exp: string;
 begin
-  { Файл «a\nb\n»: две строки и перевод строки в конце. }
+  { The file "a\nb\n": two lines and a trailing line break. }
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\n","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertTrue('до правки строк: 2 — ' + O.Text, Pos('строк: 2', O.Text) > 0);
+  AssertTrue('2 lines before the edit: ' + O.Text, Pos('lines: 2', O.Text) > 0);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":2,"limit":0,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('вставка: ' + O.Text, O.IsError);
+  AssertFalse('insertion: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Exp := 'a' + sLineBreak + 'X' + sLineBreak + 'b';
-  AssertTrue('после вставки строк: 3 — ' + O.Text, Pos('строк: 3', O.Text) > 0);
-  { read_text_file перечисляет только строки, поэтому сохранение перевода строки
-    в конце файла проверяем по размеру из шапки. }
-  AssertTrue('завершающий перевод строки сохранён (размер ' +
-    IntToStr(Length(Exp) + Length(sLineBreak)) + ' байт) — ' + O.Text,
-    Pos('размер: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' байт', O.Text) > 0);
-  AssertEquals('тело после вставки', Exp, ReadBody(O.Text));
+  AssertTrue('3 lines after the insertion: ' + O.Text, Pos('lines: 3', O.Text) > 0);
+  { read_text_file lists the lines only, so the trailing line break of the file
+    is checked through the size in the header. }
+  AssertTrue('the trailing line break is kept (size ' +
+    IntToStr(Length(Exp) + Length(sLineBreak)) + ' bytes): ' + O.Text,
+    Pos('size: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' bytes', O.Text) > 0);
+  AssertEquals('body after the insertion', Exp, ReadBody(O.Text));
 end;
 
-{ Дописывание в конец: offset = 0. }
+{ Appending to the end: offset = 0. }
 procedure TToolTests.TestEditAppendToEnd;
 var
   O: TToolOutcome;
   Hash, Exp: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\n","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertTrue('в файле 2 строки — ' + O.Text, Pos('строк: 2', O.Text) > 0);
+  AssertTrue('the file has 2 lines: ' + O.Text, Pos('lines: 2', O.Text) > 0);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":0,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('дописывание в конец: ' + O.Text, O.IsError);
-  AssertTrue('отчёт о числе строк: ' + O.Text, Pos('всего строк: 2 -> 3', O.Text) > 0);
+  AssertFalse('appending to the end: ' + O.Text, O.IsError);
+  AssertTrue('the report mentions the line count: ' + O.Text,
+    Pos('total lines: 2 -> 3', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Exp := 'a' + sLineBreak + 'b' + sLineBreak + 'X';
-  { read_text_file перечисляет только строки: концевой перевод строки виден
-    только по размеру в шапке. }
-  AssertTrue('дописано с концевым переводом строки — ' + O.Text,
-    Pos('размер: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' байт', O.Text) > 0);
-  AssertEquals('тело после дописывания', Exp, ReadBody(O.Text));
+  { read_text_file lists the lines only: the trailing line break is visible
+    through the size in the header alone. }
+  AssertTrue('appended with a trailing line break: ' + O.Text,
+    Pos('size: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' bytes', O.Text) > 0);
+  AssertEquals('body after the append', Exp, ReadBody(O.Text));
 end;
 
-{ Удаление диапазона (content = ""): завершающий перевод строки сохраняется. }
+{ Removing a range (content = ""): the trailing line break is kept. }
 procedure TToolTests.TestEditDeleteRange;
 var
   O: TToolOutcome;
   Hash, Exp: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\nc\n","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertTrue('в файле 3 строки — ' + O.Text, Pos('строк: 3', O.Text) > 0);
+  AssertTrue('the file has 3 lines: ' + O.Text, Pos('lines: 3', O.Text) > 0);
   Hash := ReadHash(O.Text);
 
-  { Удаляем строку 2: offset=2, limit=1, content пуст. }
+  { Removing line 2: offset=2, limit=1, the content is empty. }
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"","offset":2,"limit":1,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('удаление диапазона: ' + O.Text, O.IsError);
-  AssertTrue('отчёт об удалении: ' + O.Text,
-    Pos('удалено строк: 1, вставлено: 0', O.Text) > 0);
+  AssertFalse('range removal: ' + O.Text, O.IsError);
+  AssertTrue('the report mentions the removal: ' + O.Text,
+    Pos('lines removed: 1, inserted: 0', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Exp := 'a' + sLineBreak + 'c';
-  AssertTrue('после удаления строк: 2 — ' + O.Text, Pos('строк: 2', O.Text) > 0);
-  { read_text_file перечисляет только строки, поэтому концевой перевод строки
-    проверяем по размеру из шапки (он должен сохраниться). }
-  AssertTrue('завершающий перевод строки сохранён, размер — ' + O.Text,
-    Pos('размер: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' байт', O.Text) > 0);
-  AssertEquals('тело после удаления', Exp, ReadBody(O.Text));
+  AssertTrue('2 lines after the removal: ' + O.Text, Pos('lines: 2', O.Text) > 0);
+  { read_text_file lists the lines only, so the trailing line break is checked
+    through the size in the header (it must be kept). }
+  AssertTrue('the trailing line break is kept, size: ' + O.Text,
+    Pos('size: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' bytes', O.Text) > 0);
+  AssertEquals('body after the removal', Exp, ReadBody(O.Text));
 end;
 
-{ Отрицательный offset считается с конца файла. }
+{ A negative offset is counted from the end of the file. }
 procedure TToolTests.TestEditNegativeIndices;
 var
   O: TToolOutcome;
   Hash: string;
 begin
-  { offset = -1, limit = 0: вставка перед последней строкой. }
+  { offset = -1, limit = 0: insert before the last line. }
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\nc\nd","offset":0}', FCtx);
-  AssertFalse('подготовка a.txt: ' + O.Text, O.IsError);
+  AssertFalse('preparing a.txt: ' + O.Text, O.IsError);
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":-1,"limit":0,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('вставка по отрицательному индексу: ' + O.Text, O.IsError);
+  AssertFalse('insertion by a negative index: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertEquals('вставка перед последней строкой',
+  AssertEquals('inserted before the last line',
     'a' + sLineBreak + 'b' + sLineBreak + 'c' + sLineBreak + 'X' + sLineBreak + 'd',
     ReadBody(O.Text));
 
-  { offset = -2, limit = 1: заменяем предпоследнюю строку. }
+  { offset = -2, limit = 1: the next to last line is replaced. }
   O := FReg.Invoke('edit_text_file', '{"path":"b.txt","content":"a\nb\nc\nd","offset":0}', FCtx);
-  AssertFalse('подготовка b.txt: ' + O.Text, O.IsError);
+  AssertFalse('preparing b.txt: ' + O.Text, O.IsError);
   O := FReg.Invoke('read_text_file', '{"path":"b.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"b.txt","content":"Z","offset":-2,"limit":1,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('замена по отрицательному индексу: ' + O.Text, O.IsError);
-  AssertTrue('отчёт о замене одной строки: ' + O.Text,
-    Pos('удалено строк: 1, вставлено: 1', O.Text) > 0);
+  AssertFalse('replacement by a negative index: ' + O.Text, O.IsError);
+  AssertTrue('the report mentions one replaced line: ' + O.Text,
+    Pos('lines removed: 1, inserted: 1', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"b.txt"}', FCtx);
-  AssertEquals('заменена предпоследняя строка',
+  AssertEquals('the next to last line is replaced',
     'a' + sLineBreak + 'b' + sLineBreak + 'Z' + sLineBreak + 'd', ReadBody(O.Text));
 end;
 
-{ Отрицательный limit отклоняется: файл не меняется. }
+{ A negative limit is rejected: the file is not changed. }
 procedure TToolTests.TestEditNegativeLimit;
 var
   O: TToolOutcome;
   Hash: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\nc","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":2,"limit":-1,"hash":"' + Hash + '"}', FCtx);
-  AssertTrue('отрицательный limit отклонён: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про limit: ' + O.Text,
-    Pos('limit не может быть отрицательным', O.Text) > 0);
+  AssertTrue('the negative limit is rejected: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the limit: ' + O.Text,
+    Pos('limit must not be negative', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertEquals('файл не изменён',
+  AssertEquals('the file is not changed',
     'a' + sLineBreak + 'b' + sLineBreak + 'c', ReadBody(O.Text));
 end;
 
-{ offset = 0 — дописывание в конец: limit не расширяет диапазон (строк после
-  конца файла нет). }
+{ offset = 0 appends to the end: the limit does not widen the range (there are
+  no lines past the end of the file). }
 procedure TToolTests.TestEditOffsetZeroIgnoresLimit;
 var
   O: TToolOutcome;
   Hash: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":0,"limit":5,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('дописывание с limit: ' + O.Text, O.IsError);
-  AssertTrue('ничего не удалено: ' + O.Text,
-    Pos('удалено строк: 0, вставлено: 1', O.Text) > 0);
+  AssertFalse('appending with a limit: ' + O.Text, O.IsError);
+  AssertTrue('nothing is removed: ' + O.Text,
+    Pos('lines removed: 0, inserted: 1', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertEquals('дописано в конец',
+  AssertEquals('appended to the end',
     'a' + sLineBreak + 'b' + sLineBreak + 'X', ReadBody(O.Text));
 end;
 
-{ Слишком отрицательный offset (до первой строки) — ошибка, файл не меняется. }
+{ A too negative offset (before the first line) is an error and the file is not
+  changed. }
 procedure TToolTests.TestEditOffsetTooNegative;
 var
   O: TToolOutcome;
   Hash: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":-9,"limit":1,"hash":"' + Hash + '"}', FCtx);
-  AssertTrue('offset до первой строки — ошибка: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про начало диапазона: ' + O.Text,
-    Pos('начало диапазона вне файла', O.Text) > 0);
+  AssertTrue('an offset before the first line is an error: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the range start: ' + O.Text,
+    Pos('range start is outside the file', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertEquals('файл не изменён',
+  AssertEquals('the file is not changed',
     'a' + sLineBreak + 'b', ReadBody(O.Text));
 end;
 
-{ Устаревший хеш: файл изменился в обход инструмента — правка отклоняется. }
+{ A stale hash: the file changed around the tool, so the edit is rejected. }
 procedure TToolTests.TestEditHashMismatch;
 var
   O: TToolOutcome;
   Hash, Err: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"hello","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
-  { Меняем файл напрямую, минуя инструмент: хеш становится устаревшим. }
-  AssertTrue('правка в обход инструмента',
+  { The file is changed directly, around the tool: the hash becomes stale. }
+  AssertTrue('the edit around the tool',
     WriteTextFile(FullPath('a.txt'), 'changed', Err));
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"world","hash":"' + Hash + '"}', FCtx);
-  AssertTrue('устаревший хеш отклонён: ' + O.Text, O.IsError);
-  AssertTrue('сообщение о несовпадении хеша: ' + O.Text,
-    Pos('хеш не совпадает', O.Text) > 0);
-  AssertEquals('файл не изменён', 'changed', ReadFileText(FullPath('a.txt')));
+  AssertTrue('the stale hash is rejected: ' + O.Text, O.IsError);
+  AssertTrue('the message reports the hash mismatch: ' + O.Text,
+    Pos('hash mismatch', O.Text) > 0);
+  AssertEquals('the file is not changed', 'changed', ReadFileText(FullPath('a.txt')));
 end;
 
-{ Хеш не передан при правке существующего файла — ошибка. }
+{ No hash is passed while editing an existing file - an error. }
 procedure TToolTests.TestEditHashRequired;
 var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"hello","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"world"}', FCtx);
-  AssertTrue('правка без hash отклонена: ' + O.Text, O.IsError);
-  AssertTrue('сообщение требует hash: ' + O.Text, Pos('hash', O.Text) > 0);
-  AssertEquals('файл не изменён', 'hello', ReadFileText(FullPath('a.txt')));
+  AssertTrue('an edit without a hash is rejected: ' + O.Text, O.IsError);
+  AssertTrue('the message requires the hash: ' + O.Text, Pos('hash', O.Text) > 0);
+  AssertEquals('the file is not changed', 'hello', ReadFileText(FullPath('a.txt')));
 end;
 
-{ Старый контракт edit_text_file (old/new) больше не поддерживается: вызов
-  отклоняется даже с действующим хешем. }
+{ The old edit_text_file contract (old/new) is no longer supported: the call is
+  rejected even with a valid hash. }
 procedure TToolTests.TestEditOldContractRejected;
 var
   O: TToolOutcome;
   Hash: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"x x","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","old":"x","new":"y","hash":"' + Hash + '"}', FCtx);
-  AssertTrue('аргументы old/new больше не работают: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про старый контракт: ' + O.Text,
-    Pos('старый контракт', O.Text) > 0);
-  AssertEquals('файл не изменён', 'x x', ReadFileText(FullPath('a.txt')));
+  AssertTrue('the old/new arguments no longer work: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the old contract: ' + O.Text,
+    Pos('old contract', O.Text) > 0);
+  AssertEquals('the file is not changed', 'x x', ReadFileText(FullPath('a.txt')));
 end;
 
-{ Регрессия на «модель дописала файл целиком с offset = 0»: строки дублируются,
-  но результат должен предупредить об этом и подсказать offset = 1 без limit. }
+{ Regression for "the model appended the whole file with offset = 0": the lines
+  are duplicated, but the result has to warn about it and suggest offset = 1
+  without a limit. }
 procedure TToolTests.TestEditAppendWholeFileWarns;
 var
   O: TToolOutcome;
@@ -564,9 +569,9 @@ var
 begin
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"l1\nl2\nl3\nl4","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
-  AssertTrue('создание файла без предупреждения: ' + O.Text,
-    Pos('внимание', O.Text) = 0);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
+  AssertTrue('the creation has no warning: ' + O.Text,
+    Pos('warning', O.Text) = 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
@@ -574,17 +579,19 @@ begin
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"l1\nl2\nl3\nl4","offset":0,"hash":"' + Hash + '"}',
     FCtx);
-  AssertFalse('дописывание выполнено: ' + O.Text, O.IsError);
-  AssertTrue('предупреждение о дублях: ' + O.Text, Pos('строки могли продублироваться', O.Text) > 0);
-  AssertTrue('подсказка про замену целиком: ' + O.Text,
-    Pos('offset=1 без limit', O.Text) > 0);
-  { Опасное поведение не блокируем: файл действительно стал вдвое длиннее. }
+  AssertFalse('the append is done: ' + O.Text, O.IsError);
+  AssertTrue('the warning about the duplicates: ' + O.Text,
+    Pos('lines may have been duplicated', O.Text) > 0);
+  AssertTrue('the hint about replacing the whole file: ' + O.Text,
+    Pos('offset=1 without limit', O.Text) > 0);
+  { The dangerous behaviour is not blocked: the file really became twice as
+    long. }
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertTrue('строк стало 8 — ' + O.Text, Pos('строк: 8', O.Text) > 0);
+  AssertTrue('the file has 8 lines: ' + O.Text, Pos('lines: 8', O.Text) > 0);
 end;
 
-{ Регрессия: offset без limit заменяет строки до конца файла — об этом нужно
-  предупредить, иначе агент теряет хвост файла молча. }
+{ Regression: an offset without a limit replaces the lines up to the end of the
+  file - the agent has to be warned, otherwise it loses the tail silently. }
 procedure TToolTests.TestEditLimitMissingHint;
 var
   O: TToolOutcome;
@@ -592,49 +599,52 @@ var
 begin
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"l1\nl2\nl3\nl4\nl5","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
-  { limit не передан: заменяется диапазон 3..5, хвост файла теряется. }
+  { No limit is passed: the range 3..5 is replaced and the tail is lost. }
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":3,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('правка выполнена: ' + O.Text, O.IsError);
-  AssertTrue('удалены строки 3..5: ' + O.Text, Pos('удалено строк: 3', O.Text) > 0);
-  AssertTrue('предупреждение про отсутствующий limit: ' + O.Text,
-    Pos('limit не задан', O.Text) > 0);
-  AssertTrue('подсказка про limit=0: ' + O.Text, Pos('вставка перед строкой', O.Text) > 0);
+  AssertFalse('the edit is done: ' + O.Text, O.IsError);
+  AssertTrue('the lines 3..5 are removed: ' + O.Text,
+    Pos('lines removed: 3', O.Text) > 0);
+  AssertTrue('the warning about the missing limit: ' + O.Text,
+    Pos('limit is not set', O.Text) > 0);
+  AssertTrue('the hint about limit=0: ' + O.Text,
+    Pos('inserting before a line', O.Text) > 0);
 
-  { А с limit=0 предупреждения быть не должно: это штатная вставка. }
+  { With limit=0 there must be no warning: that is a regular insertion. }
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"Y","offset":2,"limit":0,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('вставка выполнена: ' + O.Text, O.IsError);
-  AssertTrue('вставка без предупреждений: ' + O.Text, Pos('внимание', O.Text) = 0);
+  AssertFalse('the insertion is done: ' + O.Text, O.IsError);
+  AssertTrue('the insertion has no warnings: ' + O.Text, Pos('warning', O.Text) = 0);
 end;
 
-{ Создание с offset <> 0 запрещено: файла нет и он не появляется. }
+{ Creation with offset <> 0 is forbidden: the file does not exist and does not
+  appear. }
 procedure TToolTests.TestCreateNotFromStart;
 var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('edit_text_file',
     '{"path":"new.txt","content":"x","offset":2}', FCtx);
-  AssertTrue('создание не с начала файла запрещено: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про offset = 0: ' + O.Text,
+  AssertTrue('creation not from the start is forbidden: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions offset = 0: ' + O.Text,
     Pos('offset = 0', O.Text) > 0);
-  AssertFalse('файл не создан', FileExists(FullPath('new.txt')));
+  AssertFalse('the file is not created', FileExists(FullPath('new.txt')));
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"new.txt","content":"x","offset":-1}', FCtx);
-  AssertTrue('создание с отрицательным offset запрещено: ' + O.Text, O.IsError);
-  AssertFalse('файл не создан', FileExists(FullPath('new.txt')));
+  AssertTrue('creation with a negative offset is forbidden: ' + O.Text, O.IsError);
+  AssertFalse('the file is not created', FileExists(FullPath('new.txt')));
 end;
 
-{ Ключ edit_text_file=0 в [tools]: и создание, и правка отклоняются, файл не
-  появляется и не меняется. }
+{ The edit_text_file=0 key in [tools]: both the creation and the edit are
+  rejected, the file does not appear and is not changed. }
 procedure TToolTests.TestWriteDenied;
 var
   O: TToolOutcome;
@@ -643,15 +653,15 @@ begin
   SetToolEnabled(FCtx.Cfg, 'edit_text_file', False);
 
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"x"}', FCtx);
-  AssertTrue('создание при edit_text_file=0 запрещено: ' + O.Text, O.IsError);
-  AssertTrue('сообщение называет инструмент: ' + O.Text,
+  AssertTrue('creation with edit_text_file=0 is forbidden: ' + O.Text, O.IsError);
+  AssertTrue('the message names the tool: ' + O.Text,
     Pos('tool "edit_text_file" is disabled', O.Text) > 0);
-  AssertFalse('файл не создан', FileExists(FullPath('a.txt')));
+  AssertFalse('the file is not created', FileExists(FullPath('a.txt')));
 
-  { Готовим файл, чтобы проверить запрет правки. }
+  { A file is prepared to check the edit ban. }
   SetToolEnabled(FCtx.Cfg, 'edit_text_file', True);
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"hello","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
@@ -659,15 +669,15 @@ begin
   SetToolEnabled(FCtx.Cfg, 'edit_text_file', False);
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"world","hash":"' + Hash + '"}', FCtx);
-  AssertTrue('правка при edit_text_file=0 запрещена: ' + O.Text, O.IsError);
-  AssertEquals('файл не изменён', 'hello', ReadFileText(FullPath('a.txt')));
+  AssertTrue('the edit with edit_text_file=0 is forbidden: ' + O.Text, O.IsError);
+  AssertEquals('the file is not changed', 'hello', ReadFileText(FullPath('a.txt')));
 
   SetToolEnabled(FCtx.Cfg, 'edit_text_file', True);
 end;
 
-{ Выключенный читающий инструмент без собственного гейта в обработчике тоже
-  обязан отказать: проверку делает реестр (защита в глубину), иначе вызов в
-  обход политики — из теста или внешнего кода — выполнил бы инструмент. }
+{ A disabled read-only tool without its own gate in the handler has to refuse as
+  well: the check belongs to the registry (defence in depth), otherwise a call
+  around the policy - from a test or from external code - would run the tool. }
 procedure TToolTests.TestReadOnlyToolDisabled;
 var
   O: TToolOutcome;
@@ -676,13 +686,13 @@ begin
   SetToolEnabled(FCtx.Cfg, 'grep', False);
   try
     O := FReg.Invoke('file_list', '{"path":"."}', FCtx);
-    AssertTrue('file_list=0 — отказ: ' + O.Text, O.IsError);
-    AssertTrue('сообщение называет инструмент: ' + O.Text,
+    AssertTrue('file_list=0 is refused: ' + O.Text, O.IsError);
+    AssertTrue('the message names the tool: ' + O.Text,
       Pos('tool "file_list" is disabled', O.Text) > 0);
 
     O := FReg.Invoke('grep', '{"pattern":"x","path":"."}', FCtx);
-    AssertTrue('grep=0 — отказ: ' + O.Text, O.IsError);
-    AssertTrue('сообщение называет инструмент: ' + O.Text,
+    AssertTrue('grep=0 is refused: ' + O.Text, O.IsError);
+    AssertTrue('the message names the tool: ' + O.Text,
       Pos('tool "grep" is disabled', O.Text) > 0);
   finally
     SetToolEnabled(FCtx.Cfg, 'file_list', True);
@@ -690,50 +700,51 @@ begin
   end;
 end;
 
-{ Служебный каталог .mirmid закрыт для всех файловых инструментов. }
+{ The .mirmid service directory is closed for every file tool. }
 procedure TToolTests.TestMirmidDirDenied;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка файла в .mirmid',
+  AssertTrue('preparing a file in .mirmid',
     WriteTextFile(IncludeTrailingPathDelimiter(FDir) + '.mirmid' + PathDelim + 'secret.txt',
       'top-secret', Err));
 
   O := FReg.Invoke('read_text_file', '{"path":".mirmid/secret.txt"}', FCtx);
-  AssertTrue('чтение .mirmid запрещено', O.IsError);
+  AssertTrue('reading .mirmid is forbidden', O.IsError);
   O := FReg.Invoke('read_pascal_interface', '{"path":".mirmid/secret.txt"}', FCtx);
-  AssertTrue('read_pascal_interface .mirmid запрещён: ' + O.Text, O.IsError);
-  AssertTrue('сообщение о запрете .mirmid: ' + O.Text, Pos('запрещён', O.Text) > 0);
+  AssertTrue('read_pascal_interface on .mirmid is forbidden: ' + O.Text, O.IsError);
+  AssertTrue('the message reports the .mirmid ban: ' + O.Text,
+    Pos('access denied', O.Text) > 0);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":".mirmid/new.txt","content":"x"}', FCtx);
-  AssertTrue('создание в .mirmid запрещено: ' + O.Text, O.IsError);
-  AssertFalse('файл в .mirmid не создан',
+  AssertTrue('creation in .mirmid is forbidden: ' + O.Text, O.IsError);
+  AssertFalse('the file in .mirmid is not created',
     FileExists(IncludeTrailingPathDelimiter(FDir) + '.mirmid' + PathDelim + 'new.txt'));
 
   O := FReg.Invoke('edit_text_file',
     '{"path":".mirmid/secret.txt","content":"x","hash":"00000000"}', FCtx);
-  AssertTrue('правка в .mirmid запрещена: ' + O.Text, O.IsError);
+  AssertTrue('the edit in .mirmid is forbidden: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('exist_file', '{"path":".mirmid"}', FCtx);
-  AssertTrue('exist_file .mirmid запрещён', O.IsError);
+  AssertTrue('exist_file on .mirmid is forbidden', O.IsError);
 
   O := FReg.Invoke('file_list', '{"path":".mirmid"}', FCtx);
-  AssertTrue('file_list .mirmid запрещён', O.IsError);
+  AssertTrue('file_list on .mirmid is forbidden', O.IsError);
 
   FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"1","offset":0}', FCtx);
   O := FReg.Invoke('file_list', '{"path":".","recursive":true}', FCtx);
-  AssertFalse('листинг рабочей папки', O.IsError);
-  AssertTrue('в листинге нет .mirmid', Pos('.mirmid', O.Text) = 0);
+  AssertFalse('the listing of the working folder', O.IsError);
+  AssertTrue('the listing has no .mirmid', Pos('.mirmid', O.Text) = 0);
 
   O := FReg.Invoke('copy_file',
     '{"source":".mirmid/secret.txt","destination":"out.txt"}', FCtx);
-  AssertTrue('копирование из .mirmid запрещено', O.IsError);
+  AssertTrue('copying from .mirmid is forbidden', O.IsError);
 
   O := FReg.Invoke('copy_file',
     '{"source":"a.txt","destination":".mirmid/out.txt"}', FCtx);
-  AssertTrue('копирование в .mirmid запрещено', O.IsError);
+  AssertTrue('copying to .mirmid is forbidden', O.IsError);
 
 end;
 
@@ -744,9 +755,9 @@ begin
   FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"1","offset":0}', FCtx);
   FReg.Invoke('edit_text_file', '{"path":"b.txt","content":"2","offset":0}', FCtx);
   O := FReg.Invoke('file_list', '{"path":"."}', FCtx);
-  AssertFalse('список без ошибки', O.IsError);
-  AssertTrue('в списке a.txt', Pos('a.txt', O.Text) > 0);
-  AssertTrue('в списке b.txt', Pos('b.txt', O.Text) > 0);
+  AssertFalse('the listing without an error', O.IsError);
+  AssertTrue('a.txt is in the listing', Pos('a.txt', O.Text) > 0);
+  AssertTrue('b.txt is in the listing', Pos('b.txt', O.Text) > 0);
 end;
 
 procedure TToolTests.TestShellPolicy;
@@ -754,13 +765,13 @@ var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('shell', '{"command":"echo mirmid"}', FCtx);
-  AssertTrue('shell выключен по умолчанию', O.IsError);
-  AssertTrue('сообщение называет инструмент: ' + O.Text,
+  AssertTrue('shell is off by default', O.IsError);
+  AssertTrue('the message names the tool: ' + O.Text,
     Pos('tool "shell" is disabled', O.Text) > 0);
   SetToolEnabled(FCtx.Cfg, 'shell', True);
   O := FReg.Invoke('shell', '{"command":"echo mirmid"}', FCtx);
-  AssertFalse('shell разрешён: ' + O.Text, O.IsError);
-  AssertTrue('вывод содержит mirmid', Pos('mirmid', O.Text) > 0);
+  AssertFalse('shell is allowed: ' + O.Text, O.IsError);
+  AssertTrue('the output contains mirmid', Pos('mirmid', O.Text) > 0);
 end;
 
 procedure TToolTests.TestShellOutputLimitTruncates;
@@ -771,33 +782,34 @@ var
   O: TToolOutcome;
   Cmd: string;
 begin
-  { Успешная ветка ToolShell: вывод длиннее shell_output_limit режется, но код
-    возврата сохраняется, а в ответе остаётся пометка с числом байт. }
+  { The success branch of ToolShell: output longer than shell_output_limit is cut,
+    but the exit code is kept and the answer gets a note with the byte count. }
   SetToolEnabled(FCtx.Cfg, 'shell', True);
   Cmd := 'echo ' + StringOfChar('x', N);
 
   FCtx.ShellOutputLimit := Limit;
   O := FReg.Invoke('shell', '{"command":"' + Cmd + '"}', FCtx);
-  AssertFalse('успешный запуск: ' + O.Text, O.IsError);
-  AssertTrue('код возврата сохранён: ' + O.Text, Pos('exit=0', O.Text) > 0);
-  AssertTrue('пометка обрезки: ' + O.Text,
-    Pos('[… обрезано: показано ' + IntToStr(Limit) + ' из ', O.Text) > 0);
-  AssertTrue('вывод обрезан (' + IntToStr(Length(O.Text)) + ' байт)',
+  AssertFalse('successful run: ' + O.Text, O.IsError);
+  AssertTrue('the exit code is kept: ' + O.Text, Pos('exit=0', O.Text) > 0);
+  AssertTrue('the truncation note: ' + O.Text,
+    Pos('[... truncated: ' + IntToStr(Limit) + ' of ', O.Text) > 0);
+  AssertTrue('the output is truncated (' + IntToStr(Length(O.Text)) + ' bytes)',
     Length(O.Text) < 300);
 
-  { shell_output_limit = 0 — без предела: пометки нет, вывод приходит целиком. }
+  { shell_output_limit = 0 - no limit: no note, the output comes in full. }
   FCtx.ShellOutputLimit := 0;
   O := FReg.Invoke('shell', '{"command":"' + Cmd + '"}', FCtx);
-  AssertFalse('успешный запуск без предела: ' + O.Text, O.IsError);
-  AssertTrue('без предела пометки обрезки нет: ' + O.Text,
-    Pos('обрезано', O.Text) = 0);
-  AssertTrue('без предела вывод целиком (' + IntToStr(Length(O.Text)) + ' байт)',
+  AssertFalse('successful run without a limit: ' + O.Text, O.IsError);
+  AssertTrue('without a limit there is no truncation note: ' + O.Text,
+    Pos('truncated', O.Text) = 0);
+  AssertTrue('without a limit the output is complete (' +
+    IntToStr(Length(O.Text)) + ' bytes)',
     Pos(StringOfChar('x', N), O.Text) > 0);
 end;
 
-{ Обрезка shell_output_limit не должна рвать многобайтовый символ UTF-8:
-  при пределе 5 байт вывод «привет» (12 байт) даёт «пр» (4 байта), а не
-  «пр» + первый байт буквы «и». }
+{ The shell_output_limit truncation must not break a multi-byte UTF-8 character:
+  with a 5-byte limit the output "äöüßéè" (12 bytes) gives "äö" (4 bytes)
+  instead of "äö" plus the first byte of the next character. }
 procedure TToolTests.TestShellOutputLimitUtf8;
 const
   Limit = 5;
@@ -808,12 +820,12 @@ begin
   SetToolEnabled(FCtx.Cfg, 'shell', True);
   FCtx.ShellOutputLimit := Limit;
 
-  { Печатаем файл сырыми байтами (type/cat не перекодируют содержимое),
-    поэтому граница предела заведомо попадает внутрь буквы «и»: байты
-    «привет» — D0 BF D1 80 D0 B8 D0 B2 D0 B5 D1 82. }
+  { The file is printed as raw bytes (type/cat do not transcode the content), so
+    the limit boundary falls inside a character for sure: the bytes of
+    "äöüßéè" are C3 A4 C3 B6 C3 BC C3 9F C3 A9 C3 A8. }
   Prep := FReg.Invoke('edit_text_file',
-    '{"path":"utf8.txt","content":"привет","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + Prep.Text, Prep.IsError);
+    '{"path":"utf8.txt","content":"äöüßéè","offset":0}', FCtx);
+  AssertFalse('file preparation: ' + Prep.Text, Prep.IsError);
   {$IFDEF UNIX}
   Cmd := 'cat utf8.txt';
   {$ELSE}
@@ -821,16 +833,17 @@ begin
   {$ENDIF}
 
   O := FReg.Invoke('shell', '{"command":"' + Cmd + '"}', FCtx);
-  AssertFalse('успешный запуск: ' + O.Text, O.IsError);
-  AssertTrue('код возврата сохранён: ' + O.Text, Pos('exit=0', O.Text) > 0);
-  AssertTrue('весь ответ — корректный UTF-8', IsValidUTF8(O.Text));
+  AssertFalse('successful run: ' + O.Text, O.IsError);
+  AssertTrue('the exit code is kept: ' + O.Text, Pos('exit=0', O.Text) > 0);
+  AssertTrue('the whole answer is valid UTF-8', IsValidUTF8(O.Text));
 
-  { 5-байтовый предел режет ровно перед «и»: остаётся «пр» и пометка. }
+  { The 5-byte limit cuts exactly before the third character: "äö" and the note
+    remain. }
   Body := ReadBody(O.Text);
-  AssertEquals('граница символа не разрезана', 1,
-    Pos('пр' + sLineBreak, Body));
-  AssertTrue('пометка обрезала 5-й байт: ' + O.Text,
-    Pos('[… обрезано: показано 4 из 12 байт]', O.Text) > 0);
+  AssertEquals('the character boundary is not cut', 1,
+    Pos('äö' + sLineBreak, Body));
+  AssertTrue('the note reports the cut 5th byte: ' + O.Text,
+    Pos('[... truncated: 4 of 12 bytes shown]', O.Text) > 0);
 end;
 
 
@@ -840,27 +853,37 @@ const
   N = 2000;
 var
   O: TToolOutcome;
-  Cmd: string;
+  Cmd, Reason: string;
+  Nl: Integer;
 begin
-  { Ветка ошибки ToolShell (таймаут): прочитанный до остановки процесса вывод
-    тоже обязан обрезаться до shell_output_limit, а причина ошибки — сохраниться. }
+  { The error branch of ToolShell (a timeout): the output read before the process
+    is stopped must be truncated to shell_output_limit as well, and the reason of
+    the error must be kept in front of it. The wording of the reason belongs to
+    RunProcess and is checked in test_util. }
   SetToolEnabled(FCtx.Cfg, 'shell', True);
   FCtx.ShellTimeout := 1;
   FCtx.ShellOutputLimit := Limit;
   {$IFDEF UNIX}
-  { Печатает 2000 байт и зависает: к моменту таймаута вывод уже в канале. }
+  { Prints 2000 bytes and hangs: by the timeout the output is already piped. }
   Cmd := 'printf ''' + StringOfChar('x', N) + '''; sleep 30';
   {$ELSE}
-  { cmd.exe: echo печатает сразу, ping держит процесс до срабатывания таймаута. }
+  { cmd.exe: echo prints at once, ping keeps the process until the timeout. }
   Cmd := 'echo ' + StringOfChar('x', N) + ' & ping -n 3 127.0.0.1 >nul';
   {$ENDIF}
   O := FReg.Invoke('shell', '{"command":"' + Cmd + '"}', FCtx);
-  AssertTrue('ветка ошибки: ' + O.Text, O.IsError);
-  AssertTrue('причина — таймаут: ' + O.Text,
-    Pos('превышено время', O.Text) > 0);
-  AssertTrue('пометка обрезки: ' + O.Text,
-    Pos('[… обрезано: показано ' + IntToStr(Limit) + ' из ', O.Text) > 0);
-  AssertTrue('вывод обрезан (' + IntToStr(Length(O.Text)) + ' байт)',
+  AssertTrue('the error branch: ' + O.Text, O.IsError);
+
+  Reason := O.Text;
+  Nl := Pos(sLineBreak, Reason);
+  if Nl > 0 then
+    Reason := Copy(Reason, 1, Nl - 1);
+  AssertTrue('the reason of the error is kept: ' + O.Text, Reason <> '');
+  AssertTrue('the reason comes before the command output: ' + O.Text,
+    Pos('xxx', Reason) = 0);
+
+  AssertTrue('the truncation note: ' + O.Text,
+    Pos('[... truncated: ' + IntToStr(Limit) + ' of ', O.Text) > 0);
+  AssertTrue('the output is truncated (' + IntToStr(Length(O.Text)) + ' bytes)',
     Length(O.Text) < 300);
 end;
 
@@ -870,52 +893,53 @@ var
   Hash, Exp: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\nc\n","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertTrue('в файле 3 строки — ' + O.Text, Pos('строк: 3', O.Text) > 0);
+  AssertTrue('the file has 3 lines: ' + O.Text, Pos('lines: 3', O.Text) > 0);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X\ny","hash":"' + Hash + '"}', FCtx);
-  AssertFalse('полная замена без диапазона: ' + O.Text, O.IsError);
-  AssertTrue('заменены все 3 строки: ' + O.Text,
-    Pos('удалено строк: 3, вставлено: 2', O.Text) > 0);
+  AssertFalse('a whole replacement without a range: ' + O.Text, O.IsError);
+  AssertTrue('all 3 lines are replaced: ' + O.Text,
+    Pos('lines removed: 3, inserted: 2', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Exp := 'X' + sLineBreak + 'y';
-  AssertTrue('после замены строк: 2 — ' + O.Text, Pos('строк: 2', O.Text) > 0);
-  { Концевой перевод строки исходного файла сохраняется — видно по размеру. }
-  AssertTrue('концевой перевод строки сохранён — ' + O.Text,
-    Pos('размер: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' байт', O.Text) > 0);
-  AssertEquals('тело после полной замены', Exp, ReadBody(O.Text));
+  AssertTrue('2 lines after the replacement: ' + O.Text, Pos('lines: 2', O.Text) > 0);
+  { The trailing line break of the source file is kept - visible by the size. }
+  AssertTrue('the trailing line break is kept: ' + O.Text,
+    Pos('size: ' + IntToStr(Length(Exp) + Length(sLineBreak)) + ' bytes', O.Text) > 0);
+  AssertEquals('body after the whole replacement', Exp, ReadBody(O.Text));
 end;
 
-{ limit за концом файла не мешает: диапазон обрезается до конца. }
+{ A limit past the end of the file does not hurt: the range is clipped to the
+  end. }
 procedure TToolTests.TestEditLimitBeyondEnd;
 var
   O: TToolOutcome;
   Hash: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb\nc","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"Z","offset":2,"limit":999,"hash":"' + Hash + '"}', FCtx);
-  AssertFalse('limit за концом файла не мешает: ' + O.Text, O.IsError);
-  AssertTrue('заменены строки 2..3: ' + O.Text,
-    Pos('удалено строк: 2, вставлено: 1', O.Text) > 0);
+  AssertFalse('a limit past the end of the file does not hurt: ' + O.Text, O.IsError);
+  AssertTrue('the lines 2..3 are replaced: ' + O.Text,
+    Pos('lines removed: 2, inserted: 1', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertEquals('тело после правки', 'a' + sLineBreak + 'Z', ReadBody(O.Text));
+  AssertEquals('body after the edit', 'a' + sLineBreak + 'Z', ReadBody(O.Text));
 end;
 
-{ Большой файл: после правки строки склеиваются через TStringList.Text.
-  Раньше склейка шла циклом Text := Text + …, что на тысячах строк давало
-  квадратичное копирование; проверяем, что содержимое при этом не портится. }
+{ A large file: after the edit the lines are joined through TStringList.Text.
+  The joining used to be a Text := Text + ... loop, which gave quadratic copying
+  on thousands of lines; the content is checked to survive it. }
 procedure TToolTests.TestEditManyLinesJoin;
 const
   N = 2000;
@@ -936,19 +960,19 @@ begin
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"' + Json + '","offset":0}', FCtx);
-  AssertFalse('создание файла из ' + IntToStr(N) + ' строк: ' + O.Text, O.IsError);
+  AssertFalse('creating a file of ' + IntToStr(N) + ' lines: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt","limit":0}', FCtx);
-  AssertTrue('в файле ' + IntToStr(N) + ' строк — ' + O.Text,
-    Pos('строк: ' + IntToStr(N), O.Text) > 0);
+  AssertTrue('the file has ' + IntToStr(N) + ' lines: ' + O.Text,
+    Pos('lines: ' + IntToStr(N), O.Text) > 0);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"X","offset":1000,"limit":1,"hash":"' + Hash + '"}',
     FCtx);
-  AssertFalse('замена 1000-й строки: ' + O.Text, O.IsError);
-  AssertTrue('число строк не изменилось: ' + O.Text,
-    Pos('всего строк: ' + IntToStr(N) + ' -> ' + IntToStr(N), O.Text) > 0);
+  AssertFalse('replacing line 1000: ' + O.Text, O.IsError);
+  AssertTrue('the line count did not change: ' + O.Text,
+    Pos('total lines: ' + IntToStr(N) + ' -> ' + IntToStr(N), O.Text) > 0);
 
   SL := TStringList.Create;
   try
@@ -957,63 +981,66 @@ begin
         SL.Add('X')
       else
         SL.Add('line ' + IntToStr(I));
-    { Файл создавался с концевым переводом строки — он и должен сохраниться. }
+    { The file was created with a trailing line break - it has to be kept. }
     Exp := SL.Text;
   finally
     SL.Free;
   end;
 
   FileText := ReadFileText(FullPath('a.txt'));
-  AssertEquals('строки склеены переводом строки ОС без потерь', Exp, FileText);
-  AssertEquals('размер файла', Length(Exp), Length(FileText));
+  AssertEquals('the lines are joined with the OS line break without losses',
+    Exp, FileText);
+  AssertEquals('the file size', Length(Exp), Length(FileText));
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt","limit":0}', FCtx);
-  AssertFalse('чтение после правки: ' + O.Text, O.IsError);
-  AssertEquals('тело прочитано тем же инструментом',
+  AssertFalse('reading after the edit: ' + O.Text, O.IsError);
+  AssertEquals('the body is read back by the same tool',
     Copy(Exp, 1, Length(Exp) - Length(sLineBreak)), ReadBody(O.Text));
 end;
 
-{ offset за концом файла — ошибка, файл не меняется. }
+{ An offset past the end of the file is an error and the file is not changed. }
 procedure TToolTests.TestEditFirstLineBeyondEnd;
 var
   O: TToolOutcome;
   Hash: string;
 begin
   O := FReg.Invoke('edit_text_file', '{"path":"a.txt","content":"a\nb","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
   Hash := ReadHash(O.Text);
 
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"z","offset":9,"hash":"' + Hash + '"}', FCtx);
-  AssertTrue('начало диапазона вне файла — ошибка: ' + O.Text, O.IsError);
-  AssertTrue('подсказка про дописывание в конец: ' + O.Text,
-    Pos('дописать в конец', O.Text) > 0);
+  AssertTrue('a range start outside the file is an error: ' + O.Text, O.IsError);
+  AssertTrue('the hint about appending to the end: ' + O.Text,
+    Pos('to append to the end', O.Text) > 0);
 
   O := FReg.Invoke('read_text_file', '{"path":"a.txt"}', FCtx);
-  AssertEquals('файл не изменён', 'a' + sLineBreak + 'b', ReadBody(O.Text));
+  AssertEquals('the file is not changed', 'a' + sLineBreak + 'b', ReadBody(O.Text));
 end;
 
-{ grep: контекст у конца файла не должен выходить за границы TStringList
-  (раньше при context > 0 падало с «List index (N) out of bounds»). }
+{ grep: the context at the end of the file must not go past the bounds of the
+  TStringList (with context > 0 it used to fail with "List index (N) out of
+  bounds"). }
 procedure TToolTests.TestGrepContextAtEndOfFile;
 var
   O: TToolOutcome;
 begin
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"aa\nbb hit\ncc hit","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('grep', '{"path":"a.txt","pattern":"hit","context":2}', FCtx);
-  AssertFalse('grep с контекстом у конца файла: ' + O.Text, O.IsError);
-  AssertTrue('строка 1 в выводе: ' + O.Text, Pos('1: aa', O.Text) > 0);
-  AssertTrue('строка 2 в выводе: ' + O.Text, Pos('2: bb hit', O.Text) > 0);
-  AssertTrue('строка 3 в выводе: ' + O.Text, Pos('3: cc hit', O.Text) > 0);
-  AssertTrue('итого 3 строки: ' + O.Text, Pos('найдено совпадений: 3', O.Text) > 0);
+  AssertFalse('grep with context at the end of the file: ' + O.Text, O.IsError);
+  AssertTrue('line 1 is in the output: ' + O.Text, Pos('1: aa', O.Text) > 0);
+  AssertTrue('line 2 is in the output: ' + O.Text, Pos('2: bb hit', O.Text) > 0);
+  AssertTrue('line 3 is in the output: ' + O.Text, Pos('3: cc hit', O.Text) > 0);
+  AssertTrue('3 lines in total: ' + O.Text, Pos('matches found: 3', O.Text) > 0);
 end;
 
-{ grep: строка, попавшая в контекст соседнего совпадения, не дублируется. }
+{ grep: a line that falls into the context of a neighbouring match is not
+  duplicated. }
 procedure TToolTests.TestGrepNoDuplicateLines;
 var
   O: TToolOutcome;
@@ -1022,13 +1049,13 @@ var
 begin
   O := FReg.Invoke('edit_text_file',
     '{"path":"a.txt","content":"hit one\nhit two\ntail","offset":0}', FCtx);
-  AssertFalse('подготовка файла: ' + O.Text, O.IsError);
+  AssertFalse('file preparation: ' + O.Text, O.IsError);
 
   O := FReg.Invoke('grep', '{"path":"a.txt","pattern":"hit","context":1}', FCtx);
-  AssertFalse('grep с перекрывающимся контекстом: ' + O.Text, O.IsError);
-  AssertTrue('итого 3 строки: ' + O.Text, Pos('найдено совпадений: 3', O.Text) > 0);
+  AssertFalse('grep with an overlapping context: ' + O.Text, O.IsError);
+  AssertTrue('3 lines in total: ' + O.Text, Pos('matches found: 3', O.Text) > 0);
 
-  { Строка 2 — и совпадение, и контекст строки 1: должна печататься один раз. }
+  { Line 2 is both a match and the context of line 1: printed once. }
   Body := O.Text;
   Marker := '2: hit two';
   Cnt := 0;
@@ -1037,19 +1064,19 @@ begin
     Inc(Cnt);
     Delete(Body, 1, Pos(Marker, Body) + Length(Marker) - 1);
   end;
-  AssertEquals('строка 2 не дублируется: ' + O.Text, 1, Cnt);
+  AssertEquals('line 2 is not duplicated: ' + O.Text, 1, Cnt);
 end;
 
 { ---------------- read_pascal_interface ---------------- }
 
-{ unit читается до слова implementation включительно: секция implementation и
-  тела процедур в ответ не попадают. }
+{ A unit is read up to the word implementation inclusive: the implementation
+  section and the procedure bodies are not in the answer. }
 procedure TToolTests.TestPascalUnitInterface;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка .pas', WriteTextFile(FullPath('demo.pas'),
+  AssertTrue('preparing .pas', WriteTextFile(FullPath('demo.pas'),
     'unit Demo;' + sLineBreak +
     'interface' + sLineBreak +
     'type TFoo = class' + sLineBreak +
@@ -1059,14 +1086,14 @@ begin
     'end.', Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.pas"}', FCtx);
-  AssertFalse('unit читается: ' + O.Text, O.IsError);
-  AssertEquals('текст до implementation включительно',
+  AssertFalse('the unit is read: ' + O.Text, O.IsError);
+  AssertEquals('the text up to implementation inclusive',
     'unit Demo;' + sLineBreak + 'interface' + sLineBreak +
     'type TFoo = class' + sLineBreak + 'end;' + sLineBreak + 'implementation',
     O.Text);
 end;
 
-{ program возвращается целиком. }
+{ A program is returned as a whole. }
 procedure TToolTests.TestPascalProgramWhole;
 var
   O: TToolOutcome;
@@ -1074,14 +1101,14 @@ var
 begin
   Src := 'program Demo;' + sLineBreak + 'begin' + sLineBreak +
     '  writeln(''hi'');' + sLineBreak + 'end.';
-  AssertTrue('подготовка .dpr', WriteTextFile(FullPath('demo.dpr'), Src, Err));
+  AssertTrue('preparing .dpr', WriteTextFile(FullPath('demo.dpr'), Src, Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.dpr"}', FCtx);
-  AssertFalse('program читается: ' + O.Text, O.IsError);
-  AssertEquals('program возвращается целиком', Src, O.Text);
+  AssertFalse('the program is read: ' + O.Text, O.IsError);
+  AssertEquals('the program is returned as a whole', Src, O.Text);
 end;
 
-{ Слова в комментариях, строках и идентификаторах не считаются ключевыми. }
+{ Words in comments, strings and identifiers are not treated as keywords. }
 procedure TToolTests.TestPascalIgnoresCommentsStringsAndIdents;
 var
   O: TToolOutcome;
@@ -1089,7 +1116,7 @@ var
 begin
   Src :=
     '{ program Fake }' + sLineBreak +
-    'unit Noise; // unit и implementation в комментарии' + sLineBreak +
+    'unit Noise; // unit and implementation in a comment' + sLineBreak +
     '(* interface implementation *)' + sLineBreak +
     'interface' + sLineBreak +
     'type' + sLineBreak +
@@ -1100,7 +1127,7 @@ begin
     'end.';
   Exp :=
     '{ program Fake }' + sLineBreak +
-    'unit Noise; // unit и implementation в комментарии' + sLineBreak +
+    'unit Noise; // unit and implementation in a comment' + sLineBreak +
     '(* interface implementation *)' + sLineBreak +
     'interface' + sLineBreak +
     'type' + sLineBreak +
@@ -1108,95 +1135,99 @@ begin
     'const' + sLineBreak +
     '  S = ''implementation'';' + sLineBreak +
     'implementation';
-  AssertTrue('подготовка .pas', WriteTextFile(FullPath('demo.pas'), Src, Err));
+  AssertTrue('preparing .pas', WriteTextFile(FullPath('demo.pas'), Src, Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.pas"}', FCtx);
-  AssertFalse('комментарии и строки пропущены: ' + O.Text, O.IsError);
-  AssertEquals('настоящий implementation найден', Exp, O.Text);
+  AssertFalse('comments and strings are skipped: ' + O.Text, O.IsError);
+  AssertEquals('the real implementation is found', Exp, O.Text);
 end;
 
-{ Расширение не из списка Pascal/Delphi — ошибка. }
+{ An extension outside the Pascal/Delphi list is an error. }
 procedure TToolTests.TestPascalBadExtension;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка .txt', WriteTextFile(FullPath('demo.txt'),
+  AssertTrue('preparing .txt', WriteTextFile(FullPath('demo.txt'),
     'unit X; interface implementation', Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.txt"}', FCtx);
-  AssertTrue('расширение отклонено: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про расширение: ' + O.Text, Pos('расширение', O.Text) > 0);
+  AssertTrue('the extension is rejected: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the extension: ' + O.Text,
+    Pos('unsupported extension', O.Text) > 0);
 
-  { .dpk — package: по контракту это ни unit, ни program, поэтому вне списка. }
-  AssertTrue('подготовка .dpk', WriteTextFile(FullPath('demo.dpk'),
+  { .dpk is a package: by the contract it is neither a unit nor a program, so it
+    is outside the list. }
+  AssertTrue('preparing .dpk', WriteTextFile(FullPath('demo.dpk'),
     'package X; end.', Err));
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.dpk"}', FCtx);
-  AssertTrue('.dpk отклонён: ' + O.Text, O.IsError);
-  AssertTrue('.dpk: сообщение про расширение: ' + O.Text,
-    Pos('расширение', O.Text) > 0);
+  AssertTrue('.dpk is rejected: ' + O.Text, O.IsError);
+  AssertTrue('.dpk: the message mentions the extension: ' + O.Text,
+    Pos('unsupported extension', O.Text) > 0);
 end;
 
-{ Файл начинается не с unit и не с program. }
+{ The file starts with neither unit nor program. }
 procedure TToolTests.TestPascalNotUnitOrProgram;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка library', WriteTextFile(FullPath('nohead.pas'),
+  AssertTrue('preparing library', WriteTextFile(FullPath('nohead.pas'),
     'library Demo;' + sLineBreak + 'interface' + sLineBreak + 'implementation', Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"nohead.pas"}', FCtx);
-  AssertTrue('library отклонён: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про начало файла: ' + O.Text, Pos('начинаться', O.Text) > 0);
+  AssertTrue('library is rejected: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the file start: ' + O.Text,
+    Pos('must start with the word unit or program', O.Text) > 0);
 end;
 
-{ unit без раздела interface. }
+{ A unit without the interface section. }
 procedure TToolTests.TestPascalMissingInterface;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка .pas', WriteTextFile(FullPath('nointf.pas'),
+  AssertTrue('preparing .pas', WriteTextFile(FullPath('nointf.pas'),
     'unit X;' + sLineBreak + 'type T = class end;', Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"nointf.pas"}', FCtx);
-  AssertTrue('unit без interface отклонён: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про interface: ' + O.Text,
-    Pos('отсутствует раздел interface', O.Text) > 0);
+  AssertTrue('a unit without interface is rejected: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the interface: ' + O.Text,
+    Pos('has no interface section', O.Text) > 0);
 end;
 
-{ unit без раздела implementation. }
+{ A unit without the implementation section. }
 procedure TToolTests.TestPascalMissingImplementation;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка .pas', WriteTextFile(FullPath('noimpl.pas'),
+  AssertTrue('preparing .pas', WriteTextFile(FullPath('noimpl.pas'),
     'unit X;' + sLineBreak + 'interface' + sLineBreak + 'type T = class end;', Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"noimpl.pas"}', FCtx);
-  AssertTrue('unit без implementation отклонён: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про implementation: ' + O.Text,
-    Pos('отсутствует раздел implementation', O.Text) > 0);
+  AssertTrue('a unit without implementation is rejected: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the implementation: ' + O.Text,
+    Pos('has no implementation section', O.Text) > 0);
 end;
 
-{ implementation раньше interface — некорректный модуль. }
+{ implementation before interface: an invalid module. }
 procedure TToolTests.TestPascalImplementationBeforeInterface;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка .pas', WriteTextFile(FullPath('order.pas'),
+  AssertTrue('preparing .pas', WriteTextFile(FullPath('order.pas'),
     'unit X;' + sLineBreak + 'implementation' + sLineBreak + 'interface', Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"order.pas"}', FCtx);
-  AssertTrue('порядок разделов проверен: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про порядок: ' + O.Text, Pos('раньше', O.Text) > 0);
+  AssertTrue('the section order is checked: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the order: ' + O.Text,
+    Pos('comes before the interface section', O.Text) > 0);
 end;
 
-{ implementation — строго до конца слова, а не до конца строки: `uses Foo;`
-  на той же строке уже относится к телу модуля. }
+{ implementation ends strictly at the end of the word, not at the end of the
+  line: `uses Foo;` on the same line already belongs to the module body. }
 procedure TToolTests.TestPascalImplementationEndsAtWord;
 var
   O: TToolOutcome;
@@ -1205,15 +1236,15 @@ begin
   Src := 'unit X;' + sLineBreak + 'interface' + sLineBreak +
     'implementation uses Foo;' + sLineBreak + 'procedure Hidden;' + sLineBreak +
     'begin' + sLineBreak + 'end;' + sLineBreak + 'end.';
-  AssertTrue('подготовка .pas', WriteTextFile(FullPath('demo.pas'), Src, Err));
+  AssertTrue('preparing .pas', WriteTextFile(FullPath('demo.pas'), Src, Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.pas"}', FCtx);
-  AssertFalse('unit читается: ' + O.Text, O.IsError);
-  AssertEquals('ответ заканчивается словом implementation',
+  AssertFalse('the unit is read: ' + O.Text, O.IsError);
+  AssertEquals('the answer ends with the word implementation',
     'unit X;' + sLineBreak + 'interface' + sLineBreak + 'implementation', O.Text);
 end;
 
-{ UTF-8 BOM в начале файла не попадает в ответ. }
+{ A UTF-8 BOM at the start of the file is not in the answer. }
 procedure TToolTests.TestPascalBom;
 var
   O: TToolOutcome;
@@ -1222,14 +1253,15 @@ begin
   Src := #$EF + #$BB + #$BF + 'unit X;' + sLineBreak + 'interface' +
     sLineBreak + 'implementation';
   Exp := 'unit X;' + sLineBreak + 'interface' + sLineBreak + 'implementation';
-  AssertTrue('подготовка .pas с BOM', WriteTextFile(FullPath('demo.pas'), Src, Err));
+  AssertTrue('preparing .pas with a BOM', WriteTextFile(FullPath('demo.pas'), Src, Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.pas"}', FCtx);
-  AssertFalse('файл с BOM читается: ' + O.Text, O.IsError);
-  AssertEquals('BOM отброшен', Exp, O.Text);
+  AssertFalse('the file with a BOM is read: ' + O.Text, O.IsError);
+  AssertEquals('the BOM is dropped', Exp, O.Text);
 end;
 
-{ Удвоенная кавычка в строке и &-идентификатор не считаются ключевыми словами. }
+{ A doubled quote inside a string and an &-identifier are not treated as
+  keywords. }
 procedure TToolTests.TestPascalEscapedAndDoubledQuote;
 var
   O: TToolOutcome;
@@ -1250,33 +1282,34 @@ begin
     '  S = ''it''''s interface implementation'';' + sLineBreak +
     '  Q = &implementation;' + sLineBreak +
     'implementation';
-  AssertTrue('подготовка .pas', WriteTextFile(FullPath('demo.pas'), Src, Err));
+  AssertTrue('preparing .pas', WriteTextFile(FullPath('demo.pas'), Src, Err));
 
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.pas"}', FCtx);
-  AssertFalse('экранированные имена не ключевые: ' + O.Text, O.IsError);
-  AssertEquals('строка с кавычками и &implementation пропущены', Exp, O.Text);
+  AssertFalse('escaped names are not keywords: ' + O.Text, O.IsError);
+  AssertEquals('the string with quotes and &implementation are skipped', Exp, O.Text);
 end;
 
-{ Незакрытые комментарий и строка — понятная ошибка, а не мусорный ответ. }
+{ An unterminated comment and an unterminated string give a clear error instead
+  of a garbage answer. }
 procedure TToolTests.TestPascalUnclosed;
 var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка комментария', WriteTextFile(FullPath('demo.pas'),
+  AssertTrue('preparing a comment', WriteTextFile(FullPath('demo.pas'),
     'unit X;' + sLineBreak + 'interface' + sLineBreak + '{ implementation', Err));
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.pas"}', FCtx);
-  AssertTrue('незакрытый комментарий — ошибка: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про комментарий: ' + O.Text,
-    Pos('незакрытый комментарий', O.Text) > 0);
+  AssertTrue('an unterminated comment is an error: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the comment: ' + O.Text,
+    Pos('unterminated comment', O.Text) > 0);
 
-  AssertTrue('подготовка строки', WriteTextFile(FullPath('demo.pas'),
+  AssertTrue('preparing a string', WriteTextFile(FullPath('demo.pas'),
     'unit X;' + sLineBreak + 'interface' + sLineBreak +
     'const S = ''abc' + sLineBreak + 'implementation', Err));
   O := FReg.Invoke('read_pascal_interface', '{"path":"demo.pas"}', FCtx);
-  AssertTrue('незакрытая строка — ошибка: ' + O.Text, O.IsError);
-  AssertTrue('сообщение про строку: ' + O.Text,
-    Pos('незакрытая строковая', O.Text) > 0);
+  AssertTrue('an unterminated string is an error: ' + O.Text, O.IsError);
+  AssertTrue('the message mentions the string: ' + O.Text,
+    Pos('unterminated string constant', O.Text) > 0);
 end;
 
 initialization

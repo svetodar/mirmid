@@ -1,6 +1,6 @@
 unit test_session;
-{ Тесты сессий (mirmid.session): схема 2 с полем плана, round-trip,
-  обратная совместимость со схемой 1, невалидный план. }
+{ Session tests (mirmid.session): schema 2 with the plan field, round trip,
+  backward compatibility with schema 1, invalid plan. }
 
 {$mode objfpc}{$H+}
 
@@ -13,7 +13,7 @@ type
   TSessionTests = class(TTestCase)
   private
     FDir: string;
-    { Полный путь к файлу сессии в каталоге теста. }
+    { Full path to the session file inside the test directory. }
     function SessionFile(const Id: string): string;
   protected
     procedure SetUp; override;
@@ -26,20 +26,20 @@ type
     procedure TestNextSubagentNum;
     procedure TestSubagentSessionId;
     procedure TestStepSessionId;
-    { Сессии попыток шага: первая — прежнее имя, повторные — _try<N>. }
+    { Step attempt sessions: the first one keeps the old name, retries are _try<N>. }
     procedure TestStepSessionIdTry;
-    { Сессия фазы анализа: <база>_analysis и её исключение из ListSessions. }
+    { Analysis phase session: <base>_analysis and its exclusion from ListSessions. }
     procedure TestAnalysisSessionId;
     procedure TestIsAuxSessionFile;
     procedure TestListSessionsSkipsAux;
     procedure TestJournalEntryWritesFile;
     procedure TestJournalEntryFields;
     procedure TestJournalEntryAppends;
-    { Пути журнала: <WorkDir>/.mirmid/journal/<Id>.jsonl — вне sessions. }
+    { Journal paths: <WorkDir>/.mirmid/journal/<Id>.jsonl — outside sessions. }
     procedure TestJournalPaths;
-    { Сбой записи журнала возвращает False и причину в Err. }
+    { A journal write failure returns False and the reason in Err. }
     procedure TestJournalEntryErrorReported;
-    { При --no-session файл журнала (как и файл сессии) не создаётся. }
+    { With --no-session neither the journal file (nor the session file) is created. }
     procedure TestNoJournalWhenNoSession;
   end;
 
@@ -71,9 +71,9 @@ begin
   DeleteFile(SessionFile('auxmain_sub_1'));
   DeleteFile(SessionFile('auxmain_step_s1'));
   DeleteFile(JournalFile(FDir, 'j1'));
-  { Файл-заглушка, на месте которого тест сбоя журнала не даёт создать каталог. }
+  { A stub file in place of the directory the journal failure test cannot create. }
   DeleteFile(IncludeTrailingPathDelimiter(FDir) + 'blocked');
-  { Файлы, созданные SaveSessionWithJournal в <FDir>/.mirmid. }
+  { Files created by SaveSessionWithJournal in <FDir>/.mirmid. }
   DeleteFile(IncludeTrailingPathDelimiter(SessionDir(FDir)) + 'j2.json');
   DeleteFile(JournalFile(JournalDir(FDir), 'j2'));
   RemoveDir(SessionDir(FDir));
@@ -87,8 +87,8 @@ begin
   Result := IncludeTrailingPathDelimiter(FDir) + Id + '.json';
 end;
 
-{ Round-trip: сохранить с планом → загрузить — сообщения и план
-  совпадают (шаги, id, статусы, результаты); в файле схема 2. }
+{ Round trip: save with a plan -> load — messages and plan match
+  (steps, ids, statuses, results); the file carries schema 2. }
 procedure TSessionTests.TestRoundTripWithPlan;
 var
   Msgs, Msgs2: TMessages;
@@ -100,51 +100,51 @@ begin
   Err := '';
   SetLength(Msgs, 2);
   Msgs[0].Role := mrUser;
-  Msgs[0].Content := 'сделай отчёт';
+  Msgs[0].Content := 'make a report';
   Msgs[1].Role := mrAssistant;
-  Msgs[1].Content := 'готово';
+  Msgs[1].Content := 'grüße';
 
   Plan := TPlan.Create;
   try
-    Plan.AddStep('собрать данные');
-    Plan.AddStep('написать отчёт');
-    Plan.SetStatus('s1', psDone, 'данные собраны');
+    Plan.AddStep('collect data');
+    Plan.AddStep('write report');
+    Plan.SetStatus('s1', psDone, 'data collected');
     Plan.SetStatus('s2', psInProgress, '');
 
-    AssertTrue('сохранение: ' + Err,
+    AssertTrue('save: ' + Err,
       SaveSession(FDir, 's1', 'test-model', Msgs, Plan, Err));
-    AssertEquals('ошибка пуста', '', Err);
+    AssertEquals('error is empty', '', Err);
 
-    { В файле схема 2 и поле plan. }
-    AssertTrue('чтение файла: ', ReadTextFile(SessionFile('s1'), Text, Err));
+    { The file carries schema 2 and the plan field. }
+    AssertTrue('read file: ', ReadTextFile(SessionFile('s1'), Text, Err));
     D := nil;
     AssertTrue('JSON: ' + Err, ParseJSON(Text, D, Err));
     try
-      AssertEquals('схема 2', 2, TJSONObject(D).Find('schema').AsInteger);
-      AssertTrue('есть поле plan', TJSONObject(D).FindPath('plan') <> nil);
+      AssertEquals('schema 2', 2, TJSONObject(D).Find('schema').AsInteger);
+      AssertTrue('plan field present', TJSONObject(D).FindPath('plan') <> nil);
     finally
       D.Free;
     end;
 
     Msgs2 := nil;
     Plan2 := nil;
-    AssertTrue('загрузка: ' + Err, LoadSession(FDir, 's1', Msgs2, Plan2, Err));
+    AssertTrue('load: ' + Err, LoadSession(FDir, 's1', Msgs2, Plan2, Err));
     try
-      AssertEquals('число сообщений', 2, Length(Msgs2));
-      AssertEquals('роль 1', Ord(mrUser), Ord(Msgs2[0].Role));
-      AssertEquals('текст 1', 'сделай отчёт', Msgs2[0].Content);
-      AssertEquals('роль 2', Ord(mrAssistant), Ord(Msgs2[1].Role));
-      AssertEquals('текст 2', 'готово', Msgs2[1].Content);
-      AssertTrue('план загружен', Plan2 <> nil);
-      AssertEquals('число шагов', 2, Length(Plan2.Steps));
+      AssertEquals('message count', 2, Length(Msgs2));
+      AssertEquals('role 1', Ord(mrUser), Ord(Msgs2[0].Role));
+      AssertEquals('text 1', 'make a report', Msgs2[0].Content);
+      AssertEquals('role 2', Ord(mrAssistant), Ord(Msgs2[1].Role));
+      AssertEquals('text 2', 'grüße', Msgs2[1].Content);
+      AssertTrue('plan loaded', Plan2 <> nil);
+      AssertEquals('step count', 2, Length(Plan2.Steps));
       AssertEquals('id 1', 's1', Plan2.Steps[0].Id);
-      AssertEquals('описание 1', 'собрать данные', Plan2.Steps[0].Description);
-      AssertEquals('статус 1', Ord(psDone), Ord(Plan2.Steps[0].Status));
-      AssertEquals('результат 1', 'данные собраны', Plan2.Steps[0].Result);
+      AssertEquals('description 1', 'collect data', Plan2.Steps[0].Description);
+      AssertEquals('status 1', Ord(psDone), Ord(Plan2.Steps[0].Status));
+      AssertEquals('result 1', 'data collected', Plan2.Steps[0].Result);
       AssertEquals('id 2', 's2', Plan2.Steps[1].Id);
-      AssertEquals('описание 2', 'написать отчёт', Plan2.Steps[1].Description);
-      AssertEquals('статус 2', Ord(psInProgress), Ord(Plan2.Steps[1].Status));
-      AssertEquals('результат 2 пуст', '', Plan2.Steps[1].Result);
+      AssertEquals('description 2', 'write report', Plan2.Steps[1].Description);
+      AssertEquals('status 2', Ord(psInProgress), Ord(Plan2.Steps[1].Status));
+      AssertEquals('result 2 is empty', '', Plan2.Steps[1].Result);
     finally
       Plan2.Free;
     end;
@@ -153,7 +153,7 @@ begin
   end;
 end;
 
-{ Сохранение с Plan = nil → в файле plan: null → загрузка с Plan = nil. }
+{ Saving with Plan = nil -> plan: null in the file -> loading gives Plan = nil. }
 procedure TSessionTests.TestNilPlanSavedAsNull;
 var
   Msgs, Msgs2: TMessages;
@@ -166,17 +166,17 @@ begin
   Err := '';
   SetLength(Msgs, 1);
   Msgs[0].Role := mrUser;
-  Msgs[0].Content := 'привет';
+  Msgs[0].Content := 'hello';
 
-  AssertTrue('сохранение: ' + Err,
+  AssertTrue('save: ' + Err,
     SaveSession(FDir, 's2', 'test-model', Msgs, nil, Err));
 
-  AssertTrue('чтение файла: ', ReadTextFile(SessionFile('s2'), Text, Err));
+  AssertTrue('read file: ', ReadTextFile(SessionFile('s2'), Text, Err));
   D := nil;
   AssertTrue('JSON: ' + Err, ParseJSON(Text, D, Err));
   try
     PlanD := TJSONObject(D).FindPath('plan');
-    AssertTrue('поле plan есть', PlanD <> nil);
+    AssertTrue('plan field present', PlanD <> nil);
     AssertTrue('plan = null', PlanD is TJSONNull);
   finally
     D.Free;
@@ -184,13 +184,13 @@ begin
 
   Msgs2 := nil;
   Plan2 := nil;
-  AssertTrue('загрузка: ' + Err, LoadSession(FDir, 's2', Msgs2, Plan2, Err));
-  AssertNull('план nil', Plan2);
-  AssertEquals('число сообщений', 1, Length(Msgs2));
-  AssertEquals('текст', 'привет', Msgs2[0].Content);
+  AssertTrue('load: ' + Err, LoadSession(FDir, 's2', Msgs2, Plan2, Err));
+  AssertNull('plan is nil', Plan2);
+  AssertEquals('message count', 1, Length(Msgs2));
+  AssertEquals('text', 'hello', Msgs2[0].Content);
 end;
 
-{ Файл схемы 1 (JSON без поля plan, собран вручную) загружается,
+{ A schema 1 file (JSON without the plan field, assembled by hand) loads,
   Plan = nil. }
 procedure TSessionTests.TestSchema1FileLoads;
 var
@@ -210,26 +210,26 @@ begin
     A := TJSONArray.Create;
     M := TJSONObject.Create;
     M.Add('role', 'user');
-    { Литерал через переменную: прямой литерал в TJSONObject.Add
-      перекодируется дважды (UTF-8 → Latin-1 → UTF-8). }
-    S := 'старое сообщение';
+    { Literal through a variable: a direct literal in TJSONObject.Add is
+      re-encoded twice (UTF-8 -> Latin-1 -> UTF-8). }
+    S := 'grüße';
     M.Add('content', S);
     A.Add(M);
     O.Add('messages', A);
-    AssertTrue('запись файла: ',
+    AssertTrue('write file: ',
       WriteTextFile(SessionFile('s3'), O.FormatJSON([foUseTabChar]), Err));
   finally
     O.Free;
   end;
   Msgs := nil;
   Plan := nil;
-  AssertTrue('загрузка схемы 1: ' + Err, LoadSession(FDir, 's3', Msgs, Plan, Err));
-  AssertEquals('число сообщений', 1, Length(Msgs));
-  AssertEquals('роль', Ord(mrUser), Ord(Msgs[0].Role));
-  AssertEquals('текст', 'старое сообщение', Msgs[0].Content);
+  AssertTrue('load schema 1: ' + Err, LoadSession(FDir, 's3', Msgs, Plan, Err));
+  AssertEquals('message count', 1, Length(Msgs));
+  AssertEquals('role', Ord(mrUser), Ord(Msgs[0].Role));
+  AssertEquals('text', 'grüße', Msgs[0].Content);
 end;
 
-{ Невалидный план («steps»: строка «x») — ошибка загрузки, Plan = nil. }
+{ An invalid plan ("steps": the string "x") — a load error, Plan = nil. }
 procedure TSessionTests.TestInvalidPlanIsError;
 var
   Msgs: TMessages;
@@ -248,14 +248,14 @@ begin
     A := TJSONArray.Create;
     M := TJSONObject.Create;
     M.Add('role', 'user');
-    S := 'привет';
+    S := 'hello';
     M.Add('content', S);
     A.Add(M);
     O.Add('messages', A);
     P := TJSONObject.Create;
     P.Add('steps', 'x');
     O.Add('plan', P);
-    AssertTrue('запись файла: ',
+    AssertTrue('write file: ',
       WriteTextFile(SessionFile('s4'), O.FormatJSON([foUseTabChar]), Err));
   finally
     O.Free;
@@ -263,82 +263,83 @@ begin
 
   Msgs := nil;
   Plan := nil;
-  AssertFalse('невалидный план — ошибка',
+  AssertFalse('invalid plan is an error',
     LoadSession(FDir, 's4', Msgs, Plan, Err));
-  AssertTrue('текст ошибки', Err <> '');
-  AssertNull('план nil', Plan);
+  AssertTrue('error text is set', Err <> '');
+  AssertNull('plan is nil', Plan);
 end;
 
-{ Следующий номер субагента: пустой каталог → 1; после файлов
-  base_sub_1.json и base_sub_3.json → 4; посторонние файлы не влияют. }
+{ The next subagent number: an empty directory -> 1; after the files
+  base_sub_1.json and base_sub_3.json -> 4; foreign files do not matter. }
 procedure TSessionTests.TestNextSubagentNum;
 var
   Err: string;
 begin
-  AssertEquals('пустой каталог', 1, NextSubagentNum(FDir, 'base'));
-  AssertTrue('запись 1: ', WriteTextFile(SessionFile('base_sub_1'), '{}', Err));
-  AssertTrue('запись 3: ', WriteTextFile(SessionFile('base_sub_3'), '{}', Err));
-  AssertTrue('посторонний файл: ', WriteTextFile(SessionFile('other'), '{}', Err));
-  AssertTrue('файл шага: ', WriteTextFile(SessionFile('base_step_s1'), '{}', Err));
-  AssertEquals('после файлов', 4, NextSubagentNum(FDir, 'base'));
+  AssertEquals('empty directory', 1, NextSubagentNum(FDir, 'base'));
+  AssertTrue('write 1: ', WriteTextFile(SessionFile('base_sub_1'), '{}', Err));
+  AssertTrue('write 3: ', WriteTextFile(SessionFile('base_sub_3'), '{}', Err));
+  AssertTrue('foreign file: ', WriteTextFile(SessionFile('other'), '{}', Err));
+  AssertTrue('step file: ', WriteTextFile(SessionFile('base_step_s1'), '{}', Err));
+  AssertEquals('after the files', 4, NextSubagentNum(FDir, 'base'));
 end;
 
-{ Имя файла сессии субагента: пустой каталог → <база>_sub_1;
-  после файла base2_sub_1.json → base2_sub_2. }
+{ The subagent session file name: an empty directory -> <base>_sub_1;
+  after the file base2_sub_1.json -> base2_sub_2. }
 procedure TSessionTests.TestSubagentSessionId;
 var
   Err: string;
 begin
-  AssertEquals('пустой каталог', 'base2_sub_1', SubagentSessionId(FDir, 'base2'));
-  AssertTrue('запись: ', WriteTextFile(SessionFile('base2_sub_1'), '{}', Err));
-  AssertEquals('после файла', 'base2_sub_2', SubagentSessionId(FDir, 'base2'));
+  AssertEquals('empty directory', 'base2_sub_1', SubagentSessionId(FDir, 'base2'));
+  AssertTrue('write: ', WriteTextFile(SessionFile('base2_sub_1'), '{}', Err));
+  AssertEquals('after the file', 'base2_sub_2', SubagentSessionId(FDir, 'base2'));
 end;
 
-{ Имя файла сессии шага плана: <база>_step_<id>. }
+{ Plan step session file name: <base>_step_<id>. }
 procedure TSessionTests.TestStepSessionId;
 begin
-  AssertEquals('имя', 'sess_step_s2', StepSessionId('sess', 's2'));
+  AssertEquals('name', 'sess_step_s2', StepSessionId('sess', 's2'));
 end;
 
-{ Сессия попытки шага: первая попытка сохраняется под прежним именем
-  <база>_step_<id> (совместимость с PlanStepFixAttempts = 0), повторные —
-  с суффиксом _try<N>, поэтому попытки не затирают друг друга. }
+{ A step attempt session: the first attempt is saved under the old name
+  <base>_step_<id> (compatibility with PlanStepFixAttempts = 0), retries get
+  the _try<N> suffix, so attempts do not overwrite each other. }
 procedure TSessionTests.TestStepSessionIdTry;
 begin
-  AssertEquals('первая попытка', 'sess_step_s2',
+  AssertEquals('first attempt', 'sess_step_s2',
     StepSessionIdTry('sess', 's2', 1));
-  AssertEquals('та же, что StepSessionId', StepSessionId('sess', 's2'),
+  AssertEquals('the same as StepSessionId', StepSessionId('sess', 's2'),
     StepSessionIdTry('sess', 's2', 1));
-  AssertEquals('вторая попытка', 'sess_step_s2_try2',
+  AssertEquals('second attempt', 'sess_step_s2_try2',
     StepSessionIdTry('sess', 's2', 2));
-  AssertEquals('третья попытка', 'sess_step_s2_try3',
+  AssertEquals('third attempt', 'sess_step_s2_try3',
     StepSessionIdTry('sess', 's2', 3));
-  AssertEquals('номер 0 — первая', 'sess_step_s2',
+  AssertEquals('number 0 -> the first one', 'sess_step_s2',
     StepSessionIdTry('sess', 's2', 0));
-  AssertTrue('файл попытки вспомогательный',
+  AssertTrue('the attempt file is auxiliary',
     IsAuxSessionFile(StepSessionIdTry('sess', 's2', 2) + '.json'));
 end;
 
-{ Сессия фазы анализа: <база>_analysis; такие файлы не попадают в ListSessions
-  (в имени есть '_analysis'), т.е. не выглядят как обычные сессии диалога. }
+{ Analysis phase session: <base>_analysis; such files do not show up in
+  ListSessions (the name contains '_analysis'), i.e. they do not look like
+  ordinary dialogue sessions. }
 procedure TSessionTests.TestAnalysisSessionId;
 begin
-  AssertEquals('имя', 'base_analysis', AnalysisSessionId('base'));
-  AssertTrue('файл анализа вспомогательный',
+  AssertEquals('name', 'base_analysis', AnalysisSessionId('base'));
+  AssertTrue('the analysis file is auxiliary',
     IsAuxSessionFile(AnalysisSessionId('base') + '.json'));
-  AssertFalse('основная сессия не вспомогательная',
+  AssertFalse('the main session is not auxiliary',
     IsAuxSessionFile('20250101-120000-ab12cd.json'));
 end;
 
-{ Файл вспомогательной сессии: имя содержит '_sub_' или '_step_'. }
+{ An auxiliary session file: the name contains '_sub_' or '_step_'. }
 procedure TSessionTests.TestIsAuxSessionFile;
 begin
-  AssertTrue('субагент', IsAuxSessionFile('x_sub_1.json'));
-  AssertTrue('шаг', IsAuxSessionFile('x_step_s1.json'));
-  AssertFalse('основная сессия', IsAuxSessionFile('20250101-120000-ab12cd.json'));
+  AssertTrue('subagent', IsAuxSessionFile('x_sub_1.json'));
+  AssertTrue('step', IsAuxSessionFile('x_step_s1.json'));
+  AssertFalse('main session', IsAuxSessionFile('20250101-120000-ab12cd.json'));
 end;
 
-{ ListSessions не включает вспомогательные файлы (субагенты, шаги). }
+{ ListSessions does not include auxiliary files (subagents, steps). }
 procedure TSessionTests.TestListSessionsSkipsAux;
 var
   Msgs: TMessages;
@@ -348,19 +349,19 @@ begin
   Err := '';
   SetLength(Msgs, 1);
   Msgs[0].Role := mrUser;
-  Msgs[0].Content := 'привет';
-  AssertTrue('основная: ' + Err,
+  Msgs[0].Content := 'hello';
+  AssertTrue('main: ' + Err,
     SaveSession(FDir, 'auxmain', 'test-model', Msgs, nil, Err));
-  AssertTrue('субагент: ' + Err,
+  AssertTrue('subagent: ' + Err,
     SaveSession(FDir, 'auxmain_sub_1', 'test-model', Msgs, nil, Err));
-  AssertTrue('шаг: ' + Err,
+  AssertTrue('step: ' + Err,
     SaveSession(FDir, 'auxmain_step_s1', 'test-model', Msgs, nil, Err));
-  AssertTrue('список: ', ListSessions(FDir, Text));
-  AssertEquals('только основная сессия', 'auxmain' + sLineBreak, Text);
+  AssertTrue('list: ', ListSessions(FDir, Text));
+  AssertEquals('the main session only', 'auxmain' + sLineBreak, Text);
 end;
 
-{ Журнал контекста: AppendJournalEntry создаёт файл <Dir>/<Id>.jsonl,
-  запись — одна валидная JSON-строка с переводом строки в конце. }
+{ Context journal: AppendJournalEntry creates the file <Dir>/<Id>.jsonl,
+  the entry is one valid JSON line terminated by a newline. }
 procedure TSessionTests.TestJournalEntryWritesFile;
 var
   Err, Path, Text: string;
@@ -368,42 +369,42 @@ var
 begin
   Err := '';
   Path := JournalFile(FDir, 'j1');
-  AssertFalse('файла ещё нет', FileExists(Path));
-  AssertTrue('запись журнала: ' + Err,
+  AssertFalse('the file does not exist yet', FileExists(Path));
+  AssertTrue('journal write: ' + Err,
     AppendJournalEntry(FDir, 'j1', 100, 20, Err));
-  AssertEquals('ошибка пуста', '', Err);
-  AssertTrue('файл создан', FileExists(Path));
-  AssertTrue('чтение файла: ' + Err, ReadTextFile(Path, Text, Err));
-  AssertTrue('перевод строки в конце',
+  AssertEquals('error is empty', '', Err);
+  AssertTrue('file created', FileExists(Path));
+  AssertTrue('read file: ' + Err, ReadTextFile(Path, Text, Err));
+  AssertTrue('newline at the end',
     (Length(Text) > Length(sLineBreak)) and
     (Copy(Text, Length(Text) - Length(sLineBreak) + 1, Length(sLineBreak)) =
       sLineBreak));
   D := nil;
   AssertTrue('JSON: ' + Err, ParseJSON(Text, D, Err));
   try
-    AssertTrue('объект', D is TJSONObject);
+    AssertTrue('object', D is TJSONObject);
   finally
     D.Free;
   end;
 end;
 
-{ Поля записи журнала: operation = Flash, непустое время в формате
-  yyyy-mm-dd hh:nn:ss, размеры контекста и части — числа. }
+{ Journal entry fields: operation = Flash, a non-empty time in the
+  yyyy-mm-dd hh:nn:ss format, the context and part sizes are numbers. }
 procedure TSessionTests.TestJournalEntryFields;
 var
   Err, Text: string;
   D: TJSONData;
 begin
   Err := '';
-  AssertTrue('запись журнала: ' + Err,
+  AssertTrue('journal write: ' + Err,
     AppendJournalEntry(FDir, 'j1', 120, 30, Err));
-  AssertTrue('чтение файла: ' + Err,
+  AssertTrue('read file: ' + Err,
     ReadTextFile(JournalFile(FDir, 'j1'), Text, Err));
   D := nil;
   AssertTrue('JSON: ' + Err, ParseJSON(Text, D, Err));
   try
     AssertEquals('operation', 'Flash', JStr(D, 'operation', ''));
-    AssertEquals('time не пусто', 19, Length(JStr(D, 'time', '')));
+    AssertEquals('time is not empty', 19, Length(JStr(D, 'time', '')));
     AssertEquals('context', 120, JInt(D, 'context', -1));
     AssertEquals('part', 30, JInt(D, 'part', -1));
   finally
@@ -411,7 +412,7 @@ begin
   end;
 end;
 
-{ Повторный вызов дописывает запись новой строкой, а не перезаписывает файл. }
+{ A repeated call appends an entry as a new line instead of overwriting the file. }
 procedure TSessionTests.TestJournalEntryAppends;
 var
   Err, Text: string;
@@ -419,14 +420,14 @@ var
   D: TJSONData;
 begin
   Err := '';
-  AssertTrue('запись 1: ' + Err, AppendJournalEntry(FDir, 'j1', 100, 20, Err));
-  AssertTrue('запись 2: ' + Err, AppendJournalEntry(FDir, 'j1', 180, 80, Err));
-  AssertTrue('чтение файла: ' + Err,
+  AssertTrue('entry 1: ' + Err, AppendJournalEntry(FDir, 'j1', 100, 20, Err));
+  AssertTrue('entry 2: ' + Err, AppendJournalEntry(FDir, 'j1', 180, 80, Err));
+  AssertTrue('read file: ' + Err,
     ReadTextFile(JournalFile(FDir, 'j1'), Text, Err));
   L := TStringList.Create;
   try
     L.Text := Text;
-    AssertEquals('две строки', 2, L.Count);
+    AssertEquals('two lines', 2, L.Count);
     D := nil;
     AssertTrue('JSON 1: ' + Err, ParseJSON(L[0], D, Err));
     try
@@ -448,43 +449,44 @@ begin
   end;
 end;
 
-{ Пути журнала контекста: каталог <WorkDir>/.mirmid/journal (отдельно от
-  sessions, чтобы ListSessions и *.json сессий не затрагивались) и файл
-  записи <Dir>/<Id>.jsonl. }
+{ Context journal paths: the directory <WorkDir>/.mirmid/journal (separate
+  from sessions, so that ListSessions and the session *.json files are not
+  affected) and the entry file <Dir>/<Id>.jsonl. }
 procedure TSessionTests.TestJournalPaths;
 begin
-  AssertEquals('каталог журнала',
+  AssertEquals('journal directory',
     IncludeTrailingPathDelimiter(FDir) + '.mirmid' + PathDelim + 'journal',
     JournalDir(FDir));
-  AssertEquals('файл записи',
+  AssertEquals('entry file',
     IncludeTrailingPathDelimiter(JournalDir(FDir)) + 'j9.jsonl',
     JournalFile(JournalDir(FDir), 'j9'));
-  AssertTrue('журнал вне каталога сессий',
+  AssertTrue('the journal is outside the sessions directory',
     JournalDir(FDir) <> SessionDir(FDir));
 end;
 
-{ Сбой записи журнала не глотается: AppendJournalEntry возвращает False и
-  заполняет Err, чтобы SaveSessionWithJournal мог отдать prJournalFailed.
-  Здесь каталог журнала создать нельзя — на его месте лежит файл. }
+{ A journal write failure is not swallowed: AppendJournalEntry returns False
+  and fills Err, so that SaveSessionWithJournal can report prJournalFailed.
+  Here the journal directory cannot be created — a file sits in its place. }
 procedure TSessionTests.TestJournalEntryErrorReported;
 var
   Err, Blocked: string;
 begin
   Err := '';
   Blocked := IncludeTrailingPathDelimiter(FDir) + 'blocked';
-  AssertTrue('файл-заглушка: ' + Err, WriteTextFile(Blocked, 'x', Err));
+  AssertTrue('stub file: ' + Err, WriteTextFile(Blocked, 'x', Err));
   Err := '';
-  AssertFalse('запись в журнал невозможна',
+  AssertFalse('the journal write is impossible',
     AppendJournalEntry(IncludeTrailingPathDelimiter(Blocked) + 'journal',
       'j1', 10, 5, Err));
-  AssertTrue('причина сообщена', Err <> '');
-  AssertFalse('файл журнала не создан',
+  AssertTrue('the reason is reported', Err <> '');
+  AssertFalse('the journal file is not created',
     FileExists(JournalFile(IncludeTrailingPathDelimiter(Blocked) + 'journal',
       'j1')));
 end;
 
-{ --no-session: сохранять нечего — не создаётся ни файл сессии, ни файл
-  журнала (и даже каталог журнала). Контроль: включённый режим пишет оба. }
+{ --no-session: there is nothing to save — neither the session file nor the
+  journal file is created (not even the journal directory). Control: the
+  enabled mode writes both. }
 procedure TSessionTests.TestNoJournalWhenNoSession;
 var
   Msgs: TMessages;
@@ -493,23 +495,23 @@ begin
   Err := '';
   SetLength(Msgs, 1);
   Msgs[0].Role := mrUser;
-  Msgs[0].Content := 'привет';
+  Msgs[0].Content := 'hello';
   SessPath := IncludeTrailingPathDelimiter(SessionDir(FDir)) + 'j2.json';
-  AssertTrue('режим --no-session: пропуск',
+  AssertTrue('--no-session mode: skipped',
     SaveSessionWithJournal(FDir, 'j2', 'test-model', Msgs, nil, True,
       40, 10, Err) = prSkipped);
-  AssertEquals('ошибка пуста', '', Err);
-  AssertFalse('файла сессии нет', FileExists(SessPath));
-  AssertFalse('файла журнала нет',
+  AssertEquals('error is empty', '', Err);
+  AssertFalse('no session file', FileExists(SessPath));
+  AssertFalse('no journal file',
     FileExists(JournalFile(JournalDir(FDir), 'j2')));
-  AssertFalse('каталога журнала нет', DirectoryExists(JournalDir(FDir)));
-  { Контроль: без --no-session сохраняются и сессия, и запись журнала. }
-  AssertTrue('обычный режим: запись',
+  AssertFalse('no journal directory', DirectoryExists(JournalDir(FDir)));
+  { Control: without --no-session both the session and the journal entry are saved. }
+  AssertTrue('normal mode: written',
     SaveSessionWithJournal(FDir, 'j2', 'test-model', Msgs, nil, False,
       40, 10, Err) = prOk);
-  AssertEquals('ошибка пуста (2)', '', Err);
-  AssertTrue('файл сессии создан', FileExists(SessPath));
-  AssertTrue('файл журнала создан',
+  AssertEquals('error is empty (2)', '', Err);
+  AssertTrue('session file created', FileExists(SessPath));
+  AssertTrue('journal file created',
     FileExists(JournalFile(JournalDir(FDir), 'j2')));
 end;
 

@@ -1,5 +1,5 @@
 unit test_markdown;
-{ Тесты разбора разметки markdown (mirmid.markdown). }
+{ Tests for markdown parsing (mirmid.markdown). }
 
 {$mode objfpc}{$H+}
 
@@ -35,8 +35,8 @@ implementation
 
 procedure TMarkdownTests.TestStripPlain;
 begin
-  AssertEquals('обычный текст', 'Привет, мир', StripMarkdown('Привет, мир'));
-  AssertEquals('переносы сохраняются', 'a' + sLineBreak + 'b',
+  AssertEquals('plain text', 'Hello, world', StripMarkdown('Hello, world'));
+  AssertEquals('line breaks are preserved', 'a' + sLineBreak + 'b',
     StripMarkdown('a' + sLineBreak + 'b'));
   AssertEquals('CRLF', 'a' + sLineBreak + 'b',
     StripMarkdown('a' + #13#10 + 'b'));
@@ -44,21 +44,21 @@ end;
 
 procedure TMarkdownTests.TestStripInline;
 begin
-  AssertEquals('жирный/курсив/код', 'жирный и курсив и код',
-    StripMarkdown('**жирный** и *курсив* и `код`'));
-  AssertEquals('подчёркивание', 'x', StripMarkdown('_x_'));
-  AssertEquals('зачёркнутый', 'y', StripMarkdown('~~y~~'));
-  AssertEquals('ссылка — только текст', 'текст',
-    StripMarkdown('[текст](http://example.com)'));
+  AssertEquals('bold/italic/code', 'bold and italic and code',
+    StripMarkdown('**bold** and *italic* and `code`'));
+  AssertEquals('underscore', 'x', StripMarkdown('_x_'));
+  AssertEquals('strikethrough', 'y', StripMarkdown('~~y~~'));
+  AssertEquals('link: text only', 'text',
+    StripMarkdown('[text](http://example.com)'));
 end;
 
 procedure TMarkdownTests.TestStripBlocks;
 begin
-  AssertEquals('заголовок', 'Заголовок', StripMarkdown('# Заголовок'));
-  AssertEquals('цитата', 'цитата', StripMarkdown('> цитата'));
-  AssertEquals('маркер списка сохраняется', '- пункт',
-    StripMarkdown('- пункт'));
-  AssertEquals('ограждённый блок без оград', 'a = 1',
+  AssertEquals('heading', 'Heading', StripMarkdown('# Heading'));
+  AssertEquals('quote', 'quote', StripMarkdown('> quote'));
+  AssertEquals('list marker is preserved', '- entry',
+    StripMarkdown('- entry'));
+  AssertEquals('fenced block without fences', 'a = 1',
     StripMarkdown('```' + sLineBreak + 'a = 1' + sLineBreak + '```'));
 end;
 
@@ -67,12 +67,12 @@ var
   R: string;
 begin
   R := RenderMarkdownCore('# H', True);
-  AssertTrue('код заголовка', Pos(#27 + '[' + DimSGR('1;96') + 'mH', R) > 0);
-  AssertTrue('сброс в конце', Pos(#27 + '[0m', R) > 0);
+  AssertTrue('heading code', Pos(#27 + '[' + DimSGR('1;96') + 'mH', R) > 0);
+  AssertTrue('reset at the end', Pos(#27 + '[0m', R) > 0);
 
   R := RenderMarkdownCore('- item **b**', True);
-  AssertTrue('цвет маркера списка', Pos(#27 + '[' + DimSGR('38;5;46') + 'm-', R) > 0);
-  AssertTrue('жирный внутри списка', Pos(#27 + '[1mb', R) > 0);
+  AssertTrue('list marker color', Pos(#27 + '[' + DimSGR('38;5;46') + 'm-', R) > 0);
+  AssertTrue('bold inside a list', Pos(#27 + '[1mb', R) > 0);
 end;
 
 procedure TMarkdownTests.TestColoredCodeBlock;
@@ -80,16 +80,16 @@ var
   R: string;
 begin
   R := RenderMarkdownCore('```' + sLineBreak + 'x := 1;' + sLineBreak + '```', True);
-  AssertTrue('цвет блока кода', Pos(#27 + '[' + DimSGR('38;5;245') + 'mx := 1;', R) > 0);
+  AssertTrue('code block color', Pos(#27 + '[' + DimSGR('38;5;245') + 'mx := 1;', R) > 0);
 end;
 
 procedure TMarkdownTests.TestColoredLink;
 var
   R: string;
 begin
-  R := RenderMarkdownCore('[ссылка](http://x)', True);
-  AssertTrue('подчёркнутый голубой', Pos(#27 + '[' + DimSGR('4;36') + 'm', R) > 0);
-  AssertFalse('URL не печатается', Pos('http://x', R) > 0);
+  R := RenderMarkdownCore('[link](http://x)', True);
+  AssertTrue('underlined cyan', Pos(#27 + '[' + DimSGR('4;36') + 'm', R) > 0);
+  AssertFalse('URL is not printed', Pos('http://x', R) > 0);
 end;
 
 procedure TMarkdownTests.TestNestedBoldItalic;
@@ -97,7 +97,7 @@ var
   R: string;
 begin
   R := RenderMarkdownCore('**a *b* c**', True);
-  AssertTrue('комбинация жирный+курсив', Pos(#27 + '[1;3mb', R) > 0);
+  AssertTrue('bold+italic combination', Pos(#27 + '[1;3mb', R) > 0);
 end;
 
 procedure TMarkdownTests.TestNoEscapesInPlainMode;
@@ -106,8 +106,8 @@ var
 begin
   R := RenderMarkdownCore('# H' + sLineBreak + '**b**' + sLineBreak + '`c`' +
     sLineBreak + '[t](u)', False);
-  AssertFalse('в чистом тексте нет escape-кодов', Pos(#27, R) > 0);
-  AssertEquals('разметка снята', 'H' + sLineBreak + 'b' + sLineBreak + 'c' +
+  AssertFalse('no escape codes in plain text', Pos(#27, R) > 0);
+  AssertEquals('markup is stripped', 'H' + sLineBreak + 'b' + sLineBreak + 'c' +
     sLineBreak + 't', R);
 end;
 
@@ -118,7 +118,7 @@ begin
   R := StripMarkdown('| a | bb |' + sLineBreak +
     '|---|----|' + sLineBreak +
     '| ccc | d |');
-  AssertEquals('колонки выровнены по максимальной ширине',
+  AssertEquals('columns are aligned to the maximum width',
     '┌─────┬────┐' + sLineBreak +
     '│ a   │ bb │' + sLineBreak +
     '├─────┼────┤' + sLineBreak +
@@ -131,45 +131,45 @@ procedure TMarkdownTests.TestTableInText;
 var
   R: string;
 begin
-  R := StripMarkdown('текст' + sLineBreak +
+  R := StripMarkdown('lead' + sLineBreak +
     '| x | y |' + sLineBreak +
     '|---|---|' + sLineBreak +
     '| long | z |' + sLineBreak +
-    'хвост');
-  AssertEquals('таблица внутри текста выравнивается целиком',
-    'текст' + sLineBreak +
+    'tail');
+  AssertEquals('a table inside text is aligned as a whole',
+    'lead' + sLineBreak +
     '┌──────┬───┐' + sLineBreak +
     '│ x    │ y │' + sLineBreak +
     '├──────┼───┤' + sLineBreak +
     '│ long │ z │' + sLineBreak +
     '└──────┴───┘' + sLineBreak +
-    'хвост',
+    'tail',
     R);
 end;
 
 procedure TMarkdownTests.TestTableNotDetected;
 begin
-  AssertEquals('одна пипа — не таблица', '| a', StripMarkdown('| a'));
-  AssertEquals('пипа не в начале — не таблица', 'a | b', StripMarkdown('a | b'));
+  AssertEquals('a single pipe is not a table', '| a', StripMarkdown('| a'));
+  AssertEquals('a pipe not at the start is not a table', 'a | b', StripMarkdown('a | b'));
 end;
 
 procedure TMarkdownTests.TestTableNeedsSeparator;
 var
   R: string;
 begin
-  { Достаточно длинная строка, которая раньше превращалась в целую таблицу.
-    Без строки-разделителя это обычный текст (GFM): иначе при потоковом
-    выводе каждая новая строка рисовалась бы отдельным блоком. }
+  { A long enough line that used to be turned into a whole table. Without a
+    separator row this is plain text (GFM): otherwise every new line would be
+    drawn as a separate block in streaming output. }
   R := StripMarkdown('| read_text_file / edit_text_file / copy_file | OK |');
-  AssertEquals('одна строка без разделителя — не таблица',
+  AssertEquals('one line without a separator is not a table',
     '| read_text_file / edit_text_file / copy_file | OK |', R);
-  AssertEquals('две строки без разделителя — не таблица',
+  AssertEquals('two lines without a separator are not a table',
     '| a | b |' + sLineBreak + '| c | d |',
     StripMarkdown('| a | b |' + sLineBreak + '| c | d |'));
-  { С разделителем таблица по-прежнему рисуется. }
+  { With a separator the table is still drawn. }
   R := StripMarkdown('| a | b |' + sLineBreak + '|---|---|' + sLineBreak +
     '| c | d |');
-  AssertTrue('с разделителем — таблица',
+  AssertTrue('with a separator it is a table',
     Pos('┌', R) = 1);
 end;
 
@@ -179,36 +179,36 @@ var
 begin
   R := RenderMarkdownCore('| a | b |' + sLineBreak + '|---|---|' + sLineBreak +
     '| c | d |', True);
-  AssertTrue('верхняя граница серая', Pos(#27 + '[' + DimSGR('90') + 'm┌───┬───┐' + #27 + '[0m', R) > 0);
-  AssertTrue('разделитель серая', Pos(#27 + '[' + DimSGR('90') + 'm├───┼───┤' + #27 + '[0m', R) > 0);
-  AssertTrue('нижняя граница серая', Pos(#27 + '[' + DimSGR('90') + 'm└───┴───┘' + #27 + '[0m', R) > 0);
-  AssertTrue('вертикальная черта серая', Pos(#27 + '[' + DimSGR('90') + 'm│' + #27 + '[0m', R) > 0);
+  AssertTrue('top border is grey', Pos(#27 + '[' + DimSGR('90') + 'm┌───┬───┐' + #27 + '[0m', R) > 0);
+  AssertTrue('separator is grey', Pos(#27 + '[' + DimSGR('90') + 'm├───┼───┤' + #27 + '[0m', R) > 0);
+  AssertTrue('bottom border is grey', Pos(#27 + '[' + DimSGR('90') + 'm└───┴───┘' + #27 + '[0m', R) > 0);
+  AssertTrue('vertical bar is grey', Pos(#27 + '[' + DimSGR('90') + 'm│' + #27 + '[0m', R) > 0);
 end;
 
 procedure TMarkdownTests.TestVisibleLenWide;
 begin
-  AssertEquals('латиница — 1 колонка', 1, VisibleLen('a'));
-  AssertEquals('кириллица — 1 колонка', 1, VisibleLen('а'));
-  AssertEquals('эмодзи ✅ — 2 колонки', 2, VisibleLen('✅'));
-  AssertEquals('CJK — 2 колонки', 2, VisibleLen('中'));
-  AssertEquals('полная форма — 2 колонки', 2, VisibleLen('Ａ'));
-  AssertEquals('ZWJ — 0 колонок', 0, VisibleLen(#$E2#$80#$8D));
-  AssertEquals('комбинируемая диакритика — 0', 1,
+  AssertEquals('latin: 1 column', 1, VisibleLen('a'));
+  AssertEquals('accented latin: 1 column', 1, VisibleLen('é'));
+  AssertEquals('emoji ✅: 2 columns', 2, VisibleLen('✅'));
+  AssertEquals('CJK: 2 columns', 2, VisibleLen('中'));
+  AssertEquals('fullwidth form: 2 columns', 2, VisibleLen('Ａ'));
+  AssertEquals('ZWJ: 0 columns', 0, VisibleLen(#$E2#$80#$8D));
+  AssertEquals('combining diacritic: 0', 1,
     VisibleLen('e' + #$CC#$81));
-  AssertEquals('ANSI-коды не считаются', 3,
+  AssertEquals('ANSI codes are not counted', 3,
     VisibleLen(#27 + '[1m' + 'abc' + #27 + '[0m'));
-  AssertEquals('смешанная строка', 5, VisibleLen('a✅中'));
+  AssertEquals('mixed string', 5, VisibleLen('a✅中'));
 end;
 
 procedure TMarkdownTests.TestTableWideChars;
 var
   R: string;
 begin
-  { ✅ занимает 2 колонки: выравнивание учитывает это. }
+  { ✅ occupies 2 columns: the alignment takes that into account. }
   R := StripMarkdown('| a | bb |' + sLineBreak +
     '|---|----|' + sLineBreak +
     '| ✅ | d |');
-  AssertEquals('широкий символ учитывается в ширине колонки',
+  AssertEquals('a wide character is counted in the column width',
     '┌────┬────┐' + sLineBreak +
     '│ a  │ bb │' + sLineBreak +
     '├────┼────┤' + sLineBreak +
@@ -219,35 +219,35 @@ end;
 
 procedure TMarkdownTests.TestTableStart;
 begin
-  AssertTrue('«|» — возможное начало таблицы', IsTableStart('|'));
-  AssertTrue('обрезанная строка с «|»', IsTableStart('  | a'));
-  AssertTrue('полная строка таблицы', IsTableStart('| a | b |'));
-  AssertFalse('текст не начало таблицы', IsTableStart('a | b'));
-  AssertFalse('пустая строка', IsTableStart(''));
+  AssertTrue('"|" may start a table', IsTableStart('|'));
+  AssertTrue('a truncated line with "|"', IsTableStart('  | a'));
+  AssertTrue('a full table line', IsTableStart('| a | b |'));
+  AssertFalse('text does not start a table', IsTableStart('a | b'));
+  AssertFalse('empty line', IsTableStart(''));
 end;
 
 procedure TMarkdownTests.TestBreakSafe;
 begin
-  AssertTrue('обычный текст', MarkdownBreakSafe('обычный'));
-  AssertFalse('внутри жирного', MarkdownBreakSafe('**жирный'));
-  AssertTrue('после жирного', MarkdownBreakSafe('**жирный**'));
-  AssertFalse('внутри курсива', MarkdownBreakSafe('*курсив'));
-  AssertTrue('после курсива', MarkdownBreakSafe('*курсив*'));
-  AssertFalse('внутри кода', MarkdownBreakSafe('`код'));
-  AssertTrue('после кода', MarkdownBreakSafe('`код`'));
-  AssertFalse('внутри зачёркнутого', MarkdownBreakSafe('~~текст'));
-  AssertTrue('после зачёркнутого', MarkdownBreakSafe('~~текст~~'));
-  AssertFalse('внутри ссылки', MarkdownBreakSafe('[текст'));
-  AssertTrue('после ссылки', MarkdownBreakSafe('[текст]'));
+  AssertTrue('plain text', MarkdownBreakSafe('plain'));
+  AssertFalse('inside bold', MarkdownBreakSafe('**bold'));
+  AssertTrue('after bold', MarkdownBreakSafe('**bold**'));
+  AssertFalse('inside italic', MarkdownBreakSafe('*italic'));
+  AssertTrue('after italic', MarkdownBreakSafe('*italic*'));
+  AssertFalse('inside code', MarkdownBreakSafe('`code'));
+  AssertTrue('after code', MarkdownBreakSafe('`code`'));
+  AssertFalse('inside strikethrough', MarkdownBreakSafe('~~text'));
+  AssertTrue('after strikethrough', MarkdownBreakSafe('~~text~~'));
+  AssertFalse('inside a link', MarkdownBreakSafe('[text'));
+  AssertTrue('after a link', MarkdownBreakSafe('[text]'));
 end;
 
 procedure TMarkdownTests.TestBoxDrawingNarrow;
 begin
-  { Псевдографика занимает одну колонку: иначе таблица ошибочно считается
-    шире терминала и перестаёт выравниваться. }
-  AssertEquals('верхняя граница', 9, VisibleLen('┌───┬───┐'));
-  AssertEquals('строка данных', 9, VisibleLen('│ a │ b │'));
-  AssertEquals('нижняя граница', 9, VisibleLen('└───┴───┘'));
+  { Box-drawing characters occupy one column: otherwise a table is wrongly
+    considered wider than the terminal and stops being aligned. }
+  AssertEquals('top border', 9, VisibleLen('┌───┬───┐'));
+  AssertEquals('data row', 9, VisibleLen('│ a │ b │'));
+  AssertEquals('bottom border', 9, VisibleLen('└───┴───┘'));
 end;
 
 initialization

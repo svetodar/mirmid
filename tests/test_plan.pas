@@ -1,6 +1,6 @@
 unit test_plan;
-{ Тесты модели плана (mirmid.plan): JSON-(де)сериализация, валидация,
-  операции со шагами, разбор ответа модели, рендер, отчёт, подсказки. }
+{ Tests of the plan model (mirmid.plan): JSON (de)serialisation, validation,
+  step operations, parsing the model answer, rendering, report, prompts. }
 
 {$mode objfpc}{$H+}
 
@@ -54,11 +54,11 @@ begin
   AssertEquals('done', 'done', PlanStatusName(psDone));
   AssertEquals('failed', 'failed', PlanStatusName(psFailed));
   AssertEquals('skipped', 'skipped', PlanStatusName(psSkipped));
-  AssertTrue('done по имени', PlanStatusFromName('done', St));
+  AssertTrue('done by name', PlanStatusFromName('done', St));
   AssertEquals('done', Ord(psDone), Ord(St));
-  AssertTrue('регистр не важен', PlanStatusFromName('IN_PROGRESS', St));
+  AssertTrue('case does not matter', PlanStatusFromName('IN_PROGRESS', St));
   AssertEquals('in_progress', Ord(psInProgress), Ord(St));
-  AssertFalse('неизвестное имя', PlanStatusFromName('weird', St));
+  AssertFalse('unknown name', PlanStatusFromName('weird', St));
 end;
 
 procedure TPlanTests.TestJsonRoundTrip;
@@ -69,26 +69,26 @@ var
 begin
   P := TPlan.Create;
   try
-    P.AddStep('прочитать файл');
-    P.AddStep('выполнить команду');
-    P.AddStep('написать отчёт');
-    P.SetStatus('s1', psDone, 'файл прочитан');
-    P.SetStatus('s2', psFailed, 'ошибка 127');
+    P.AddStep('read the file');
+    P.AddStep('run the command');
+    P.AddStep('write the report');
+    P.SetStatus('s1', psDone, 'file read');
+    P.SetStatus('s2', psFailed, 'error 127');
     P.SetStatus('s3', psSkipped, '');
     O := P.ToJSON;
     try
       P2 := TPlan.FromJSON(O, Err);
-      AssertTrue('план разобран', P2 <> nil);
-      AssertEquals('ошибка пуста', '', Err);
-      AssertEquals('число шагов', 3, Length(P2.Steps));
+      AssertTrue('plan parsed', P2 <> nil);
+      AssertEquals('error is empty', '', Err);
+      AssertEquals('step count', 3, Length(P2.Steps));
       AssertEquals('id 1', 's1', P2.Steps[0].Id);
-      AssertEquals('описание 1', 'прочитать файл', P2.Steps[0].Description);
-      AssertEquals('статус 1', Ord(psDone), Ord(P2.Steps[0].Status));
-      AssertEquals('результат 1', 'файл прочитан', P2.Steps[0].Result);
-      AssertEquals('статус 2', Ord(psFailed), Ord(P2.Steps[1].Status));
-      AssertEquals('результат 2', 'ошибка 127', P2.Steps[1].Result);
-      AssertEquals('статус 3', Ord(psSkipped), Ord(P2.Steps[2].Status));
-      AssertEquals('результат 3 пуст', '', P2.Steps[2].Result);
+      AssertEquals('description 1', 'read the file', P2.Steps[0].Description);
+      AssertEquals('status 1', Ord(psDone), Ord(P2.Steps[0].Status));
+      AssertEquals('result 1', 'file read', P2.Steps[0].Result);
+      AssertEquals('status 2', Ord(psFailed), Ord(P2.Steps[1].Status));
+      AssertEquals('result 2', 'error 127', P2.Steps[1].Result);
+      AssertEquals('status 3', Ord(psSkipped), Ord(P2.Steps[2].Status));
+      AssertEquals('result 3 is empty', '', P2.Steps[2].Result);
     finally
       P2.Free;
       O.Free;
@@ -108,8 +108,8 @@ begin
   try
     O.Add('foo', 'bar');
     P := TPlan.FromJSON(O, Err);
-    AssertNull('нет steps — nil', P);
-    AssertTrue('текст ошибки', Err <> '');
+    AssertNull('no steps - nil', P);
+    AssertTrue('error text', Err <> '');
   finally
     O.Free;
   end;
@@ -125,8 +125,8 @@ begin
   try
     O.Add('steps', TJSONArray.Create);
     P := TPlan.FromJSON(O, Err);
-    AssertNull('пустой steps — nil', P);
-    AssertTrue('текст ошибки', Err <> '');
+    AssertNull('empty steps - nil', P);
+    AssertTrue('error text', Err <> '');
   finally
     O.Free;
   end;
@@ -147,8 +147,8 @@ begin
     A.Add(S);
     O.Add('steps', A);
     P := TPlan.FromJSON(O, Err);
-    AssertNull('пустое description — nil', P);
-    AssertTrue('текст ошибки', Err <> '');
+    AssertNull('empty description - nil', P);
+    AssertTrue('error text', Err <> '');
   finally
     O.Free;
   end;
@@ -166,16 +166,16 @@ begin
     A := TJSONArray.Create;
     S1 := TJSONObject.Create;
     S1.Add('id', 'x');
-    S1.Add('description', 'один');
+    S1.Add('description', 'one');
     S2 := TJSONObject.Create;
     S2.Add('id', 'x');
-    S2.Add('description', 'два');
+    S2.Add('description', 'two');
     A.Add(S1);
     A.Add(S2);
     O.Add('steps', A);
     P := TPlan.FromJSON(O, Err);
-    AssertNull('дубли id — nil', P);
-    AssertTrue('текст ошибки', Err <> '');
+    AssertNull('duplicate ids - nil', P);
+    AssertTrue('error text', Err <> '');
   finally
     O.Free;
   end;
@@ -192,13 +192,13 @@ begin
   try
     A := TJSONArray.Create;
     S := TJSONObject.Create;
-    S.Add('description', 'шаг');
+    S.Add('description', 'step');
     S.Add('status', 'weird');
     A.Add(S);
     O.Add('steps', A);
     P := TPlan.FromJSON(O, Err);
-    AssertNull('неизвестный статус — nil', P);
-    AssertTrue('текст ошибки', Err <> '');
+    AssertNull('unknown status - nil', P);
+    AssertTrue('error text', Err <> '');
   finally
     O.Free;
   end;
@@ -215,26 +215,26 @@ begin
   try
     A := TJSONArray.Create;
     S1 := TJSONObject.Create;
-    S1.Add('description', 'первый');
+    S1.Add('description', 'first');
     S2 := TJSONObject.Create;
-    S2.Add('description', 'второй');
+    S2.Add('description', 'second');
     S3 := TJSONObject.Create;
     S3.Add('id', 'custom');
-    S3.Add('description', 'третий');
+    S3.Add('description', 'third');
     A.Add(S1);
     A.Add(S2);
     A.Add(S3);
     O.Add('steps', A);
     P := TPlan.FromJSON(O, Err);
-    AssertTrue('план разобран', P <> nil);
+    AssertTrue('plan parsed', P <> nil);
     try
-      AssertEquals('ошибка пуста', '', Err);
-      AssertEquals('число шагов', 3, Length(P.Steps));
-      AssertEquals('авто-id 1', 's1', P.Steps[0].Id);
-      AssertEquals('авто-id 2', 's2', P.Steps[1].Id);
-      AssertEquals('явный id', 'custom', P.Steps[2].Id);
-      AssertEquals('статус по умолчанию', Ord(psPending), Ord(P.Steps[0].Status));
-      AssertEquals('результат по умолчанию', '', P.Steps[0].Result);
+      AssertEquals('error is empty', '', Err);
+      AssertEquals('step count', 3, Length(P.Steps));
+      AssertEquals('auto id 1', 's1', P.Steps[0].Id);
+      AssertEquals('auto id 2', 's2', P.Steps[1].Id);
+      AssertEquals('explicit id', 'custom', P.Steps[2].Id);
+      AssertEquals('default status', Ord(psPending), Ord(P.Steps[0].Status));
+      AssertEquals('default result', '', P.Steps[0].Result);
     finally
       P.Free;
     end;
@@ -249,14 +249,14 @@ var
 begin
   P := TPlan.Create;
   try
-    AssertEquals('первый индекс', 0, P.AddStep('первый'));
-    AssertEquals('второй индекс', 1, P.AddStep('второй'));
-    AssertEquals('число шагов', 2, Length(P.Steps));
-    AssertEquals('авто-id 1', 's1', P.Steps[0].Id);
-    AssertEquals('авто-id 2', 's2', P.Steps[1].Id);
-    AssertEquals('статус', Ord(psPending), Ord(P.Steps[0].Status));
-    AssertEquals('описание', 'первый', P.Steps[0].Description);
-    AssertEquals('результат пуст', '', P.Steps[0].Result);
+    AssertEquals('first index', 0, P.AddStep('first'));
+    AssertEquals('second index', 1, P.AddStep('second'));
+    AssertEquals('step count', 2, Length(P.Steps));
+    AssertEquals('auto id 1', 's1', P.Steps[0].Id);
+    AssertEquals('auto id 2', 's2', P.Steps[1].Id);
+    AssertEquals('status', Ord(psPending), Ord(P.Steps[0].Status));
+    AssertEquals('description', 'first', P.Steps[0].Description);
+    AssertEquals('result is empty', '', P.Steps[0].Result);
   finally
     P.Free;
   end;
@@ -270,10 +270,10 @@ begin
   try
     P.AddStep('a');
     P.AddStep('b');
-    AssertEquals('находит s1', 0, P.FindStep('s1'));
-    AssertEquals('находит s2', 1, P.FindStep('s2'));
-    AssertEquals('нет s3', -1, P.FindStep('s3'));
-    AssertEquals('пустой id', -1, P.FindStep(''));
+    AssertEquals('finds s1', 0, P.FindStep('s1'));
+    AssertEquals('finds s2', 1, P.FindStep('s2'));
+    AssertEquals('no s3', -1, P.FindStep('s3'));
+    AssertEquals('empty id', -1, P.FindStep(''));
   finally
     P.Free;
   end;
@@ -288,11 +288,11 @@ begin
     P.AddStep('a');
     P.AddStep('b');
     P.AddStep('c');
-    AssertTrue('удаляет s2', P.RemoveStep('s2'));
-    AssertEquals('осталось два', 2, Length(P.Steps));
-    AssertEquals('порядок 1', 's1', P.Steps[0].Id);
-    AssertEquals('порядок 2', 's3', P.Steps[1].Id);
-    AssertFalse('повторное удаление', P.RemoveStep('s2'));
+    AssertTrue('removes s2', P.RemoveStep('s2'));
+    AssertEquals('two left', 2, Length(P.Steps));
+    AssertEquals('order 1', 's1', P.Steps[0].Id);
+    AssertEquals('order 2', 's3', P.Steps[1].Id);
+    AssertFalse('repeated removal', P.RemoveStep('s2'));
   finally
     P.Free;
   end;
@@ -307,14 +307,14 @@ begin
     P.AddStep('a');
     P.AddStep('b');
     P.AddStep('c');
-    AssertTrue('перестановка', P.Reorder(['s3', 's1', 's2']));
-    AssertEquals('новый порядок 1', 's3', P.Steps[0].Id);
-    AssertEquals('новый порядок 2', 's1', P.Steps[1].Id);
-    AssertEquals('новый порядок 3', 's2', P.Steps[2].Id);
-    AssertFalse('меньше id', P.Reorder(['s1', 's2']));
-    AssertFalse('дубли id', P.Reorder(['s1', 's1', 's2']));
-    AssertFalse('чужой id', P.Reorder(['s1', 's2', 's9']));
-    AssertEquals('план не изменился', 's3', P.Steps[0].Id);
+    AssertTrue('reorder', P.Reorder(['s3', 's1', 's2']));
+    AssertEquals('new order 1', 's3', P.Steps[0].Id);
+    AssertEquals('new order 2', 's1', P.Steps[1].Id);
+    AssertEquals('new order 3', 's2', P.Steps[2].Id);
+    AssertFalse('fewer ids', P.Reorder(['s1', 's2']));
+    AssertFalse('duplicate ids', P.Reorder(['s1', 's1', 's2']));
+    AssertFalse('foreign id', P.Reorder(['s1', 's2', 's9']));
+    AssertEquals('plan unchanged', 's3', P.Steps[0].Id);
   finally
     P.Free;
   end;
@@ -327,12 +327,12 @@ begin
   P := TPlan.Create;
   try
     P.AddStep('a');
-    AssertTrue('в progress', P.SetStatus('s1', psInProgress, ''));
-    AssertEquals('статус progress', Ord(psInProgress), Ord(P.Steps[0].Status));
-    AssertTrue('в done с результатом', P.SetStatus('s1', psDone, 'готово'));
-    AssertEquals('статус done', Ord(psDone), Ord(P.Steps[0].Status));
-    AssertEquals('результат', 'готово', P.Steps[0].Result);
-    AssertFalse('нет шага', P.SetStatus('s9', psDone, ''));
+    AssertTrue('to in progress', P.SetStatus('s1', psInProgress, ''));
+    AssertEquals('in progress status', Ord(psInProgress), Ord(P.Steps[0].Status));
+    AssertTrue('to done with a result', P.SetStatus('s1', psDone, 'done'));
+    AssertEquals('done status', Ord(psDone), Ord(P.Steps[0].Status));
+    AssertEquals('result', 'done', P.Steps[0].Result);
+    AssertFalse('no such step', P.SetStatus('s9', psDone, ''));
   finally
     P.Free;
   end;
@@ -347,12 +347,12 @@ begin
     P.AddStep('a');
     P.AddStep('b');
     P.AddStep('c');
-    AssertEquals('первый pending', 0, P.NextPending);
+    AssertEquals('first pending', 0, P.NextPending);
     P.SetStatus('s1', psDone, '');
-    AssertEquals('второй pending', 1, P.NextPending);
+    AssertEquals('second pending', 1, P.NextPending);
     P.SetStatus('s2', psFailed, '');
     P.SetStatus('s3', psSkipped, '');
-    AssertEquals('pending нет', -1, P.NextPending);
+    AssertEquals('no pending', -1, P.NextPending);
   finally
     P.Free;
   end;
@@ -385,12 +385,12 @@ procedure TPlanTests.TestExtractJSONBlockFenced;
 var
   S: string;
 begin
-  S := 'Вот план:' + LineEnding +
+  S := 'Here is the plan:' + LineEnding +
        '```json' + LineEnding +
        '{"steps":[{"description":"a"},{"description":"b"}]}' + LineEnding +
        '```' + LineEnding +
-       'Готово.';
-  AssertEquals('блок из ограждения',
+       'Done.';
+  AssertEquals('block from the fence',
     '{"steps":[{"description":"a"},{"description":"b"}]}',
     ExtractJSONBlock(S));
 end;
@@ -399,17 +399,17 @@ procedure TPlanTests.TestExtractJSONBlockSurrounding;
 var
   S: string;
 begin
-  S := 'Разберём задачу. План: {"steps": [{"description": "x"}]} — дальше текст.';
-  AssertEquals('блок среди текста',
+  S := 'Let us look at the task. Plan: {"steps": [{"description": "x"}]} - more text follows.';
+  AssertEquals('block inside the text',
     '{"steps": [{"description": "x"}]}',
     ExtractJSONBlock(S));
 end;
 
 procedure TPlanTests.TestExtractJSONBlockMissing;
 begin
-  AssertEquals('нет json', '', ExtractJSONBlock('просто текст без json'));
-  AssertEquals('пустая строка', '', ExtractJSONBlock(''));
-  AssertEquals('незакрытый блок', '', ExtractJSONBlock('текст {незакрытый'));
+  AssertEquals('no json', '', ExtractJSONBlock('just plain text without json'));
+  AssertEquals('empty string', '', ExtractJSONBlock(''));
+  AssertEquals('unclosed block', '', ExtractJSONBlock('text {unclosed'));
 end;
 
 procedure TPlanTests.TestParsePlanFromTextValid;
@@ -419,15 +419,15 @@ var
   P: TPlan;
 begin
   S := '```json' + LineEnding +
-       '{"steps":[{"description":"сделать"},{"description":"проверить"}]}' + LineEnding +
+       '{"steps":[{"description":"do it"},{"description":"check it"}]}' + LineEnding +
        '```';
   P := ParsePlanFromText(S, Err);
-  AssertTrue('план разобран', P <> nil);
+  AssertTrue('plan parsed', P <> nil);
   try
-    AssertEquals('ошибка пуста', '', Err);
-    AssertEquals('число шагов', 2, Length(P.Steps));
-    AssertEquals('авто-id', 's1', P.Steps[0].Id);
-    AssertEquals('описание', 'сделать', P.Steps[0].Description);
+    AssertEquals('error is empty', '', Err);
+    AssertEquals('step count', 2, Length(P.Steps));
+    AssertEquals('auto id', 's1', P.Steps[0].Id);
+    AssertEquals('description', 'do it', P.Steps[0].Description);
   finally
     P.Free;
   end;
@@ -438,15 +438,15 @@ var
   Err: string;
   P: TPlan;
 begin
-  P := ParsePlanFromText('без json', Err);
-  AssertNull('нет json — nil', P);
-  AssertTrue('ошибка 1', Err <> '');
+  P := ParsePlanFromText('no json', Err);
+  AssertNull('no json - nil', P);
+  AssertTrue('error 1', Err <> '');
   P := ParsePlanFromText('{"steps": []}', Err);
-  AssertNull('пустой план — nil', P);
-  AssertTrue('ошибка 2', Err <> '');
-  P := ParsePlanFromText('{"steps": "не массив"}', Err);
-  AssertNull('steps не массив — nil', P);
-  AssertTrue('ошибка 3', Err <> '');
+  AssertNull('empty plan - nil', P);
+  AssertTrue('error 2', Err <> '');
+  P := ParsePlanFromText('{"steps": "not an array"}', Err);
+  AssertNull('steps is not an array - nil', P);
+  AssertTrue('error 3', Err <> '');
 end;
 
 procedure TPlanTests.TestRender;
@@ -455,12 +455,12 @@ var
 begin
   P := TPlan.Create;
   try
-    P.AddStep('первый');
-    P.AddStep('второй');
-    P.SetStatus('s1', psDone, 'готово');
+    P.AddStep('first');
+    P.AddStep('second');
+    P.SetStatus('s1', psDone, 'done');
     P.SetStatus('s2', psInProgress, '');
-    AssertEquals('рендер',
-      '1. [done] первый — готово' + LineEnding + '2. [in_progress] второй',
+    AssertEquals('render',
+      '1. [done] first — done' + LineEnding + '2. [in_progress] second',
       P.Render);
   finally
     P.Free;
@@ -483,7 +483,7 @@ begin
     P.SetStatus('s3', psDone, '');
     P.SetStatus('s4', psFailed, '');
     P.SetStatus('s5', psSkipped, '');
-    AssertEquals('смешанная сводка', '3/5 выполнено, 1 ошибка, 1 пропущено', P.Summary);
+    AssertEquals('mixed summary', '3/5 done, 1 failed, 1 skipped', P.Summary);
   finally
     P.Free;
   end;
@@ -493,13 +493,13 @@ begin
     P.AddStep('b');
     P.SetStatus('s1', psDone, '');
     P.SetStatus('s2', psDone, '');
-    AssertEquals('только выполнено', '2/2 выполнено', P.Summary);
+    AssertEquals('done only', '2/2 done', P.Summary);
   finally
     P.Free;
   end;
   P := TPlan.Create;
   try
-    AssertEquals('пустой план', '0/0 выполнено', P.Summary);
+    AssertEquals('empty plan', '0/0 done', P.Summary);
   finally
     P.Free;
   end;
@@ -509,7 +509,7 @@ begin
     P.AddStep('b');
     P.SetStatus('s1', psFailed, '');
     P.SetStatus('s2', psFailed, '');
-    AssertEquals('плюрализация', '0/2 выполнено, 2 ошибки', P.Summary);
+    AssertEquals('no pluralisation', '0/2 done, 2 failed', P.Summary);
   finally
     P.Free;
   end;
@@ -522,13 +522,13 @@ var
 begin
   P := TPlan.Create;
   try
-    P.AddStep('сделать');
-    P.SetStatus('s1', psDone, 'готово');
-    Expected := 'Задача: задача' + LineEnding + LineEnding +
-                'План:' + LineEnding +
+    P.AddStep('do it');
+    P.SetStatus('s1', psDone, 'done');
+    Expected := 'Task: task' + LineEnding + LineEnding +
+                'Plan:' + LineEnding +
                 P.Render + LineEnding + LineEnding +
-                'Сводка: ' + P.Summary;
-    AssertEquals('отчёт', Expected, BuildPlanReport(P, 'задача'));
+                'Summary: ' + P.Summary;
+    AssertEquals('report', Expected, BuildPlanReport(P, 'task'));
   finally
     P.Free;
   end;
@@ -538,23 +538,23 @@ procedure TPlanTests.TestPrompts;
 var
   SP: string;
 begin
-  AssertTrue('есть подсказка планировщика', Length(PLANNER_SYSTEM_PROMPT) > 0);
-  AssertTrue('JSON в подсказке планировщика', Pos('{"steps"', PLANNER_SYSTEM_PROMPT) > 0);
-  SP := BuildStepPrompt('задача', '1. [pending] шаг', 'шаг');
-  AssertTrue('задача в подсказке шага', Pos('задача', SP) > 0);
-  AssertTrue('план в подсказке шага', Pos('1. [pending] шаг', SP) > 0);
-  AssertTrue('цель в подсказке шага', Pos('Цель текущего шага: шаг', SP) > 0);
-  AssertTrue('есть подсказка отчётчика', Length(REPORT_SYSTEM_PROMPT) > 0);
-  AssertTrue('есть подсказка аналитика', Length(PLANNER_ANALYSIS_PROMPT) > 0);
-  AssertTrue('аналитик читает файлы', Pos('файл', PLANNER_ANALYSIS_PROMPT) > 0);
-  SP := BuildPlanPrompt('моя задача', 'анализ: всё готово');
-  AssertTrue('задача в запросе плана', Pos('моя задача', SP) > 0);
-  AssertTrue('анализ в запросе плана', Pos('анализ: всё готово', SP) > 0);
-  AssertTrue('JSON в запросе плана', Pos('{"steps"', SP) > 0);
-  SP := BuildPlanPrompt('моя задача', '');
-  AssertTrue('пустой анализ не ломает запрос', Pos('моя задача', SP) > 0);
+  AssertTrue('planner prompt exists', Length(PLANNER_SYSTEM_PROMPT) > 0);
+  AssertTrue('JSON in the planner prompt', Pos('{"steps"', PLANNER_SYSTEM_PROMPT) > 0);
+  SP := BuildStepPrompt('task', '1. [pending] step', 'step');
+  AssertTrue('task in the step prompt', Pos('task', SP) > 0);
+  AssertTrue('plan in the step prompt', Pos('1. [pending] step', SP) > 0);
+  AssertTrue('goal in the step prompt', Pos('Goal of the current step: step', SP) > 0);
+  AssertTrue('reporter prompt exists', Length(REPORT_SYSTEM_PROMPT) > 0);
+  AssertTrue('analyst prompt exists', Length(PLANNER_ANALYSIS_PROMPT) > 0);
+  AssertTrue('analyst reads files', Pos('file', PLANNER_ANALYSIS_PROMPT) > 0);
+  SP := BuildPlanPrompt('my task', 'analysis: everything is ready');
+  AssertTrue('task in the plan request', Pos('my task', SP) > 0);
+  AssertTrue('analysis in the plan request', Pos('analysis: everything is ready', SP) > 0);
+  AssertTrue('JSON in the plan request', Pos('{"steps"', SP) > 0);
+  SP := BuildPlanPrompt('my task', '');
+  AssertTrue('empty analysis does not break the request', Pos('my task', SP) > 0);
 end;
-{ Truncate(0) не ограничивает план: все шаги сохраняются. }
+{ Truncate(0) does not limit the plan: every step is kept. }
 procedure TPlanTests.TestTruncateZero;
 var
   P: TPlan;
@@ -562,21 +562,21 @@ var
 begin
   P := TPlan.Create;
   try
-    P.AddStep('шаг 1');
-    P.AddStep('шаг 2');
-    P.AddStep('шаг 3');
-    P.AddStep('шаг 4');
-    P.AddStep('шаг 5');
+    P.AddStep('step 1');
+    P.AddStep('step 2');
+    P.AddStep('step 3');
+    P.AddStep('step 4');
+    P.AddStep('step 5');
     Removed := P.Truncate(0);
-    AssertEquals('ничего не удалено', 0, Removed);
-    AssertEquals('пять шагов', 5, Length(P.Steps));
-    AssertEquals('первый шаг', 'шаг 1', P.Steps[0].Description);
-    AssertEquals('последний шаг', 'шаг 5', P.Steps[4].Description);
+    AssertEquals('nothing removed', 0, Removed);
+    AssertEquals('five steps', 5, Length(P.Steps));
+    AssertEquals('first step', 'step 1', P.Steps[0].Description);
+    AssertEquals('last step', 'step 5', P.Steps[4].Description);
   finally
     P.Free;
   end;
 end;
-{ Truncate(N) обрезает план до N шагов, удаляя лишние. }
+{ Truncate(N) cuts the plan down to N steps, dropping the extra ones. }
 procedure TPlanTests.TestTruncateN;
 var
   P: TPlan;
@@ -584,17 +584,17 @@ var
 begin
   P := TPlan.Create;
   try
-    P.AddStep('шаг 1');
-    P.AddStep('шаг 2');
-    P.AddStep('шаг 3');
-    P.AddStep('шаг 4');
-    P.AddStep('шаг 5');
+    P.AddStep('step 1');
+    P.AddStep('step 2');
+    P.AddStep('step 3');
+    P.AddStep('step 4');
+    P.AddStep('step 5');
     Removed := P.Truncate(3);
-    AssertEquals('удалено два', 2, Removed);
-    AssertEquals('осталось три', 3, Length(P.Steps));
-    AssertEquals('первый шаг', 'шаг 1', P.Steps[0].Description);
-    AssertEquals('второй шаг', 'шаг 2', P.Steps[1].Description);
-    AssertEquals('третий шаг', 'шаг 3', P.Steps[2].Description);
+    AssertEquals('two removed', 2, Removed);
+    AssertEquals('three left', 3, Length(P.Steps));
+    AssertEquals('first step', 'step 1', P.Steps[0].Description);
+    AssertEquals('second step', 'step 2', P.Steps[1].Description);
+    AssertEquals('third step', 'step 3', P.Steps[2].Description);
   finally
     P.Free;
   end;
@@ -603,8 +603,8 @@ begin
     P.AddStep('a');
     P.AddStep('b');
     Removed := P.Truncate(5);
-    AssertEquals('больше N — ничего не удалено', 0, Removed);
-    AssertEquals('оба шага на месте', 2, Length(P.Steps));
+    AssertEquals('more than N - nothing removed', 0, Removed);
+    AssertEquals('both steps still there', 2, Length(P.Steps));
   finally
     P.Free;
   end;
@@ -614,9 +614,9 @@ begin
     P.AddStep('b');
     P.AddStep('c');
     Removed := P.Truncate(1);
-    AssertEquals('удалено два', 2, Removed);
-    AssertEquals('остался один', 1, Length(P.Steps));
-    AssertEquals('первый шаг', 'a', P.Steps[0].Description);
+    AssertEquals('two removed', 2, Removed);
+    AssertEquals('one left', 1, Length(P.Steps));
+    AssertEquals('first step', 'a', P.Steps[0].Description);
   finally
     P.Free;
   end;

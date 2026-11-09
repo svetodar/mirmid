@@ -1,5 +1,5 @@
 unit test_media;
-{ Тесты медиаинструментов: read_media_file, screen_shoot, window_shoot. }
+{ Tests for the media tools: read_media_file, screen_shoot, window_shoot. }
 
 {$mode objfpc}{$H+}
 
@@ -43,9 +43,9 @@ uses
   SysUtils, Classes, base64, fpimage, fpreadpng, mirmid.types, mirmid.toolbuiltin,
   mirmid.media, mirmid.screen, mirmid.util;
 
-{ ------------------------------------------------------------- вспомогательное }
+{ ---------------------------------------------------------------- helpers }
 
-{ Байт числа в порядке от старшего к младшему. }
+{ The bytes of a number, most significant first. }
 function BE(V: LongWord): string;
 begin
   Result := Chr((V shr 24) and $FF) + Chr((V shr 16) and $FF) +
@@ -62,7 +62,7 @@ begin
   Result := LE2(V) + Chr((V shr 16) and $FF) + Chr((V shr 24) and $FF);
 end;
 
-{ Минимальный заголовок PNG с заданными размерами. }
+{ A minimal PNG header with the given dimensions. }
 function PngHead(W, H: LongWord): string;
 begin
   Result := #$89'PNG'#$0D#$0A#$1A#$0A + BE(13) + 'IHDR' + BE(W) + BE(H) +
@@ -102,8 +102,8 @@ begin
   Cfg.WorkDir := FDir;
   SetToolEnabled(Cfg, 'edit_text_file', True);
   SetToolEnabled(Cfg, 'copy_file', True);
-  { Инструменты этого юнита по умолчанию выключены: включаем их ключами
-    [tools], иначе обработчики откажут (Invoke проверяет ключ). }
+  { The tools of this unit are disabled by default: switch them on with the
+    [tools] keys, otherwise the handlers refuse (Invoke checks the key). }
   SetToolEnabled(Cfg, 'read_media_file', True);
   SetToolEnabled(Cfg, 'screen_shoot', True);
   SetToolEnabled(Cfg, 'window_shoot', True);
@@ -139,7 +139,7 @@ procedure TMediaTests.PutFile(const Name, Data: string);
 var
   Err: string;
 begin
-  AssertTrue('подготовка файла ' + Name, WriteTextFile(PathOf(Name), Data, Err));
+  AssertTrue('preparing the file ' + Name, WriteTextFile(PathOf(Name), Data, Err));
 end;
 
 procedure TMediaTests.TestPngInfo;
@@ -148,12 +148,12 @@ var
 begin
   PutFile('cat.png', PngHead(640, 480));
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"cat.png"}', FCtx);
-  AssertFalse('чтение PNG без ошибки: ' + O.Text, O.IsError);
-  AssertTrue('вид — изображение', Pos('изображение', O.Text) > 0);
-  AssertTrue('формат PNG', Pos('(PNG)', O.Text) > 0);
+  AssertFalse('reading a PNG without an error: ' + O.Text, O.IsError);
+  AssertTrue('the kind is an image', Pos('kind: image', O.Text) > 0);
+  AssertTrue('the format is PNG', Pos('(PNG)', O.Text) > 0);
   AssertTrue('MIME image/png', Pos('image/png', O.Text) > 0);
-  AssertTrue('разрешение 640x480: ' + O.Text, Pos('640x480', O.Text) > 0);
-  AssertTrue('размер файла указан', Pos('байт', O.Text) > 0);
+  AssertTrue('resolution 640x480: ' + O.Text, Pos('640x480', O.Text) > 0);
+  AssertTrue('the file size is reported', Pos('bytes', O.Text) > 0);
 end;
 
 procedure TMediaTests.TestGifInfo;
@@ -162,9 +162,9 @@ var
 begin
   PutFile('anim.gif', GifHead(16, 8));
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"anim.gif"}', FCtx);
-  AssertFalse('чтение GIF без ошибки: ' + O.Text, O.IsError);
-  AssertTrue('формат GIF', Pos('(GIF)', O.Text) > 0);
-  AssertTrue('разрешение 16x8: ' + O.Text, Pos('16x8', O.Text) > 0);
+  AssertFalse('reading a GIF without an error: ' + O.Text, O.IsError);
+  AssertTrue('the format is GIF', Pos('(GIF)', O.Text) > 0);
+  AssertTrue('resolution 16x8: ' + O.Text, Pos('16x8', O.Text) > 0);
 end;
 
 procedure TMediaTests.TestBmpInfo;
@@ -173,21 +173,21 @@ var
 begin
   PutFile('pic.bmp', BmpHead(320, 200));
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"pic.bmp"}', FCtx);
-  AssertFalse('чтение BMP без ошибки: ' + O.Text, O.IsError);
-  AssertTrue('формат BMP', Pos('(BMP)', O.Text) > 0);
-  AssertTrue('разрешение 320x200: ' + O.Text, Pos('320x200', O.Text) > 0);
+  AssertFalse('reading a BMP without an error: ' + O.Text, O.IsError);
+  AssertTrue('the format is BMP', Pos('(BMP)', O.Text) > 0);
+  AssertTrue('resolution 320x200: ' + O.Text, Pos('320x200', O.Text) > 0);
 end;
 
 procedure TMediaTests.TestWavByMagic;
 var
   O: TToolOutcome;
 begin
-  { Расширение неизвестно: вид определяется по сигнатуре RIFF/WAVE. }
+  { The extension is unknown: the kind is detected by the RIFF/WAVE signature. }
   PutFile('sound.dat', WavHead);
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"sound.dat"}', FCtx);
-  AssertFalse('чтение WAV без ошибки: ' + O.Text, O.IsError);
-  AssertTrue('вид — звук: ' + O.Text, Pos('звук', O.Text) > 0);
-  AssertTrue('формат WAV', Pos('(WAV)', O.Text) > 0);
+  AssertFalse('reading a WAV without an error: ' + O.Text, O.IsError);
+  AssertTrue('the kind is audio: ' + O.Text, Pos('kind: audio', O.Text) > 0);
+  AssertTrue('the format is WAV', Pos('(WAV)', O.Text) > 0);
 end;
 
 procedure TMediaTests.TestPngBase64;
@@ -199,24 +199,24 @@ begin
   Data := PngHead(3, 2);
   PutFile('pic.png', Data);
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"pic.png","base64":true}', FCtx);
-  AssertFalse('чтение с base64 без ошибки: ' + O.Text, O.IsError);
+  AssertFalse('reading with base64 without an error: ' + O.Text, O.IsError);
   P := Pos('base64:', O.Text);
-  AssertTrue('есть строка base64: ' + O.Text, P > 0);
+  AssertTrue('there is a base64 line: ' + O.Text, P > 0);
   B64 := Trim(Copy(O.Text, P + Length('base64:'), MaxInt));
-  AssertEquals('содержимое совпадает с файлом', Data, DecodeStringBase64(B64));
+  AssertEquals('the content matches the file', Data, DecodeStringBase64(B64));
 
-  { Ограничение max_bytes: кодируется только начало файла. }
+  { The max_bytes limit: only the beginning of the file is encoded. }
   O := FReg.Invoke(MEDIA_TOOL_NAME,
     '{"path":"pic.png","base64":true,"max_bytes":8}', FCtx);
-  AssertFalse('чтение с max_bytes без ошибки: ' + O.Text, O.IsError);
-  AssertTrue('есть пометка об усечении', Pos('увеличьте max_bytes', O.Text) > 0);
+  AssertFalse('reading with max_bytes without an error: ' + O.Text, O.IsError);
+  AssertTrue('there is a truncation note', Pos('increase max_bytes', O.Text) > 0);
   P := Pos('base64:', O.Text);
   B64 := Trim(Copy(O.Text, P + Length('base64:'), MaxInt));
-  AssertEquals('закодированы первые 8 байт', Copy(Data, 1, 8),
+  AssertEquals('the first 8 bytes are encoded', Copy(Data, 1, 8),
     DecodeStringBase64(B64));
 end;
 
-{ Цвета буфера BGRA должны попадать в файл без искажений. }
+{ The colours of the BGRA buffer must reach the file undistorted. }
 procedure TMediaTests.TestPngColors;
 var
   Buf: array[0..3] of Byte;
@@ -225,45 +225,47 @@ var
   Img: TFPMemoryImage;
   C: TFPColor;
 begin
-  Buf[0] := 10;   { синий }
-  Buf[1] := 20;   { зелёный }
-  Buf[2] := 30;   { красный }
+  Buf[0] := 10;   { blue }
+  Buf[1] := 20;   { green }
+  Buf[2] := 30;   { red }
   Buf[3] := 255;
   Ok := SaveBgraImage(PathOf('one.png'), 1, 1, @Buf, Err);
-  AssertTrue('PNG сохранён: ' + Err, Ok);
+  AssertTrue('the PNG is saved: ' + Err, Ok);
 
   Img := TFPMemoryImage.Create(0, 0);
   try
-    AssertTrue('PNG прочитан обратно', Img.LoadFromFile(PathOf('one.png')));
+    AssertTrue('the PNG is read back', Img.LoadFromFile(PathOf('one.png')));
     C := Img.Colors[0, 0];
-    AssertEquals('синий канал', 10 * 257, Integer(C.Blue));
-    AssertEquals('зелёный канал', 20 * 257, Integer(C.Green));
-    AssertEquals('красный канал', 30 * 257, Integer(C.Red));
+    AssertEquals('blue channel', 10 * 257, Integer(C.Blue));
+    AssertEquals('green channel', 20 * 257, Integer(C.Green));
+    AssertEquals('red channel', 30 * 257, Integer(C.Red));
   finally
     Img.Free;
   end;
 end;
 
-{ Слишком короткий файл с расширением .ico: разрешение выдумывать нельзя. }
+{ A too short file with the .ico extension: the resolution must not be made
+  up. }
 procedure TMediaTests.TestIcoTooShort;
 var
   O: TToolOutcome;
 begin
   PutFile('bad.ico', #$00 + #$00 + #$01 + #$00);
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"bad.ico"}', FCtx);
-  AssertFalse('чтение без ошибки: ' + O.Text, O.IsError);
-  AssertTrue('формат ICO: ' + O.Text, Pos('(ICO)', O.Text) > 0);
-  AssertTrue('нет выдуманного разрешения: ' + O.Text, Pos('разрешение', O.Text) = 0);
+  AssertFalse('reading without an error: ' + O.Text, O.IsError);
+  AssertTrue('the format is ICO: ' + O.Text, Pos('(ICO)', O.Text) > 0);
+  AssertTrue('there is no invented resolution: ' + O.Text,
+    Pos('resolution', O.Text) = 0);
 end;
 
 procedure TMediaTests.TestNotMedia;
 var
   O: TToolOutcome;
 begin
-  PutFile('note.txt', 'просто текст');
+  PutFile('note.txt', 'just text');
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"note.txt"}', FCtx);
-  AssertTrue('текстовый файл — не медиа', O.IsError);
-  AssertTrue('подсказка про read_text_file: ' + O.Text,
+  AssertTrue('a text file is not media', O.IsError);
+  AssertTrue('a hint about read_text_file: ' + O.Text,
     Pos('read_text_file', O.Text) > 0);
 end;
 
@@ -272,8 +274,9 @@ var
   O: TToolOutcome;
 begin
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"nope.png"}', FCtx);
-  AssertTrue('отсутствующий файл — ошибка', O.IsError);
-  AssertTrue('сообщение о ненайденном файле: ' + O.Text, Pos('не найден', O.Text) > 0);
+  AssertTrue('a missing file is an error', O.IsError);
+  AssertTrue('message about the missing file: ' + O.Text,
+    Pos('not found', O.Text) > 0);
 end;
 
 procedure TMediaTests.TestMirmidDirDenied;
@@ -281,17 +284,17 @@ var
   O: TToolOutcome;
   Err: string;
 begin
-  AssertTrue('подготовка файла в служебном каталоге',
+  AssertTrue('preparing the file in the service directory',
     WriteTextFile(IncludeTrailingPathDelimiter(FDir) + '.mirmid' + PathDelim + 'pic.png',
       PngHead(2, 2), Err));
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":".mirmid/pic.png"}', FCtx);
-  AssertTrue('доступ в служебный каталог запрещён', O.IsError);
+  AssertTrue('access to the service directory is denied', O.IsError);
   O := FReg.Invoke(SCREEN_TOOL_NAME, '{"path":".mirmid/s.png"}', FCtx);
-  AssertTrue('снимок в служебный каталог запрещён', O.IsError);
+  AssertTrue('a screenshot into the service directory is denied', O.IsError);
 end;
 
-{ Ключи screen_shoot=0 и window_shoot=0: обработчики отказывают, файлы не
-  создаются (раньше снимки наследовали общую настройку записи). }
+{ The keys screen_shoot=0 and window_shoot=0: the handlers refuse, no files are
+  created (earlier the screenshots inherited the common write setting). }
 procedure TMediaTests.TestShotsDeniedWithoutWrite;
 var
   O: TToolOutcome;
@@ -299,12 +302,12 @@ begin
   SetToolEnabled(FCtx.Cfg, 'screen_shoot', False);
   SetToolEnabled(FCtx.Cfg, 'window_shoot', False);
   O := FReg.Invoke(SCREEN_TOOL_NAME, '{"path":"screen.png"}', FCtx);
-  AssertTrue('снимок экрана при screen_shoot=0 запрещён', O.IsError);
-  AssertTrue('сообщение называет инструмент: ' + O.Text,
+  AssertTrue('a screenshot is denied with screen_shoot=0', O.IsError);
+  AssertTrue('the message names the tool: ' + O.Text,
     Pos('tool "screen_shoot" is disabled', O.Text) > 0);
   O := FReg.Invoke(WINDOW_TOOL_NAME, '{"path":"window.png"}', FCtx);
-  AssertTrue('снимок окна при window_shoot=0 запрещён', O.IsError);
-  AssertFalse('файлы не созданы', FileExists(PathOf('screen.png')) or
+  AssertTrue('a window capture is denied with window_shoot=0', O.IsError);
+  AssertFalse('no files are created', FileExists(PathOf('screen.png')) or
     FileExists(PathOf('window.png')));
   SetToolEnabled(FCtx.Cfg, 'screen_shoot', True);
   SetToolEnabled(FCtx.Cfg, 'window_shoot', True);
@@ -318,37 +321,38 @@ var
   O: TToolOutcome;
 begin
   FillChar(Buf, SizeOf(Buf), 0);
-  Buf[2] := 255;   { пиксель (0,0): красный (порядок BGRA) }
-  Buf[6] := 255;   { пиксель (1,0): зелёный }
+  Buf[2] := 255;   { pixel (0,0): red (BGRA order) }
+  Buf[6] := 255;   { pixel (1,0): green }
 
   Ok := SaveBgraImage(PathOf('shot.png'), 2, 2, @Buf, Err);
-  AssertTrue('PNG сохранён: ' + Err, Ok);
-  AssertTrue('файл PNG создан', FileExists(PathOf('shot.png')));
+  AssertTrue('the PNG is saved: ' + Err, Ok);
+  AssertTrue('the PNG file is created', FileExists(PathOf('shot.png')));
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"shot.png"}', FCtx);
-  AssertFalse('снимок читается: ' + O.Text, O.IsError);
-  AssertTrue('размеры PNG 2x2: ' + O.Text, Pos('2x2', O.Text) > 0);
+  AssertFalse('the capture is readable: ' + O.Text, O.IsError);
+  AssertTrue('the PNG dimensions are 2x2: ' + O.Text, Pos('2x2', O.Text) > 0);
 
-  AssertTrue('BMP сохранён: ' + Err, SaveBgraImage(PathOf('shot.bmp'), 2, 2, @Buf, Err));
+  AssertTrue('the BMP is saved: ' + Err, SaveBgraImage(PathOf('shot.bmp'), 2, 2, @Buf, Err));
   O := FReg.Invoke(MEDIA_TOOL_NAME, '{"path":"shot.bmp"}', FCtx);
-  AssertFalse('BMP читается: ' + O.Text, O.IsError);
-  AssertTrue('размеры BMP 2x2: ' + O.Text, Pos('2x2', O.Text) > 0);
+  AssertFalse('the BMP is readable: ' + O.Text, O.IsError);
+  AssertTrue('the BMP dimensions are 2x2: ' + O.Text, Pos('2x2', O.Text) > 0);
 
-  AssertFalse('формат .gif не поддерживается',
+  AssertFalse('the .gif format is not supported',
     SaveBgraImage(PathOf('bad.gif'), 2, 2, @Buf, Err));
-  AssertTrue('сообщение о поддерживаемых форматах: ' + Err, Pos('.png', Err) > 0);
+  AssertTrue('message about the supported formats: ' + Err, Pos('.png', Err) > 0);
 end;
 
 procedure TMediaTests.TestToolsRegistered;
 begin
-  AssertTrue('read_media_file зарегистрирован', FReg.Has(MEDIA_TOOL_NAME));
-  AssertTrue('screen_shoot зарегистрирован', FReg.Has(SCREEN_TOOL_NAME));
-  AssertTrue('window_shoot зарегистрирован', FReg.Has(WINDOW_TOOL_NAME));
-  AssertTrue('в наборе инструментов есть read_media_file',
+  AssertTrue('read_media_file is registered', FReg.Has(MEDIA_TOOL_NAME));
+  AssertTrue('screen_shoot is registered', FReg.Has(SCREEN_TOOL_NAME));
+  AssertTrue('window_shoot is registered', FReg.Has(WINDOW_TOOL_NAME));
+  AssertTrue('the tool set contains read_media_file',
     Pos(MEDIA_TOOL_NAME, FReg.Names) > 0);
 end;
 
-{ Снимок реального экрана: если рабочий стол недоступен (служба, Unix),
-  тест пропускается. Проверяются размеры и запись буфера в PNG. }
+{ A capture of the real screen: if the desktop is unavailable (a service, Unix),
+  the test is skipped. The dimensions and the writing of the buffer to a PNG are
+  verified. }
 procedure TMediaTests.TestScreenCapture;
 var
   Buf: PByte;
@@ -358,18 +362,18 @@ begin
   if not CaptureToBuffer(False, 0, Buf, W, H, Err) then
     Exit;
   try
-    AssertTrue('размеры снимка положительны', (W > 0) and (H > 0));
-    AssertTrue('буфер снимка выделен', Buf <> nil);
-    AssertTrue('снимок записывается в PNG: ' + Err,
+    AssertTrue('the capture dimensions are positive', (W > 0) and (H > 0));
+    AssertTrue('the capture buffer is allocated', Buf <> nil);
+    AssertTrue('the capture is written to a PNG: ' + Err,
       SaveBgraImage(PathOf('screen.png'), W, H, Buf, Err));
-    AssertTrue('файл снимка создан', FileExists(PathOf('screen.png')));
+    AssertTrue('the capture file is created', FileExists(PathOf('screen.png')));
   finally
     FreeMem(Buf);
   end;
 end;
 
-{ Снимок активного окна: если окно недоступно (Unix, нет рабочего стола,
-  окно свёрнуто), тест пропускается. }
+{ A capture of the active window: if the window is unavailable (Unix, no
+  desktop, the window is minimised), the test is skipped. }
 procedure TMediaTests.TestWindowCapture;
 var
   Buf: PByte;
@@ -379,8 +383,8 @@ begin
   if not CaptureToBuffer(True, 0, Buf, W, H, Err) then
     Exit;
   try
-    AssertTrue('размеры снимка окна положительны', (W > 0) and (H > 0));
-    AssertTrue('буфер снимка окна выделен', Buf <> nil);
+    AssertTrue('the window capture dimensions are positive', (W > 0) and (H > 0));
+    AssertTrue('the window capture buffer is allocated', Buf <> nil);
   finally
     FreeMem(Buf);
   end;

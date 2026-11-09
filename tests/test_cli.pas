@@ -1,7 +1,7 @@
 unit test_cli;
-{ Регрессия форматирования событий CLI: FormatStepEnd (aeStepEnd) не должен
-  оставлять «битый» байт от UTF-8-разделителя « — » и укорачивает только
-  результат. Без сети. }
+{ Regression of the CLI event formatting: FormatStepEnd (aeStepEnd) must not
+  leave a "broken" byte of the UTF-8 separator " — " and shortens only the
+  result. No network. }
 
 {$mode objfpc}{$H+}
 
@@ -13,214 +13,225 @@ uses
 type
   TCliFormatTests = class(TTestCase)
   published
-    { Разделитель « — » — 5 байт; раньше результат начинался с P + 3 и в
-      вывод попадал хвостовой байт тире. }
+    { The separator " — " is 5 bytes; earlier the result started at P + 3 and a
+      tail byte of the dash got into the output. }
     procedure TestStepEndKeepsUtf8Separator;
-    { Нет разделителя — текст возвращается без изменений. }
+    { No separator — the text is returned unchanged. }
     procedure TestStepEndNoSeparator;
-    { Длинный результат укорачивается, заголовок «s1: done» сохраняется. }
+    { A long result is shortened, the "s1: done" header is preserved. }
     procedure TestStepEndShortensResult;
   end;
 
   TCliSubAgentOutputTests = class(TTestCase)
   published
-    { DepthPrefix(0) — пустая строка (корневая сессия). }
+    { DepthPrefix(0) — an empty string (the root session). }
     procedure TestDepthPrefixZero;
-    { DepthPrefix(1) — один серый символ │. }
+    { DepthPrefix(1) — one grey │ character. }
     procedure TestDepthPrefixOne;
-    { DepthPrefix(2) — два символа │. }
+    { DepthPrefix(2) — two │ characters. }
     procedure TestDepthPrefixTwo;
-    { FormatContextStatus: формат [время|текущий/общий|процент%]. }
+    { FormatContextStatus: the format [time|current/total|percent%]. }
     procedure TestFormatContextStatus;
-    { FormatContextStatus: Total=0 — неизвестный общий размер. }
+    { FormatContextStatus: Total=0 — an unknown total size. }
     procedure TestFormatContextStatusUnknownTotal;
-    { FormatContextStatus с WithTime = False — без времени (часть субагента). }
+    { FormatContextStatus with WithTime = False — no time (the subagent part). }
     procedure TestFormatContextStatusNoTime;
-    { Процент в строке статуса: округление до 0.1 без локали, '?' при
-      неизвестном общем размере окна модели. }
+    { The percentage in the status line: rounded to 0.1 without the locale,
+      '?' for an unknown model window size. }
     procedure TestFormatContextStatusPercent;
-    { FormatSubAgentStatus: время печатает только часть основной сессии. }
+    { FormatSubAgentStatus: only the main session part prints the time. }
     procedure TestSubAgentStatusTimeOnlyInMainPart;
-    { FormatSubAgentStatus с меткой: «subagent» заменяется меткой под-сессии. }
+    { FormatSubAgentStatus with a label: "subagent" is replaced by the
+      sub-session label. }
     procedure TestSubAgentStatusCustomLabel;
-    { FormatAnalysisStatus: «[ЧЧ:ММ:СС|main/sub/total|процент-main%/
-      процент-sub%] анализ» — статус анализа первым, метка вторым; тега
-      [анализ] нет, проценты считаются от общего окна модели. }
+    { FormatAnalysisStatus: "[HH:MM:SS|main/sub/total|main-percent%/
+      sub-percent%] analysis" — the analysis status first, the label second;
+      there is no [analysis] tag, the percentages are counted from the common
+      model window. }
     procedure TestFormatAnalysisStatus;
-    { FormatAnalysisStatus с контекстом основной сессии (MainCur > 0): в
-      строке три счётчика и два процента, как у строки шага. }
+    { FormatAnalysisStatus with the main session context (MainCur > 0): the line
+      has three counters and two percentages, as in the step line. }
     procedure TestFormatAnalysisStatusWithMain;
   end;
 
-  { Строка шага плана: «[ЧЧ:ММ:СС|main/sub/total|процент-main%/
-    процент-sub%] имя». Статус идёт первым, затем имя; часы в строке одни,
-    префикса │ у шага нет, тега [шаг] тоже нет. }
+  { The plan step line: "[HH:MM:SS|main/sub/total|main-percent%/
+    sub-percent%] name". The status comes first, then the name; there is one
+    clock in the line, the step has no │ prefix and no [step] tag either. }
   TCliStepOutputTests = class(TTestCase)
   published
-    { Формат: статус контекста шага, затем имя шага (без тега). }
+    { The format: the status of the step context, then the step name (no tag). }
     procedure TestFormatStepStatus;
-    { main/sub/total: оба счётчика в строке, два процента от общего окна. }
+    { main/sub/total: both counters in the line, two percentages of the common
+      window. }
     procedure TestFormatStepStatusMainCounters;
-    { MainCur не передан (контекст родителя не измерен) — main = 0. }
+    { MainCur is not passed (the parent context has not been measured) — main =
+      0. }
     procedure TestFormatStepStatusWithoutMain;
-    { Пустое имя шага — остаётся один статус без хвостового пробела. }
+    { An empty step name — only the status remains, without a trailing space. }
     procedure TestFormatStepStatusEmptyName;
-    { Под-сессия шага печатается с нулевой глубиной: префикса │ нет. }
+    { The step sub-session is printed at zero depth: there is no │ prefix. }
     procedure TestFormatStepStatusNoDepthPrefix;
-    { StepShortName: «s1: описание» → «s1» для закреплённой строки done. }
+    { StepShortName: "s1: description" -> "s1" for the fixed done line. }
     procedure TestStepShortName;
   end;
 
-  { Гейтинг текста шага плана: текст под-сессии шага и его результат
-    печатаются только по --show-step-result или --show-reasoning.
-    Проверяются все четыре комбинации флагов. }
+  { Gating of the plan step text: the text of the step sub-session and its
+    result are printed only under --show-step-result or --show-reasoning. All
+    four flag combinations are checked. }
   TCliStepGatingTests = class(TTestCase)
   published
-    { Ни одного флага — текст шага скрыт (видны только строки статуса). }
+    { No flag — the step text is hidden (only the status lines are visible). }
     procedure TestStepTextHiddenByDefault;
-    { Только --show-step-result — текст шага виден. }
+    { Only --show-step-result — the step text is visible. }
     procedure TestStepTextShownByStepResult;
-    { Только --show-reasoning — текст шага тоже виден. }
+    { Only --show-reasoning — the step text is visible too. }
     procedure TestStepTextShownByReasoning;
-    { Оба флага — видимость та же (дизъюнкция, не XOR). }
+    { Both flags — the visibility is the same (a disjunction, not XOR). }
     procedure TestStepTextShownByBoth;
   end;
 
-  { Гейтинг задания шага плана — строки «[шаг] имя» (aeStepStart): она
-    печатается только по --show-step-task или --show-reasoning, при обоих
-    off — не печатается (имя остаётся в строке статуса). --show-step-result
-    к заданию не применяется: он про текст ответа и результат шага.
-    Перебираются все восемь комбинаций трёх флагов. }
+  { Gating of the plan step task — the "[step] name" lines (aeStepStart): they
+    are printed only under --show-step-task or --show-reasoning, with both off
+    they are not printed (the name stays in the status line).
+    --show-step-result does not apply to the task: it is about the answer text
+    and the step result. All eight combinations of the three flags are
+    iterated. }
   TCliStepTaskGatingTests = class(TTestCase)
   published
-    { Все восемь комбинаций: видимость = ShowStepTask or ShowReasoning. }
+    { All eight combinations: the visibility = ShowStepTask or ShowReasoning. }
     procedure TestAllFlagCombinations;
-    { Ни одного флага — задание не печатается (значение по умолчанию off). }
+    { No flag — the task is not printed (the default value is off). }
     procedure TestTaskHiddenByDefault;
-    { Только --show-reasoning — задание печатается (независимо от
+    { Only --show-reasoning — the task is printed (regardless of
       --show-step-task). }
     procedure TestTaskShownByReasoningOnly;
-    { Только --show-step-task — задание печатается. }
+    { Only --show-step-task — the task is printed. }
     procedure TestTaskShownByStepTaskOnly;
-    { Один --show-step-result — задание всё равно скрыто: флаг относится к
-      тексту/результату шага (StepTextVisible), а не к заданию. }
+    { A single --show-step-result — the task is hidden anyway: the flag relates
+      to the step text/result (StepTextVisible), not to the task. }
     procedure TestStepResultDoesNotShowTask;
-    { --show-step-result не мешает показу, если задание включено другим
-      флагом. }
+    { --show-step-result does not prevent the showing when the task is enabled
+      by another flag. }
     procedure TestStepResultIgnoredWhenTaskShown;
   end;
 
-  { Гейтинг вывода инструментов (строка «[имя] аргументы», «$ команда» и
-    результаты aeToolResult): task2.md — вывод печатается только вместе с
-    размышлениями (--show-reasoning), независимо от того, основная это сессия,
-    под-сессия субагента или под-сессия планировщика («анализ», «шаг sN»). }
+  { Gating of the tool output (the "[name] arguments", "$ command" lines and the
+    aeToolResult results): task2.md — the output is printed only together with
+    the reasoning (--show-reasoning), regardless of whether it is the main
+    session, a subagent sub-session or a planner sub-session ("analysis",
+    "step sN"). }
   TCliToolOutputGatingTests = class(TTestCase)
   published
-    { Без --show-reasoning вывод инструментов скрыт в любой сессии. }
+    { Without --show-reasoning the tool output is hidden in any session. }
     procedure TestHiddenByDefault;
-    { Один --show-reasoning включает вывод инструментов. }
+    { A single --show-reasoning enables the tool output. }
     procedure TestShownByReasoning;
   end;
 
-  { Разбор --tool-output-lines (лимит строк вывода инструментов: по умолчанию
-    9, 0 — без ограничения). Проверяется только ParseCli — без сети, INI и
-    окружения; перенос значения в настройки (ResolveConfig) зависит от файла
-    конфигурации и переменных хоста, поэтому здесь не трогается. }
+  { Parsing of --tool-output-lines (the limit of the tool output lines: 9 by
+    default, 0 — no limit). Only ParseCli is checked — no network, INI or
+    environment; carrying the value over to the settings (ResolveConfig)
+    depends on the configuration file and the host variables, so it is not
+    touched here. }
   TCliParseToolOutputLinesTests = class(TTestCase)
   published
-    { Без флага: HasToolOutputLines = False, значение 0 (лимит берётся из
-      настроек; FillChar обнуляет запись TCli). }
+    { Without the flag: HasToolOutputLines = False, the value is 0 (the limit
+      comes from the settings; FillChar zeroes the TCli record). }
     procedure TestDefaultOff;
-    { Форма с отдельным аргументом: --tool-output-lines 15. }
+    { The form with a separate argument: --tool-output-lines 15. }
     procedure TestSpaceForm;
-    { Форма --tool-output-lines=12 (значение через «=»). }
+    { The form --tool-output-lines=12 (the value after "="). }
     procedure TestInlineForm;
-    { Ноль — явное «без ограничения», ключ считается заданным. }
+    { Zero — an explicit "no limit", the key counts as set. }
     procedure TestZeroMeansUnlimited;
-    { Нет значения — ошибка разбора, Err непустой, ключ не выставлен. }
+    { No value — a parse error, Err is not empty, the key is not set. }
     procedure TestMissingValue;
-    { Флаг не мешает разбору соседних опций и запроса: остальные поля
-      (ShowReasoning, Prompt) сохраняются. }
+    { The flag does not interfere with the parsing of the neighbouring options
+      and the prompt: the other fields (ShowReasoning, Prompt) are preserved. }
     procedure TestAlongsideOtherOptions;
   end;
 
 
-  { Размер контекста для строки статуса: EffectiveContextWindow берёт минимум
-    из значения настроек и значения, сообщённого хостом (LLM-сервером),
-    чтобы проценты не считались от завышенного размера. }
+  { The context size for the status line: EffectiveContextWindow takes the
+    minimum of the configured value and the value reported by the host (the LLM
+    server), so that the percentages are not counted from an inflated size. }
   TEffectiveContextWindowTests = class(TTestCase)
   published
-    { Хост не сообщил размер (0) — используется ContextWindow из настроек. }
+    { The host did not report a size (0) — the ContextWindow from the settings
+      is used. }
     procedure TestHostUnsetUsesConfig;
-    { Хост сообщил меньший размер — берётся он. }
+    { The host reported a smaller size — that one is taken. }
     procedure TestHostSmallerWins;
-    { Хост сообщил больший размер — остаётся значение настроек. }
+    { The host reported a larger size — the settings value remains. }
     procedure TestHostLargerIgnored;
-    { Равенство и отрицательное значение хоста — значение из настроек. }
+    { Equal values and a negative host value — the settings value. }
     procedure TestEqualAndNegativeHost;
   end;
-  { Учёт токенов строки статуса (регрессия дефекта: размер контекста
-    субагента был неверным — базой считался 0). }
+  { Accounting of the status line tokens (regression of a defect: the subagent
+    context size was wrong — the base was taken as 0). }
   TContextTokensTests = class(TTestCase)
   published
-    { База субагента берётся из aeContext, а не 0. }
+    { The subagent base comes from aeContext, not 0. }
     procedure TestSubAgentBaseFromContext;
-    { Токены ответа основной сессии и субагента не смешиваются. }
+    { The answer tokens of the main session and the subagent are not mixed. }
     procedure TestMainAndSubAccumSeparate;
-    { Регрессия: токены размышлений при Depth > 0 считаются всегда —
-      порциями, до первого aeContext и в строке под-сессии (шаг плана). }
+    { Regression: the reasoning tokens at Depth > 0 are always counted — in
+      portions, before the first aeContext and in the sub-session line (a plan
+      step). }
     procedure TestReasoningTokensDepthGreaterZero;
-    { Вход в субагента сбрасывает счётчики предыдущего субагента. }
+    { Entering a subagent resets the counters of the previous subagent. }
     procedure TestEnterSubAgentResets;
-    { Основная сессия показывает только одну часть статуса (без «subagent»). }
+    { The main session shows only one status part (no "subagent"). }
     procedure TestMainStatusHasNoSubPart;
-    { MainTokens: контекст основной сессии (база + токены ответа) — нужен
-      строке шага/анализа в формате main/sub/total. }
+    { MainTokens: the main session context (the base + the answer tokens) — the
+      step/analysis line needs it in the main/sub/total format. }
     procedure TestMainTokensAccessor;
-    { Метка под-сессии в Text: «subagent» заменяется переданной меткой. }
+    { The sub-session label in Text: "subagent" is replaced by the passed
+      label. }
     procedure TestTextCustomLabel;
-    { Строка анализа собирается из счётчиков под-сессии (SubTokens) и
-      контекста основной сессии (MainTokens), как строка шага; тега [анализ]
-      нет, проценты считаются от общего окна модели. }
+    { The analysis line is built from the sub-session counters (SubTokens) and
+      the main session context (MainTokens), as the step line; there is no
+      [analysis] tag, the percentages are counted from the common model
+      window. }
     procedure TestAnalysisLineMainAndSubCounters;
-    { Выход из вложенной под-сессии возвращает счётчики родительской. }
+    { Leaving a nested sub-session restores the parent counters. }
     procedure TestExitSubSessionRestoresParent;
-    { Стек счётчиков: SavedCount растёт на входе и падает на выходе. }
+    { The counter stack: SavedCount grows on entering and drops on leaving. }
     procedure TestSavedCountTracksDepth;
-    { UnwindTo снимает незакрытые вложенные под-сессии, сохраняя родителя. }
+    { UnwindTo removes the unclosed nested sub-sessions, keeping the parent. }
     procedure TestUnwindToRestoresParent;
-    { ResetSubSession очищает счётчики и стек (падение шага, revise_plan). }
+    { ResetSubSession clears the counters and the stack (a step failure,
+      revise_plan). }
     procedure TestResetSubSessionClears;
-    { Выход без входа — простое обнуление. }
+    { Leaving without entering — a simple zeroing. }
     procedure TestExitWithoutEnterZeroes;
   end;
-  { Контракт командной строки после перехода на секцию [tools]: справка
-    описывает модель ключей и не содержит убранных флагов, а сами убранные
-    флаги отвергаются разбором как неизвестные. }
+  { The command line contract after the move to the [tools] section: the help
+    describes the key model and contains no removed flags, and the removed flags
+    themselves are rejected by the parser as unknown. }
   TCliToolsModelTests = class(TTestCase)
   published
-    { В справке есть секция [tools] и нет --allow-write/--no-write,
+    { The help has the [tools] section and no --allow-write/--no-write,
       --allow-shell/--no-shell, --allow-http/--no-http. }
     procedure TestHelpMentionsToolsSection;
-    { В справке нет упоминаний удалённых настроек доверия. }
+    { The help has no mentions of the removed trust settings. }
     procedure TestHelpHasNoCaFile;
-    { Убранные флаги — ошибка разбора («неизвестная опция»). }
+    { The removed flags are a parse error ("unknown option"). }
     procedure TestRemovedFlagsRejected;
   end;
 
-  { Сохранение основной сессии после неудачного хода (task2.md).
-    Интеграционный тест на собранный bin/mirmid: ход с недоступным
-    провайдером завершается ошибкой, но сессия обязана быть записана
-    вместе с сообщением пользователя. Бинарник не собран — тест
-    пропускается (make test сам bin/mirmid не собирает). }
+  { Saving the main session after a failed turn (task2.md). An integration test
+    against the built bin/mirmid: a turn with an unreachable provider fails, but
+    the session must be written together with the user message. The binary is not
+    built — the test is skipped (make test does not build bin/mirmid itself). }
   TCliSessionTurnTests = class(TTestCase)
   published
     procedure TestSessionSavedAfterFailedTurn;
   end;
-  { Фатальная ошибка на неизвестный ключ в секции [tools] (собранный
-    bin/mirmid): опечатка не должна молча оставить инструмент со значением по
-    умолчанию, поэтому запуск завершается кодом 1 и сообщением с именем ключа
-    и списком известных инструментов. Бинарник не собран — тест пропускается. }
+  { A fatal error on an unknown key in the [tools] section (the built
+    bin/mirmid): a typo must not silently leave a tool with its default value, so
+    the start ends with code 1 and a message with the key name and the list of
+    known tools. The binary is not built — the test is skipped. }
   TCliUnknownToolKeyTests = class(TTestCase)
   published
     procedure TestUnknownToolKeyExitsWithCodeOne;
@@ -236,17 +247,19 @@ procedure TCliFormatTests.TestStepEndKeepsUtf8Separator;
 var
   InText, OutText: string;
 begin
-  InText := 's1: done — ' + 'Каталог успешно создан';
+  InText := 's1: done — ' + 'Grüße, Welt!';
   OutText := FormatStepEnd(InText);
-  AssertEquals('разделитель и UTF-8 результат не повреждены', InText, OutText);
+  AssertEquals('the separator and the UTF-8 result are not damaged', InText,
+    OutText);
 end;
 
 procedure TCliFormatTests.TestStepEndNoSeparator;
 var
   InText: string;
 begin
-  InText := 's1: удалён из плана';
-  AssertEquals('без разделителя текст не меняется', InText, FormatStepEnd(InText));
+  InText := 's1: removed from the plan';
+  AssertEquals('without a separator the text does not change', InText,
+    FormatStepEnd(InText));
 end;
 
 procedure TCliFormatTests.TestStepEndShortensResult;
@@ -256,17 +269,19 @@ begin
   Head := 's2: failed — ';
   Tail := StringOfChar('x', 500);
   OutText := FormatStepEnd(Head + Tail);
-  AssertTrue('заголовок сохранён', Pos('s2: failed — ', OutText) = 1);
-  { Shorten: 400 байт результата + '…' (3 байта UTF-8). }
-  AssertEquals('результат укорочен до предела', 400 + 3, Length(OutText) - Length(Head));
-  AssertEquals('в конце многоточие', '…', Copy(OutText, Length(OutText) - 2, MaxInt));
+  AssertTrue('the header is preserved', Pos('s2: failed — ', OutText) = 1);
+  { Shorten: 400 bytes of the result + '…' (3 UTF-8 bytes). }
+  AssertEquals('the result is shortened to the limit', 400 + 3,
+    Length(OutText) - Length(Head));
+  AssertEquals('an ellipsis at the end', '…',
+    Copy(OutText, Length(OutText) - 2, MaxInt));
 end;
 
 { ------------------------------------------------------- subagent output }
 
 procedure TCliSubAgentOutputTests.TestDepthPrefixZero;
 begin
-  AssertEquals('глубина 0 — пустой префикс', '', DepthPrefix(0));
+  AssertEquals('depth 0 — an empty prefix', '', DepthPrefix(0));
 end;
 
 procedure TCliSubAgentOutputTests.TestDepthPrefixOne;
@@ -274,7 +289,7 @@ var
   Pfx: string;
 begin
   Pfx := DepthPrefix(1);
-  AssertTrue('есть символ │', Pos('│', Pfx) > 0);
+  AssertTrue('there is a │ character', Pos('│', Pfx) > 0);
 end;
 
 procedure TCliSubAgentOutputTests.TestDepthPrefixTwo;
@@ -283,8 +298,8 @@ var
 begin
   Pfx1 := DepthPrefix(1);
   Pfx2 := DepthPrefix(2);
-  AssertTrue('есть символ │', Pos('│', Pfx2) > 0);
-  AssertTrue('глубина 2 длиннее глубины 1', Length(Pfx2) > Length(Pfx1));
+  AssertTrue('there is a │ character', Pos('│', Pfx2) > 0);
+  AssertTrue('depth 2 is longer than depth 1', Length(Pfx2) > Length(Pfx1));
 end;
 
 procedure TCliSubAgentOutputTests.TestFormatContextStatus;
@@ -292,40 +307,41 @@ var
   S: string;
 begin
   S := FormatContextStatus(1000, 128000);
-  AssertTrue('начинается с [', S[1] = '[');
-  AssertTrue('заканчивается ]', S[Length(S)] = ']');
-  AssertTrue('есть разделитель |', Pos('|', S) > 0);
-  AssertTrue('есть процент %', Pos('%', S) > 0);
-  AssertTrue('есть текущий размер', Pos('1k', S) > 0);
-  AssertTrue('есть общий размер', Pos('128k', S) > 0);
-  { Процент с десятыми: 1000 из 128000 — «0.8%» (точка, не запятая). }
-  AssertTrue('процент 0.8%', Pos('|0.8%]', S) > 0);
-  { WithTime по умолчанию True: время (hh:nn:ss) в строке есть. }
-  AssertTrue('есть время ЧЧ:ММ:СС', Pos(':', S) > 0);
+  AssertTrue('it starts with [', S[1] = '[');
+  AssertTrue('it ends with ]', S[Length(S)] = ']');
+  AssertTrue('there is a | separator', Pos('|', S) > 0);
+  AssertTrue('there is a % sign', Pos('%', S) > 0);
+  AssertTrue('the current size is there', Pos('1k', S) > 0);
+  AssertTrue('the total size is there', Pos('128k', S) > 0);
+  { The percentage with tenths: 1000 out of 128000 — "0.8%" (a dot, not a
+    comma). }
+  AssertTrue('the percentage 0.8%', Pos('|0.8%]', S) > 0);
+  { WithTime is true by default: the time (hh:nn:ss) is in the line. }
+  AssertTrue('there is a clock HH:MM:SS', Pos(':', S) > 0);
 end;
 
-{ Процент в строке статуса считается от общего окна модели в десятых
-  долях без участия локали (точка), граничные значения — 0.0%, 50.0% и
-  100.0%; неизвестное окно (Total <= 0) даёт '?'. }
+{ The percentage in the status line is counted from the common model window in
+  tenths without the locale (a dot); the boundary values are 0.0%, 50.0% and
+  100.0%; an unknown window (Total <= 0) gives '?'. }
 procedure TCliSubAgentOutputTests.TestFormatContextStatusPercent;
 var
   S: string;
 begin
   S := FormatContextStatus(0, 128000, False);
-  AssertTrue('нет контекста — 0.0%: ' + S, Pos('|0.0%]', S) > 0);
+  AssertTrue('no context — 0.0%: ' + S, Pos('|0.0%]', S) > 0);
 
   S := FormatContextStatus(1000, 128000, False);
-  AssertTrue('0.8% (округление до 0.1): ' + S, Pos('|0.8%]', S) > 0);
+  AssertTrue('0.8% (rounded to 0.1): ' + S, Pos('|0.8%]', S) > 0);
 
   S := FormatContextStatus(64000, 128000, False);
-  AssertTrue('половина окна — 50.0%: ' + S, Pos('|50.0%]', S) > 0);
+  AssertTrue('half the window — 50.0%: ' + S, Pos('|50.0%]', S) > 0);
 
   S := FormatContextStatus(128000, 128000, False);
-  AssertTrue('окно заполнено — 100.0%: ' + S, Pos('|100.0%]', S) > 0);
+  AssertTrue('the window is full — 100.0%: ' + S, Pos('|100.0%]', S) > 0);
 
   S := FormatContextStatus(500, 0, False);
-  AssertTrue('неизвестное окно — ?: ' + S, Pos('|?]', S) > 0);
-  AssertEquals('запятой в проценте нет: ' + S, 0, Pos(',', S));
+  AssertTrue('an unknown window — ?: ' + S, Pos('|?]', S) > 0);
+  AssertEquals('there is no comma in the percentage: ' + S, 0, Pos(',', S));
 end;
 
 procedure TCliSubAgentOutputTests.TestFormatContextStatusUnknownTotal;
@@ -333,66 +349,65 @@ var
   S: string;
 begin
   S := FormatContextStatus(500, 0);
-  AssertTrue('начинается с [', S[1] = '[');
-  AssertTrue('неизвестный общий размер', Pos('/?', S) > 0);
-  AssertTrue('неизвестный процент', Pos('|?]', S) > 0);
+  AssertTrue('it starts with [', S[1] = '[');
+  AssertTrue('an unknown total size', Pos('/?', S) > 0);
+  AssertTrue('an unknown percentage', Pos('|?]', S) > 0);
 end;
 
-{ Часть строки статуса, отведённая субагенту, печатается без даты и времени:
-  часы (hh:nn:ss) на строку одни. }
+{ The part of the status line allotted to the subagent is printed without the
+  date and the time: there is one clock (hh:nn:ss) per line. }
 procedure TCliSubAgentOutputTests.TestFormatContextStatusNoTime;
 var
   S: string;
 begin
   S := FormatContextStatus(1000, 128000, False);
-  AssertTrue('начинается с [', S[1] = '[');
-  AssertEquals('времени нет', 0, Pos(':', S));
-  AssertTrue('текущий размер на месте', Pos('1k', S) > 0);
-  AssertTrue('общий размер на месте', Pos('128k', S) > 0);
-  AssertTrue('процент на месте', Pos('%', S) > 0);
+  AssertTrue('it starts with [', S[1] = '[');
+  AssertEquals('there is no time', 0, Pos(':', S));
+  AssertTrue('the current size is in place', Pos('1k', S) > 0);
+  AssertTrue('the total size is in place', Pos('128k', S) > 0);
+  AssertTrue('the percentage is in place', Pos('%', S) > 0);
 
-  { Неизвестный общий размер — тоже без времени. }
+  { An unknown total size — no time either. }
   S := FormatContextStatus(500, 0, False);
-  AssertEquals('времени нет и при неизвестном общем размере', 0, Pos(':', S));
-  AssertTrue('неизвестный общий размер', Pos('/?', S) > 0);
+  AssertEquals('there is no time with an unknown total size either', 0, Pos(':', S));
+  AssertTrue('an unknown total size', Pos('/?', S) > 0);
 end;
 
-{ Строка статуса субагента: слово «subagent», размеры обеих сессий, время —
-  только в части основной сессии (два двоеточия из hh:nn:ss). }
+{ The subagent status line: the word "subagent", the sizes of both sessions, the
+  time — only in the main session part (two colons from hh:nn:ss). }
 procedure TCliSubAgentOutputTests.TestSubAgentStatusTimeOnlyInMainPart;
 var
   S: string;
   I, Colons: Integer;
 begin
   S := FormatSubAgentStatus(1000, 2000, 128000);
-  AssertTrue('есть слово subagent', Pos('subagent', S) > 0);
-  AssertTrue('контекст основной сессии', Pos('1k', S) > 0);
-  AssertTrue('контекст субагента', Pos('2k', S) > 0);
+  AssertTrue('the word "subagent" is there', Pos('subagent', S) > 0);
+  AssertTrue('the main session context', Pos('1k', S) > 0);
+  AssertTrue('the subagent context', Pos('2k', S) > 0);
   Colons := 0;
   for I := 1 to Length(S) do
     if S[I] = ':' then
       Inc(Colons);
-  AssertEquals('время только в части основной сессии', 2, Colons);
+  AssertEquals('the time only in the main session part', 2, Colons);
 end;
 
-{ Метка под-сессии параметризована: планировщик передаёт «шаг s1»/«анализ»,
-  субагент — значение по умолчанию «subagent». }
+{ The sub-session label is parameterised: the planner passes "step s1"/
+  "analysis", the subagent — the default value "subagent". }
 procedure TCliSubAgentOutputTests.TestSubAgentStatusCustomLabel;
 var
   S: string;
 begin
-  S := FormatSubAgentStatus(1000, 2000, 128000, 'анализ');
-  AssertTrue('метка анализа: ' + S, Pos('анализ', S) > 0);
-  AssertEquals('слова subagent нет', 0, Pos('subagent', S));
-  AssertTrue('часть основной сессии на месте', Pos('1k', S) > 0);
-  AssertTrue('часть под-сессии на месте', Pos('2k', S) > 0);
+  S := FormatSubAgentStatus(1000, 2000, 128000, 'analysis');
+  AssertTrue('the analysis label: ' + S, Pos('analysis', S) > 0);
+  AssertEquals('there is no "subagent" word', 0, Pos('subagent', S));
+  AssertTrue('the main session part is in place', Pos('1k', S) > 0);
+  AssertTrue('the sub-session part is in place', Pos('2k', S) > 0);
 
   S := FormatSubAgentStatus(1000, 2000, 128000);
-  AssertTrue('по умолчанию метка subagent', Pos('subagent', S) > 0);
+  AssertTrue('the default label is "subagent"', Pos('subagent', S) > 0);
 end;
-
-{ Убирает ANSI-последовательности цветов: проверяем текст строки, а не
-  зависит ли вывод от включённых в окружении теста цветов. }
+{ Removes the ANSI colour sequences: the text of the line is checked, so it does
+  not matter whether the colours are enabled in the test environment. }
 function StripAnsi(const S: string): string;
 var
   I: Integer;
@@ -414,175 +429,177 @@ begin
     end;
 end;
 
-{ -------------------------------------------- строка анализа плана }
+{ -------------------------------------------- plan analysis line }
 
-{ Строка под-сессии анализа: «[ЧЧ:ММ:СС|main/sub/total|процент-main%/
-  процент-sub%] анализ» — тот же порядок, что у строки шага
-  (FormatStepStatus): сначала статус с контекстом основной сессии и
-  под-сессии анализа, затем через один пробел серая метка «анализ». Тега
-  [анализ] нет; часы одни; проценты считаются от общего окна модели, поэтому
-  их два. Без переданного MainCur контекст родителя равен нулю (headless). }
+{ The analysis sub-session line: "[HH:MM:SS|main/sub/total|main-percent%/
+  sub-percent%] analysis" — the same order as the step line
+  (FormatStepStatus): first the status with the main session context and the
+  analysis sub-session context, then the grey "analysis" label after one space.
+  There is no [analysis] tag; there is one clock; the percentages are counted
+  from the common model window, so there are two of them. Without a passed
+  MainCur the parent context is zero (headless). }
 procedure TCliSubAgentOutputTests.TestFormatAnalysisStatus;
 const
-  LabelText = 'анализ';
+  LabelText = 'analysis';
 var
   S, StatusPart: string;
   I, Colons, StatusEnd, Brackets: Integer;
 begin
   S := StripAnsi(FormatAnalysisStatus(1500, 128000));
-  AssertEquals('строка начинается со статуса: ' + S, '[', Copy(S, 1, 1));
-  AssertTrue('статус и метка через один пробел: ' + S,
+  AssertEquals('the line starts with the status: ' + S, '[', Copy(S, 1, 1));
+  AssertTrue('the status and the label are separated by one space: ' + S,
     Pos('] ' + LabelText, S) > 0);
-  AssertEquals('метка анализа закрывает строку: ' + S, LabelText,
+  AssertEquals('the analysis label closes the line: ' + S, LabelText,
     Copy(S, Length(S) - Length(LabelText) + 1, MaxInt));
-  AssertEquals('тега [анализ] нет: ' + S, 0, Pos('[' + LabelText + ']', S));
-  AssertEquals('слова subagent нет: ' + S, 0, Pos('subagent', S));
-  { main/sub/total: без контекста родителя main = 0. }
-  AssertTrue('счётчики main/sub/total (0/1.5k/128k): ' + S,
+  AssertEquals('no [analysis] tag: ' + S, 0, Pos('[' + LabelText + ']', S));
+  AssertEquals('no "subagent" word: ' + S, 0, Pos('subagent', S));
+  { main/sub/total: without the parent context main = 0. }
+  AssertTrue('the main/sub/total counters (0/1.5k/128k): ' + S,
     Pos('0/1.5k/128k', S) > 0);
-  AssertTrue('общий размер (128k): ' + S, Pos('128k', S) > 0);
-  { Два процента от одного окна: main 0 → 0.0%, под-сессия → 1.2%. }
-  AssertTrue('два процента от общего окна: ' + S, Pos('|0.0%/1.2%', S) > 0);
-  { Один статус — значит, второй скобки [ нет (части под-сессий не
-    печатаются раздельно, как в FormatSubAgentStatus). }
+  AssertTrue('the total size (128k): ' + S, Pos('128k', S) > 0);
+  { Two percentages from one window: main 0 -> 0.0%, the sub-session -> 1.2%. }
+  AssertTrue('two percentages of the common window: ' + S, Pos('|0.0%/1.2%', S) > 0);
+  { One status — so there is no second [ bracket (the sub-session parts are not
+    printed separately, as in FormatSubAgentStatus). }
   Brackets := 0;
   for I := 1 to Length(S) do
     if S[I] = '[' then
       Inc(Brackets);
-  AssertEquals('статус в строке один: ' + S, 1, Brackets);
-  { Часы (два двоеточия) — в части статуса до закрывающей скобки, а не в
-    метке или счётчиках. }
+  AssertEquals('one status in the line: ' + S, 1, Brackets);
+  { The clock (two colons) is in the status part before the closing bracket, not
+    in the label or the counters. }
   StatusEnd := Pos(']', S);
-  AssertTrue('статус закрыт квадратной скобкой: ' + S, StatusEnd > 0);
+  AssertTrue('the status is closed by a square bracket: ' + S, StatusEnd > 0);
   StatusPart := Copy(S, 1, StatusEnd);
   Colons := 0;
   for I := 1 to Length(StatusPart) do
     if StatusPart[I] = ':' then
       Inc(Colons);
-  AssertEquals('часы в строке одни (ЧЧ:ММ:СС)', 2, Colons);
-  { Неизвестный общий размер — тот же порядок, без тега [анализ]. }
+  AssertEquals('one clock in the line (HH:MM:SS)', 2, Colons);
+  { An unknown total size — the same order, without the [analysis] tag. }
   S := StripAnsi(FormatAnalysisStatus(500, 0));
-  AssertTrue('неизвестный общий размер: ' + S, Pos('0/500/?|?/?]', S) > 0);
-  AssertEquals('метка анализа и при неизвестном размере: ' + S, LabelText,
+  AssertTrue('an unknown total size: ' + S, Pos('0/500/?|?/?]', S) > 0);
+  AssertEquals('the analysis label with an unknown size too: ' + S, LabelText,
     Copy(S, Length(S) - Length(LabelText) + 1, MaxInt));
-  AssertEquals('тега [анализ] нет: ' + S, 0, Pos('[' + LabelText + ']', S));
+  AssertEquals('no [analysis] tag: ' + S, 0, Pos('[' + LabelText + ']', S));
 end;
 
-{ Контекст основной сессии передан (режим планирования: основной ход уже
-  измерен кэшем CLI) — строка анализа содержит все три счётчика и два
-  процента, как строка шага. }
+{ The main session context is passed (plan mode: the main turn has already been
+  measured by the CLI cache) — the analysis line contains all three counters and
+  two percentages, like the step line. }
 procedure TCliSubAgentOutputTests.TestFormatAnalysisStatusWithMain;
 var
   S: string;
 begin
   S := StripAnsi(FormatAnalysisStatus(1500, 128000, 7000));
-  AssertTrue('контекст основной сессии в строке (7k/1.5k/128k): ' + S,
+  AssertTrue('the main session context in the line (7k/1.5k/128k): ' + S,
     Pos('7k/1.5k/128k', S) > 0);
-  AssertTrue('проценты обоих счётчиков (5.5%/1.2%): ' + S,
+  AssertTrue('the percentages of both counters (5.5%/1.2%): ' + S,
     Pos('|5.5%/1.2%', S) > 0);
-  AssertEquals('метка анализа закрывает строку: ' + S, 'анализ',
-    Copy(S, Length(S) - Length('анализ') + 1, MaxInt));
+  AssertEquals('the analysis label closes the line: ' + S, 'analysis',
+    Copy(S, Length(S) - Length('analysis') + 1, MaxInt));
 end;
 
-{ ------------------------------------------------ строка шага плана }
+{ ------------------------------------------------ plan step line }
 
-{ Строка шага: «[ЧЧ:ММ:СС|main/sub/total|процент-main%/процент-sub%]
-  имя». Статус идёт первым, затем через один пробел — имя шага; тега [шаг]
-  нет, часы в строке одни, отступа │ нет — под-сессия шага печатается
-  с нулевой глубиной. Счётчики: контекст основной сессии (MainCur), шага
-  (Cur) и общее окно модели (Total); процент считается от Total для каждого
-  счётчика отдельно. }
+{ The step line: "[HH:MM:SS|main/sub/total|main-percent%/sub-percent%] name". The
+  status comes first, then the step name after one space; there is no [step] tag,
+  there is one clock, there is no │ indentation — the step sub-session is printed
+  at zero depth. The counters: the main session context (MainCur), the step
+  (Cur) and the common model window (Total); the percentage is counted from Total
+  for every counter separately. }
 procedure TCliStepOutputTests.TestFormatStepStatus;
 const
-  StepName = 's1: обновить README';
+  StepName = 's1: update README';
 var
   S, StatusPart: string;
   I, Colons, StatusEnd: Integer;
 begin
   S := StripAnsi(FormatStepStatus(StepName, 1200, 128000, 8000));
-  AssertEquals('строка начинается со статуса: ' + S, '[', Copy(S, 1, 1));
-  AssertEquals('тега [шаг] больше нет: ' + S, 0, Pos('[шаг]', S));
-  AssertEquals('имя шага закрывает строку: ' + S, StepName,
+  AssertEquals('the line starts with the status: ' + S, '[', Copy(S, 1, 1));
+  AssertEquals('the [step] tag is gone: ' + S, 0, Pos('[step]', S));
+  AssertEquals('the step name closes the line: ' + S, StepName,
     Copy(S, Length(S) - Length(StepName) + 1, MaxInt));
-  AssertTrue('статус и имя через один пробел: ' + S,
+  AssertTrue('the status and the name are separated by one space: ' + S,
     Pos('] ' + StepName, S) > 0);
-  AssertTrue('есть разделитель |: ' + S, Pos('|', S) > 0);
-  AssertTrue('есть процент %: ' + S, Pos('%', S) > 0);
-  { main/sub/total: контекст основной сессии, шага и окно модели. }
-  AssertTrue('счётчики main/sub/total (8k/1.2k/128k): ' + S,
+  AssertTrue('there is a | separator: ' + S, Pos('|', S) > 0);
+  AssertTrue('there is a % sign: ' + S, Pos('%', S) > 0);
+  { main/sub/total: the main session context, the step and the model window. }
+  AssertTrue('the main/sub/total counters (8k/1.2k/128k): ' + S,
     Pos('8k/1.2k/128k', S) > 0);
-  AssertTrue('общий размер (128k): ' + S, Pos('128k', S) > 0);
-  { Два процента от одного окна: main 8k → 6.3%, шаг 1.2k → 0.9%. }
-  AssertTrue('два процента от общего окна (6.3%/0.9%): ' + S,
+  AssertTrue('the total size (128k): ' + S, Pos('128k', S) > 0);
+  { Two percentages from one window: main 8k -> 6.3%, step 1.2k -> 0.9%. }
+  AssertTrue('two percentages of the common window (6.3%/0.9%): ' + S,
     Pos('|6.3%/0.9%', S) > 0);
-  AssertEquals('префикса │ у шага нет: ' + S, 0, Pos('│', S));
-  { Часы (два двоеточия) — только в части статуса до первого ']', а не в
-    имени шага («s1: …» тоже содержит двоеточие). }
+  AssertEquals('the step has no │ prefix: ' + S, 0, Pos('│', S));
+  { The clock (two colons) is only in the status part before the first ']', not
+    in the step name ("s1: ..." contains a colon too). }
   StatusEnd := Pos(']', S);
-  AssertTrue('статус закрыт квадратной скобкой: ' + S, StatusEnd > 0);
+  AssertTrue('the status is closed by a square bracket: ' + S, StatusEnd > 0);
   StatusPart := Copy(S, 1, StatusEnd);
   Colons := 0;
   for I := 1 to Length(StatusPart) do
     if StatusPart[I] = ':' then
       Inc(Colons);
-  AssertEquals('часы в строке одни (ЧЧ:ММ:СС)', 2, Colons);
+  AssertEquals('one clock in the line (HH:MM:SS)', 2, Colons);
 end;
 
-{ Проценты считаются от одного окна модели: при полном контексте основной
-  сессии первый процент — 100.0%, процент шага — от того же Total. Значение
-  main идёт первым счётчиком, шаг — вторым. }
+{ The percentages are counted from one model window: with a full main session
+  context the first percentage is 100.0%, the step percentage is from the same
+  Total. The main value comes first, the step second. }
 procedure TCliStepOutputTests.TestFormatStepStatusMainCounters;
 var
   S: string;
 begin
-  S := StripAnsi(FormatStepStatus('s3: тесты', 1000, 128000, 128000));
+  S := StripAnsi(FormatStepStatus('s3: tests', 1000, 128000, 128000));
   AssertTrue('main/sub/total (128k/1k/128k): ' + S,
     Pos('128k/1k/128k', S) > 0);
-  AssertTrue('проценты от одного окна (100.0%/0.8%): ' + S,
+  AssertTrue('percentages from one window (100.0%/0.8%): ' + S,
     Pos('|100.0%/0.8%', S) > 0);
-  AssertTrue('имя шага на месте: ' + S, Pos('] s3: тесты', S) > 0);
+  AssertTrue('the step name is there: ' + S, Pos('] s3: tests', S) > 0);
 end;
 
-{ Контекст родителя ещё не измерен (MainCur не передан): строка остаётся
-  формата main/sub/total, но main равен нулю — шаг не подставляет чужие
-  счётчики вместо контекста основной сессии. }
+{ The parent context has not been measured yet (MainCur is not passed): the line
+  keeps the main/sub/total format, but main is zero — the step does not
+  substitute foreign counters for the main session context. }
 procedure TCliStepOutputTests.TestFormatStepStatusWithoutMain;
 var
   S: string;
 begin
-  S := StripAnsi(FormatStepStatus('s1: обновить README', 1200, 128000));
-  AssertTrue('main по умолчанию 0 (0/1.2k/128k): ' + S,
+  S := StripAnsi(FormatStepStatus('s1: update README', 1200, 128000));
+  AssertTrue('main is 0 by default (0/1.2k/128k): ' + S,
     Pos('0/1.2k/128k', S) > 0);
-  AssertTrue('проценты (0.0%/0.9%): ' + S, Pos('|0.0%/0.9%', S) > 0);
+  AssertTrue('the percentages (0.0%/0.9%): ' + S, Pos('|0.0%/0.9%', S) > 0);
 end;
 
-{ Пустое имя (шаг без описания) — остаётся только строка статуса: без тега
-  [шаг] и без хвостового пробела. }
+{ An empty name (a step without a description) — only the status line remains:
+  without the [step] tag and without a trailing space. }
 procedure TCliStepOutputTests.TestFormatStepStatusEmptyName;
 var
   S: string;
   I, Colons: Integer;
 begin
   S := StripAnsi(FormatStepStatus('', 500, 0));
-  AssertEquals('строка начинается со статуса: ' + S, '[', Copy(S, 1, 1));
-  { main/sub/total при неизвестном окне: «0/500/?|?/?». }
-  AssertTrue('неизвестный общий размер: ' + S, Pos('0/500/?|?/?]', S) > 0);
-  AssertEquals('строка закрывается статусом, без хвостового пробела: ' + S,
+  AssertEquals('the line starts with the status: ' + S, '[', Copy(S, 1, 1));
+  { main/sub/total with an unknown window: "0/500/?|?/?". }
+  AssertTrue('an unknown total size: ' + S, Pos('0/500/?|?/?]', S) > 0);
+  AssertEquals('the line is closed by the status, without a trailing space: ' + S,
     ']', Copy(S, Length(S), 1));
-  AssertEquals('тега [шаг] нет: ' + S, 0, Pos('[шаг]', S));
-  AssertEquals('префикса │ нет: ' + S, 0, Pos('│', S));
+  AssertEquals('no [step] tag: ' + S, 0, Pos('[step]', S));
+  AssertEquals('no │ prefix: ' + S, 0, Pos('│', S));
   Colons := 0;
   for I := 1 to Length(S) do
     if S[I] = ':' then
       Inc(Colons);
-  AssertEquals('часы в строке одни и без имени', 2, Colons);
+  AssertEquals('one clock in the line and no name', 2, Colons);
 end;
-{ У шага плана нет префикса │: его под-сессия печатается с нулевой
-  глубиной, поэтому строка начинается со статуса, а отступа-«ёлочки» из
-  DepthPrefix нет ни перед ним, ни внутри строки; тега [шаг] тоже нет. }
+{ A plan step has no │ prefix: its sub-session is printed at zero depth, so the
+  line starts with the status, and there is no indentation "chevron" from
+  DepthPrefix either before it or inside the line; there is no [step] tag
+  either. }
 procedure TCliStepOutputTests.TestFormatStepStatusNoDepthPrefix;
 const
-  Names: array[0..2] of string = ('s1: обновить README', 's2: тесты', '');
+  Names: array[0..2] of string = ('s1: update README', 's2: tests', '');
   Curs: array[0..2] of Integer = (1200, 0, 99999);
   Totals: array[0..2] of Integer = (128000, 0, 1000000);
 var
@@ -592,77 +609,79 @@ begin
   for I := Low(Names) to High(Names) do
   begin
     S := StripAnsi(FormatStepStatus(Names[I], Curs[I], Totals[I]));
-    AssertEquals('строка шага начинается со статуса, без отступа │: ' + S,
+    AssertEquals('the step line starts with the status, without the │ indent: ' + S,
       '[', Copy(S, 1, 1));
-    AssertEquals('префикса │ в строке шага нет: ' + S, 0, Pos('│', S));
-    { DepthPrefix(1) — серый │, которым помечаются вложенные субагенты. }
-    AssertEquals('глубина печати шага нулевая: ' + S, 0, Pos(DepthPrefix(1), S));
-    { Метка «subagent» — признак второй части статуса под-сессии. }
-    AssertEquals('метки под-сессии subagent у шага нет: ' + S,
+    AssertEquals('no │ prefix in the step line: ' + S, 0, Pos('│', S));
+    { DepthPrefix(1) — the grey │ that marks nested subagents. }
+    AssertEquals('the step print depth is zero: ' + S, 0, Pos(DepthPrefix(1), S));
+    { The "subagent" label — a sign of the second part of a sub-session
+      status. }
+    AssertEquals('the step has no subagent sub-session label: ' + S,
       0, Pos('subagent', S));
-    AssertEquals('тега [шаг] нет: ' + S, 0, Pos('[шаг]', S));
+    AssertEquals('no [step] tag: ' + S, 0, Pos('[step]', S));
     if Names[I] = '' then
-      AssertEquals('пустое имя — строка закрывается статусом: ' + S,
+      AssertEquals('an empty name — the line is closed by the status: ' + S,
         ']', Copy(S, Length(S), 1))
     else
-      AssertEquals('имя шага закрывает строку: ' + S, Names[I],
+      AssertEquals('the step name closes the line: ' + S, Names[I],
         Copy(S, Length(S) - Length(Names[I]) + 1, MaxInt));
   end;
 end;
-{ StepShortName — короткое имя для закреплённой done-строки: из
-  «s1: описание» остаётся только идентификатор; без двоеточия имя не
-  меняется, пустое остаётся пустым (вне шага). }
+{ StepShortName — the short name for the fixed done line: from "s1: description"
+  only the identifier remains; without a colon the name is unchanged, an empty
+  one stays empty (outside a step). }
 procedure TCliStepOutputTests.TestStepShortName;
 begin
-  AssertEquals('описание отброшено', 's1',
-    StepShortName('s1: обновить README'));
-  AssertEquals('пробелы вокруг идентификатора срезаны', 's2',
-    StepShortName('  s2 : тесты  '));
-  AssertEquals('без двоеточия — как есть', 's3', StepShortName('s3'));
-  AssertEquals('пустое имя остаётся пустым', '', StepShortName(''));
-  { Двоеточие внутри описания: берётся только часть до первого. }
-  AssertEquals('первое двоеточие — граница', 's4',
-    StepShortName('s4: правка: context.md'));
+  AssertEquals('the description is dropped', 's1',
+    StepShortName('s1: update README'));
+  AssertEquals('the spaces around the identifier are trimmed', 's2',
+    StepShortName('  s2 : tests  '));
+  AssertEquals('without a colon — as it is', 's3', StepShortName('s3'));
+  AssertEquals('an empty name stays empty', '', StepShortName(''));
+  { A colon inside the description: only the part before the first one is
+    taken. }
+  AssertEquals('the first colon is the boundary', 's4',
+    StepShortName('s4: edit: context.md'));
 end;
+{ ------------------------------------ gating of the plan step text }
 
-
-{ ------------------------------------ гейтинг текста шага плана }
-
-{ Ни --show-step-result, ни --show-reasoning: текст под-сессии шага и его
-  результат скрыты, от шага остаются только строки статуса. }
+{ Neither --show-step-result nor --show-reasoning: the text of the step
+  sub-session and its result are hidden, only the status lines remain of the
+  step. }
 procedure TCliStepGatingTests.TestStepTextHiddenByDefault;
 begin
-  AssertFalse('без флагов текст шага скрыт', StepTextVisible(False, False));
+  AssertFalse('without flags the step text is hidden', StepTextVisible(False, False));
 end;
 
-{ Один --show-step-result включает текст шага (и результат в aeStepEnd). }
+{ A single --show-step-result enables the step text (and the result in
+  aeStepEnd). }
 procedure TCliStepGatingTests.TestStepTextShownByStepResult;
 begin
-  AssertTrue('--show-step-result показывает текст шага',
+  AssertTrue('--show-step-result shows the step text',
     StepTextVisible(True, False));
 end;
 
-{ Один --show-reasoning включает текст шага тем же условием: в aeStreamText
-  и aeStepEnd проверяется дизъюнкция флагов. }
+{ A single --show-reasoning enables the step text by the same condition: aeStreamText
+  and aeStepEnd check the disjunction of the flags. }
 procedure TCliStepGatingTests.TestStepTextShownByReasoning;
 begin
-  AssertTrue('--show-reasoning показывает текст шага',
+  AssertTrue('--show-reasoning shows the step text',
     StepTextVisible(False, True));
 end;
 
-{ Оба флага: результат тот же — видимость не зависит от второго флага
-  (условие «or», а не XOR). }
+{ Both flags: the result is the same — the visibility does not depend on the
+  second flag (an "or" condition, not XOR). }
 procedure TCliStepGatingTests.TestStepTextShownByBoth;
 begin
-  AssertTrue('оба флага показывают текст шага',
+  AssertTrue('both flags show the step text',
     StepTextVisible(True, True));
 end;
 
-{ ---------------------------------- гейтинг задания шага плана }
+{ ---------------------------------- gating of the plan step task }
 
-{ Все восемь комбинаций трёх флагов: строка «[шаг] имя» видна ровно тогда,
-  когда включён --show-step-task или --show-reasoning; --show-step-result
-  на задание шага не влияет. }
+{ All eight combinations of the three flags: the "[step] name" line is visible
+  exactly when --show-step-task or --show-reasoning is on; --show-step-result
+  does not affect the step task. }
 procedure TCliStepTaskGatingTests.TestAllFlagCombinations;
 var
   Task, Reason, Res, Shown: Boolean;
@@ -679,43 +698,44 @@ begin
         Shown := StepTaskVisible(Task, Reason, Res);
         S := Format('task=%d reasoning=%d step-result=%d',
           [Ord(Task), Ord(Reason), Ord(Res)]);
-        AssertTrue('ожидалось ShowStepTask or ShowReasoning: ' + S,
+        AssertTrue('ShowStepTask or ShowReasoning was expected: ' + S,
           Shown = (Task or Reason));
       end;
 end;
 
-{ Значения по умолчанию (все флаги off): задание шага не печатается —
-  видна только строка статуса с именем шага. }
+{ The defaults (all flags off): the step task is not printed — only the status
+  line with the step name is visible. }
 procedure TCliStepTaskGatingTests.TestTaskHiddenByDefault;
 begin
-  AssertFalse('без флагов задание шага скрыто',
+  AssertFalse('without flags the step task is hidden',
     StepTaskVisible(False, False, False));
 end;
 
-{ Один --show-reasoning включает задание шага независимо от
+{ A single --show-reasoning enables the step task regardless of
   --show-step-task. }
 procedure TCliStepTaskGatingTests.TestTaskShownByReasoningOnly;
 begin
-  AssertTrue('--show-reasoning показывает задание шага',
+  AssertTrue('--show-reasoning shows the step task',
     StepTaskVisible(False, True, False));
 end;
 
-{ Один --show-step-task включает задание шага. }
+{ A single --show-step-task enables the step task. }
 procedure TCliStepTaskGatingTests.TestTaskShownByStepTaskOnly;
 begin
-  AssertTrue('--show-step-task показывает задание шага',
+  AssertTrue('--show-step-task shows the step task',
     StepTaskVisible(True, False, False));
 end;
 
-{ Один --show-step-result задание шага не показывает: этот флаг про текст
-  ответа и результат шага (StepTextVisible), а не про само задание. }
+{ A single --show-step-result does not show the step task: that flag is about the
+  answer text and the step result (StepTextVisible), not about the task itself. }
 procedure TCliStepTaskGatingTests.TestStepResultDoesNotShowTask;
 begin
-  AssertFalse('--show-step-result не показывает задание шага',
+  AssertFalse('--show-step-result does not show the step task',
     StepTaskVisible(False, False, True));
 end;
 
-{ --show-step-result не отменяет показ задания, включённого другим флагом. }
+{ --show-step-result does not cancel the showing of a task enabled by another
+  flag. }
 procedure TCliStepTaskGatingTests.TestStepResultIgnoredWhenTaskShown;
 begin
   AssertTrue('--show-step-task + --show-step-result',
@@ -724,46 +744,46 @@ begin
     StepTaskVisible(False, True, True));
 end;
 
-{ ------------------------------ гейтинг вывода инструментов }
+{ ------------------------------ gating of the tool output }
 
-{ По умолчанию (--show-reasoning off) вывод инструментов скрыт везде: в
-  основной сессии, у субагента и в под-сессиях планировщика — как в шагах
-  плана. Печатаются только строки статуса и финальный текст. }
+{ By default (--show-reasoning off) the tool output is hidden everywhere: in the
+  main session, in the subagent and in the planner sub-sessions — as in the plan
+  steps. Only the status lines and the final text are printed. }
 procedure TCliToolOutputGatingTests.TestHiddenByDefault;
 begin
-  AssertFalse('без --show-reasoning вывод инструментов скрыт',
+  AssertFalse('without --show-reasoning the tool output is hidden',
     ToolOutputVisible(False));
 end;
 
-{ Один --show-reasoning включает вывод инструментов во всех сессиях: гейтинг
-  больше не зависит от метки под-сессии (task2.md). }
+{ A single --show-reasoning enables the tool output in all sessions: the gating
+  no longer depends on the sub-session label (task2.md). }
 procedure TCliToolOutputGatingTests.TestShownByReasoning;
 begin
-  AssertTrue('--show-reasoning показывает вывод инструментов',
+  AssertTrue('--show-reasoning shows the tool output',
     ToolOutputVisible(True));
 end;
 
-{ ----------------------------------- эффективный размер контекста }
+{ ---------------------------------- the effective context size }
 
-{ Хост не сообщил размер (0) — EffectiveContextWindow возвращает значение из
-  настроек; значение по умолчанию тоже осмысленно (> 0). }
+{ The host did not report a size (0) — EffectiveContextWindow returns the value
+  from the settings; the default one is meaningful too (> 0). }
 procedure TEffectiveContextWindowTests.TestHostUnsetUsesConfig;
 var
   Cfg: TMirmidConfig;
 begin
   Cfg := DefaultConfig;
-  AssertEquals('по умолчанию ContextWindow — 128k', 128000, Cfg.ContextWindow);
-  AssertEquals('хост не сообщил размер', 0, Cfg.HostContextWindow);
-  AssertEquals('берётся значение настроек', Cfg.ContextWindow,
+  AssertEquals('the default ContextWindow is 128k', 128000, Cfg.ContextWindow);
+  AssertEquals('the host did not report a size', 0, Cfg.HostContextWindow);
+  AssertEquals('the settings value is taken', Cfg.ContextWindow,
     EffectiveContextWindow(Cfg));
 
   Cfg.ContextWindow := 32000;
-  AssertEquals('значение настроек, а не DEFAULT', 32000,
+  AssertEquals('the settings value, not DEFAULT', 32000,
     EffectiveContextWindow(Cfg));
 end;
 
-{ Хост сообщил меньший размер — строке статуса нужен именно он, иначе
-  проценты считаются от завышенного контекста. }
+{ The host reported a smaller size — the status line needs exactly that one,
+  otherwise the percentages are counted from an inflated context. }
 procedure TEffectiveContextWindowTests.TestHostSmallerWins;
 var
   Cfg: TMirmidConfig;
@@ -771,16 +791,17 @@ begin
   Cfg := DefaultConfig;
   Cfg.ContextWindow := 128000;
   Cfg.HostContextWindow := 32000;
-  AssertEquals('минимум из настроек и хоста', 32000, EffectiveContextWindow(Cfg));
+  AssertEquals('the minimum of the settings and the host', 32000,
+    EffectiveContextWindow(Cfg));
 
   Cfg.ContextWindow := 16000;
   Cfg.HostContextWindow := 9000;
-  AssertEquals('минимум не зависит от порядка значений', 9000,
+  AssertEquals('the minimum does not depend on the order of the values', 9000,
     EffectiveContextWindow(Cfg));
 end;
 
-{ Хост сообщил размер больше настроечного (или равный) — остаётся значение
-  из настроек: EffectiveContextWindow никогда не увеличивает контекст. }
+{ The host reported a size larger than the configured one (or equal) — the
+  settings value remains: EffectiveContextWindow never increases the context. }
 procedure TEffectiveContextWindowTests.TestHostLargerIgnored;
 var
   Cfg: TMirmidConfig;
@@ -788,17 +809,17 @@ begin
   Cfg := DefaultConfig;
   Cfg.ContextWindow := 128000;
   Cfg.HostContextWindow := 200000;
-  AssertEquals('больший размер хоста игнорируется', 128000,
+  AssertEquals('a larger host size is ignored', 128000,
     EffectiveContextWindow(Cfg));
 
   Cfg.ContextWindow := 8000;
   Cfg.HostContextWindow := 8001;
-  AssertEquals('на единицу больше — тоже значение настроек', 8000,
+  AssertEquals('one greater — the settings value too', 8000,
     EffectiveContextWindow(Cfg));
 end;
 
-{ Равные значения дают то же число, а отрицательное значение хоста
-  трактуется как «не сообщено». }
+{ Equal values give the same number, and a negative host value is treated as
+  "not reported". }
 procedure TEffectiveContextWindowTests.TestEqualAndNegativeHost;
 var
   Cfg: TMirmidConfig;
@@ -806,19 +827,18 @@ begin
   Cfg := DefaultConfig;
   Cfg.ContextWindow := 64000;
   Cfg.HostContextWindow := 64000;
-  AssertEquals('равные значения — без изменений', 64000,
+  AssertEquals('equal values — no change', 64000,
     EffectiveContextWindow(Cfg));
 
   Cfg.HostContextWindow := -1;
-  AssertEquals('отрицательное значение хоста — значение настроек', 64000,
+  AssertEquals('a negative host value — the settings value', 64000,
     EffectiveContextWindow(Cfg));
 end;
+{ ------------------------------------------------- status token accounting }
 
-{ ------------------------------------------------- учёт токенов статуса }
-
-{ База субагента — размер его собственного контекста из aeContext. Раньше
-  в CLI она принудительно обнулялась, и статус показывал только токены
-  текущего ответа. }
+{ The subagent base is the size of its own context from aeContext. Earlier the
+  CLI forcibly zeroed it, and the status showed only the tokens of the current
+  answer. }
 procedure TContextTokensTests.TestSubAgentBaseFromContext;
 var
   T: TContextTokens;
@@ -826,18 +846,18 @@ var
 begin
   T := TContextTokens.Create;
   try
-    T.SetBase(0, 5000);            { основная сессия: 5k }
-    T.SetBase(1, 1200);            { субагент: 1.2k }
-    T.AddResponseTokens(1, 300);   { + токены ответа }
+    T.SetBase(0, 5000);            { main session: 5k }
+    T.SetBase(1, 1200);            { subagent: 1.2k }
+    T.AddResponseTokens(1, 300);   { + answer tokens }
     S := T.Text(128000, 1);
-    AssertTrue('размер субагента из aeContext (1.5k): ' + S, Pos('1.5k', S) > 0);
-    AssertTrue('основная сессия на месте (5k): ' + S, Pos('5k', S) > 0);
+    AssertTrue('the subagent size from aeContext (1.5k): ' + S, Pos('1.5k', S) > 0);
+    AssertTrue('the main session is there (5k): ' + S, Pos('5k', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ Токены ответа разных сессий не смешиваются. }
+{ The answer tokens of different sessions are not mixed. }
 procedure TContextTokensTests.TestMainAndSubAccumSeparate;
 var
   T: TContextTokens;
@@ -850,18 +870,18 @@ begin
     T.SetBase(1, 2000);
     T.AddResponseTokens(1, 200);
     S := T.Text(128000, 1);
-    AssertTrue('основная сессия 1.1k: ' + S, Pos('1.1k', S) > 0);
-    AssertTrue('субагент 2.2k: ' + S, Pos('2.2k', S) > 0);
+    AssertTrue('the main session 1.1k: ' + S, Pos('1.1k', S) > 0);
+    AssertTrue('the subagent 2.2k: ' + S, Pos('2.2k', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ Регрессия учёта токенов размышлений при Depth > 0: размышления приходят
-  отдельными порциями (иногда до первого aeContext под-сессии) и должны
-  прибавляться к счётчикам под-сессии, не затрагивая основную сессию.
-  Раньше при скрытом тексте порции могли теряться, и строка шага плана
-  показывала заниженный размер контекста. }
+{ Regression of the reasoning token accounting at Depth > 0: the reasoning comes
+  in separate portions (sometimes before the first aeContext of the sub-session)
+  and must be added to the sub-session counters without touching the main
+  session. Earlier, with hidden text, the portions could be lost, and the plan
+  step line showed an underestimated context size. }
 procedure TContextTokensTests.TestReasoningTokensDepthGreaterZero;
 var
   T: TContextTokens;
@@ -869,31 +889,31 @@ var
 begin
   T := TContextTokens.Create;
   try
-    T.SetBase(0, 5000);            { основная сессия: 5k }
-    T.SetBase(1, 1200);            { под-сессия шага: 1.2k }
-    T.AddResponseTokens(1, 90);    { размышления тремя порциями }
+    T.SetBase(0, 5000);            { main session: 5k }
+    T.SetBase(1, 1200);            { step sub-session: 1.2k }
+    T.AddResponseTokens(1, 90);    { reasoning in three portions }
     T.AddResponseTokens(1, 150);
     T.AddResponseTokens(1, 400);
-    AssertEquals('токены размышлений учтены в под-сессии',
+    AssertEquals('the reasoning tokens are counted in the sub-session',
       1840, T.SubTokens);
-    S := T.Text(128000, 1, 'шаг s1');
-    AssertTrue('статус под-сессии содержит 1.8k: ' + S, Pos('1.8k', S) > 0);
-    AssertTrue('основная сессия на месте (5k): ' + S, Pos('5k', S) > 0);
-    AssertEquals('размышления не попали в основную сессию',
+    S := T.Text(128000, 1, 'step s1');
+    AssertTrue('the sub-session status contains 1.8k: ' + S, Pos('1.8k', S) > 0);
+    AssertTrue('the main session is there (5k): ' + S, Pos('5k', S) > 0);
+    AssertEquals('the reasoning did not get into the main session',
       0, Pos('5.6k', S));
-    { Вход в новую под-сессию: размышления до её первого aeContext
-      тоже учитываются (база 0 + накопленное). }
+    { Entering a new sub-session: the reasoning before its first aeContext is
+      counted too (base 0 + accumulated). }
     T.EnterSubAgent;
     T.AddResponseTokens(1, 250);
-    AssertEquals('размышления до aeContext учтены', 250, T.SubTokens);
-    S := T.Text(128000, 1, 'шаг s2');
-    AssertTrue('статус под-сессии содержит 250: ' + S, Pos('250', S) > 0);
+    AssertEquals('the reasoning before aeContext is counted', 250, T.SubTokens);
+    S := T.Text(128000, 1, 'step s2');
+    AssertTrue('the sub-session status contains 250: ' + S, Pos('250', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ Вход в субагента — счётчики предыдущего субагента не должны «протекать». }
+{ Entering a subagent — the counters of the previous subagent must not "leak". }
 procedure TContextTokensTests.TestEnterSubAgentResets;
 var
   T: TContextTokens;
@@ -905,14 +925,14 @@ begin
     T.AddResponseTokens(1, 400);
     T.EnterSubAgent;
     S := T.Text(128000, 1);
-    AssertEquals('контекст субагента сброшен', 0, Pos('2.4k', S));
-    AssertTrue('статус субагента показывает ноль: ' + S, Pos('0/128k', S) > 0);
+    AssertEquals('the subagent context is reset', 0, Pos('2.4k', S));
+    AssertTrue('the subagent status shows zero: ' + S, Pos('0/128k', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ В основной сессии части «subagent» нет. }
+{ The main session has no "subagent" part. }
 procedure TContextTokensTests.TestMainStatusHasNoSubPart;
 var
   T: TContextTokens;
@@ -922,45 +942,45 @@ begin
   try
     T.SetBase(0, 3000);
     S := T.Text(128000, 0);
-    AssertEquals('нет слова subagent', 0, Pos('subagent', S));
-    AssertTrue('размер основной сессии (3k): ' + S, Pos('3k', S) > 0);
+    AssertEquals('no "subagent" word', 0, Pos('subagent', S));
+    AssertTrue('the main session size (3k): ' + S, Pos('3k', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ MainTokens — контекст основной сессии (база из её aeContext плюс
-  накопленные токены текущего ответа). Нужен строке шага/анализа в формате
-  main/sub/total: SubTokens отдаёт только под-сессию, поэтому без отдельного
-  аксессора контекст родителя было бы не взять. }
+{ MainTokens — the main session context (the base from its aeContext plus the
+  accumulated tokens of the current answer). The step/analysis line needs it in
+  the main/sub/total format: SubTokens returns only the sub-session, so without a
+  separate accessor the parent context could not be taken. }
 procedure TContextTokensTests.TestMainTokensAccessor;
 var
   T: TContextTokens;
 begin
   T := TContextTokens.Create;
   try
-    AssertEquals('до событий контекст 0', 0, T.MainTokens);
-    T.SetBase(0, 5000);            { aeContext основной сессии }
-    AssertEquals('база основной сессии', 5000, T.MainTokens);
-    T.AddResponseTokens(0, 300);   { токены текущего ответа }
-    AssertEquals('база + токены ответа', 5300, T.MainTokens);
-    { Токены под-сессии в основную не попадают. }
+    AssertEquals('the context is 0 before the events', 0, T.MainTokens);
+    T.SetBase(0, 5000);            { aeContext of the main session }
+    AssertEquals('the main session base', 5000, T.MainTokens);
+    T.AddResponseTokens(0, 300);   { the tokens of the current answer }
+    AssertEquals('the base + the answer tokens', 5300, T.MainTokens);
+    { The sub-session tokens do not get into the main one. }
     T.SetBase(1, 1200);
     T.AddResponseTokens(1, 200);
-    AssertEquals('основная сессия не изменилась', 5300, T.MainTokens);
-    AssertEquals('счётчики под-сессии отдельно', 1400, T.SubTokens);
-    { Выход из под-сессии основную сессию не трогает. }
+    AssertEquals('the main session did not change', 5300, T.MainTokens);
+    AssertEquals('the sub-session counters separately', 1400, T.SubTokens);
+    { Leaving the sub-session does not touch the main session. }
     T.ExitSubSession;
-    AssertEquals('после выхода — те же 5300', 5300, T.MainTokens);
+    AssertEquals('after the exit — the same 5300', 5300, T.MainTokens);
   finally
     T.Free;
   end;
 end;
 
-{ Метка под-сессии в строке статуса: планировщик передаёт «шаг s2»/«анализ».
-  Text остаётся форматом вложенной сессии (глубина > 1): основная сессия +
-  метка + под-сессия; строка анализа на глубине 1 собирается отдельно —
-  FormatAnalysisStatus (см. TestAnalysisLineMainAndSubCounters). }
+{ The sub-session label in the status line: the planner passes "step s2"/
+  "analysis". Text keeps the nested-session format (depth > 1): the main session
+  + the label + the sub-session; the analysis line at depth 1 is built separately
+  — FormatAnalysisStatus (see TestAnalysisLineMainAndSubCounters). }
 procedure TContextTokensTests.TestTextCustomLabel;
 var
   T: TContextTokens;
@@ -969,28 +989,28 @@ begin
   T := TContextTokens.Create;
   try
     T.SetBase(1, 1200);
-    S := T.Text(128000, 1, 'шаг s2');
-    AssertTrue('метка шага: ' + S, Pos('шаг s2', S) > 0);
-    AssertEquals('слова subagent нет', 0, Pos('subagent', S));
-    AssertTrue('размер под-сессии (1.2k): ' + S, Pos('1.2k', S) > 0);
+    S := T.Text(128000, 1, 'step s2');
+    AssertTrue('the step label: ' + S, Pos('step s2', S) > 0);
+    AssertEquals('no "subagent" word', 0, Pos('subagent', S));
+    AssertTrue('the sub-session size (1.2k): ' + S, Pos('1.2k', S) > 0);
 
-    S := T.Text(128000, 1, 'анализ');
-    AssertTrue('метка анализа: ' + S, Pos('анализ', S) > 0);
-    AssertTrue('размер под-сессии (1.2k): ' + S, Pos('1.2k', S) > 0);
+    S := T.Text(128000, 1, 'analysis');
+    AssertTrue('the analysis label: ' + S, Pos('analysis', S) > 0);
+    AssertTrue('the sub-session size (1.2k): ' + S, Pos('1.2k', S) > 0);
 
     S := T.Text(128000, 1);
-    AssertTrue('по умолчанию метка subagent', Pos('subagent', S) > 0);
+    AssertTrue('the default label is "subagent"', Pos('subagent', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ Строка анализа (глубина 1) строится FormatAnalysisStatus из счётчиков
-  под-сессии (SubTokens) и контекста основной сессии (MainTokens), как строка
-  шага: main/sub/total и два процента от общего окна. Тега [анализ] нет,
-  порядок — сначала статус, затем метка. Прежний вид (основная сессия +
-  метка + под-сессия) остался в Text для вложенных сессий (глубина > 1),
-  поэтому проверяются оба пути. }
+{ The analysis line (depth 1) is built by FormatAnalysisStatus from the
+  sub-session counters (SubTokens) and the main session context (MainTokens), as
+  the step line: main/sub/total and two percentages of the common window. There
+  is no [analysis] tag, the order is the status first, then the label. The
+  previous look (main session + label + sub-session) stayed in Text for nested
+  sessions (depth > 1), so both paths are checked. }
 procedure TContextTokensTests.TestAnalysisLineMainAndSubCounters;
 var
   T: TContextTokens;
@@ -999,39 +1019,40 @@ var
 begin
   T := TContextTokens.Create;
   try
-    T.SetBase(0, 7000);            { основная сессия: 7k }
+    T.SetBase(0, 7000);            { main session: 7k }
     T.SetBase(1, 1200);
-    T.AddResponseTokens(1, 300);   { токены ответа анализа: 1.5k }
+    T.AddResponseTokens(1, 300);   { the analysis answer tokens: 1.5k }
     S := StripAnsi(FormatAnalysisStatus(T.SubTokens, 128000, T.MainTokens));
-    AssertEquals('статус идёт первым: ' + S, '[', Copy(S, 1, 1));
-    { Оба счётчика в строке: контекст родителя и под-сессии анализа. }
-    AssertTrue('счётчики main/sub/total (7k/1.5k/128k): ' + S,
+    AssertEquals('the status comes first: ' + S, '[', Copy(S, 1, 1));
+    { Both counters in the line: the parent context and the analysis
+      sub-session. }
+    AssertTrue('the main/sub/total counters (7k/1.5k/128k): ' + S,
       Pos('7k/1.5k/128k', S) > 0);
-    { Проценты обоих счётчиков — от одного окна модели. }
-    AssertTrue('два процента (5.5%/1.2%): ' + S, Pos('|5.5%/1.2%', S) > 0);
-    AssertTrue('метка анализа на месте: ' + S, Pos('анализ', S) > 0);
-    AssertEquals('тега [анализ] нет: ' + S, 0, Pos('[анализ]', S));
-    AssertEquals('слова subagent нет: ' + S, 0, Pos('subagent', S));
+    { The percentages of both counters — from one model window. }
+    AssertTrue('two percentages (5.5%/1.2%): ' + S, Pos('|5.5%/1.2%', S) > 0);
+    AssertTrue('the analysis label is there: ' + S, Pos('analysis', S) > 0);
+    AssertEquals('no [analysis] tag: ' + S, 0, Pos('[analysis]', S));
+    AssertEquals('no "subagent" word: ' + S, 0, Pos('subagent', S));
     Colons := 0;
     for I := 1 to Length(S) do
       if S[I] = ':' then
         Inc(Colons);
-    AssertEquals('часы в строке одни (ЧЧ:ММ:СС)', 2, Colons);
+    AssertEquals('one clock in the line (HH:MM:SS)', 2, Colons);
 
-    { Прежний вид (основная сессия + метка + под-сессия) остаётся в Text:
-      им печатается вложенная сессия (глубина > 1). }
-    Legacy := StripAnsi(T.Text(128000, 1, 'анализ'));
-    AssertTrue('Text сохраняет часть основной сессии (7k): ' + Legacy,
+    { The previous look (main session + label + sub-session) stays in Text: it
+      prints a nested session (depth > 1). }
+    Legacy := StripAnsi(T.Text(128000, 1, 'analysis'));
+    AssertTrue('Text keeps the main session part (7k): ' + Legacy,
       Pos('7k', Legacy) > 0);
-    AssertTrue('Text сохраняет счётчики анализа (1.5k): ' + Legacy,
+    AssertTrue('Text keeps the analysis counters (1.5k): ' + Legacy,
       Pos('1.5k', Legacy) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ «шаг плана → субагент»: выход из субагента возвращает счётчики шага, иначе
-  после вложенной сессии шаг показывал бы 0. }
+{ "plan step → subagent": leaving the subagent restores the step counters,
+  otherwise the step would show 0 after the nested session. }
 procedure TContextTokensTests.TestExitSubSessionRestoresParent;
 var
   T: TContextTokens;
@@ -1040,44 +1061,46 @@ begin
   T := TContextTokens.Create;
   try
     T.SetBase(1, 1500);
-    T.AddResponseTokens(1, 200);   { шаг: 1.7k }
-    T.EnterSubAgent;               { внутри шага — субагент }
+    T.AddResponseTokens(1, 200);   { step: 1.7k }
+    T.EnterSubAgent;               { inside the step — a subagent }
     T.SetBase(1, 400);
-    S := T.Text(128000, 1, 'шаг s1');
-    AssertTrue('субагент 400: ' + S, Pos('400', S) > 0);
-    AssertEquals('счётчики шага не видны изнутри', 0, Pos('1.7k', S));
+    S := T.Text(128000, 1, 'step s1');
+    AssertTrue('the subagent 400: ' + S, Pos('400', S) > 0);
+    AssertEquals('the step counters are not visible from inside', 0,
+      Pos('1.7k', S));
 
     T.ExitSubSession;
-    S := T.Text(128000, 1, 'шаг s1');
-    AssertTrue('счётчики шага восстановлены (1.7k): ' + S, Pos('1.7k', S) > 0);
+    S := T.Text(128000, 1, 'step s1');
+    AssertTrue('the step counters are restored (1.7k): ' + S, Pos('1.7k', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ Стек счётчиков: SavedCount растёт на входе и падает на выходе. }
+{ The counter stack: SavedCount grows on entering and drops on leaving. }
 procedure TContextTokensTests.TestSavedCountTracksDepth;
 var
   T: TContextTokens;
 begin
   T := TContextTokens.Create;
   try
-    AssertEquals('стек пуст', 0, T.SavedCount);
+    AssertEquals('the stack is empty', 0, T.SavedCount);
     T.EnterSubAgent;
-    AssertEquals('один уровень', 1, T.SavedCount);
+    AssertEquals('one level', 1, T.SavedCount);
     T.EnterSubAgent;
-    AssertEquals('два уровня', 2, T.SavedCount);
+    AssertEquals('two levels', 2, T.SavedCount);
     T.ExitSubSession;
-    AssertEquals('вернулись на уровень шага', 1, T.SavedCount);
+    AssertEquals('back to the step level', 1, T.SavedCount);
     T.ResetSubSession;
-    AssertEquals('сброс очистил стек', 0, T.SavedCount);
+    AssertEquals('the reset cleared the stack', 0, T.SavedCount);
   finally
     T.Free;
   end;
 end;
 
-{ Непарный вход вложенной под-сессии (субагент упал, aeToolResult не пришёл):
-  UnwindTo по отметке входа снимает лишние пары, сохраняя счётчики шага. }
+{ An unpaired entry into a nested sub-session (the subagent failed, aeToolResult
+  never came): UnwindTo by the entry mark removes the extra pairs, keeping the
+  step counters. }
 procedure TContextTokensTests.TestUnwindToRestoresParent;
 var
   T: TContextTokens;
@@ -1086,26 +1109,27 @@ var
 begin
   T := TContextTokens.Create;
   try
-    T.SetBase(1, 1000);            { шаг }
-    Mark := T.SavedCount;          { отметка входа в шаг: 0 }
+    T.SetBase(1, 1000);            { step }
+    Mark := T.SavedCount;          { the mark of the step entry: 0 }
     T.EnterSubAgent;
     T.SetBase(1, 300);
-    T.EnterSubAgent;               { незакрытый вложенный субагент }
+    T.EnterSubAgent;               { an unclosed nested subagent }
     T.SetBase(1, 50);
-    AssertEquals('два уровня вложенности', 2, T.SavedCount);
+    AssertEquals('two nesting levels', 2, T.SavedCount);
 
-    T.UnwindTo(Mark);              { откат к состоянию перед входом в шаг }
-    AssertEquals('стек снят до отметки', 0, T.SavedCount);
-    S := T.Text(128000, 1, 'шаг s1');
-    AssertTrue('счётчики шага восстановлены (1k): ' + S, Pos('1k', S) > 0);
-    AssertEquals('значения вложенной сессии не протекли', 0, Pos('300', S));
+    T.UnwindTo(Mark);              { roll back to the state before the step entry }
+    AssertEquals('the stack is unwound to the mark', 0, T.SavedCount);
+    S := T.Text(128000, 1, 'step s1');
+    AssertTrue('the step counters are restored (1k): ' + S, Pos('1k', S) > 0);
+    AssertEquals('the nested session values did not leak', 0, Pos('300', S));
   finally
     T.Free;
   end;
 end;
 
-{ Выход из внешней под-сессии (шаг/анализ), в том числе после падения шага
-  или revise_plan: счётчики и стек очищены, основная сессия на месте. }
+{ Leaving the outer sub-session (step/analysis), including after a step failure
+  or revise_plan: the counters and the stack are cleared, the main session is
+  intact. }
 procedure TContextTokensTests.TestResetSubSessionClears;
 var
   T: TContextTokens;
@@ -1120,17 +1144,17 @@ begin
     T.SetBase(1, 700);
 
     T.ResetSubSession;
-    AssertEquals('стек очищен', 0, T.SavedCount);
-    S := T.Text(128000, 1, 'анализ');
-    AssertTrue('под-сессия обнулена: ' + S, Pos('0/128k', S) > 0);
-    AssertTrue('основная сессия сохранена (4k): ' + S, Pos('4k', S) > 0);
-    AssertTrue('метка под-сессии сохранена: ' + S, Pos('анализ', S) > 0);
+    AssertEquals('the stack is cleared', 0, T.SavedCount);
+    S := T.Text(128000, 1, 'analysis');
+    AssertTrue('the sub-session is zeroed: ' + S, Pos('0/128k', S) > 0);
+    AssertTrue('the main session is preserved (4k): ' + S, Pos('4k', S) > 0);
+    AssertTrue('the sub-session label is preserved: ' + S, Pos('analysis', S) > 0);
   finally
     T.Free;
   end;
 end;
 
-{ Выход без парного входа — простое обнуление, стек не портится. }
+{ Leaving without a paired entry — a simple zeroing, the stack is not broken. }
 procedure TContextTokensTests.TestExitWithoutEnterZeroes;
 var
   T: TContextTokens;
@@ -1140,34 +1164,34 @@ begin
   try
     T.SetBase(1, 900);
     T.ExitSubSession;
-    AssertEquals('стек пуст', 0, T.SavedCount);
-    S := T.Text(128000, 1, 'анализ');
-    AssertTrue('счётчики обнулены: ' + S, Pos('0/128k', S) > 0);
-    AssertTrue('метка анализа: ' + S, Pos('анализ', S) > 0);
+    AssertEquals('the stack is empty', 0, T.SavedCount);
+    S := T.Text(128000, 1, 'analysis');
+    AssertTrue('the counters are zeroed: ' + S, Pos('0/128k', S) > 0);
+    AssertTrue('the analysis label: ' + S, Pos('analysis', S) > 0);
   finally
     T.Free;
   end;
 end;
+{ --- Session saved after a failed turn (task2.md) ------------------------
 
-{ --- Сохранение сессии после неудачного хода (task2.md) -------------------
-
-  Интеграционный тест на собранный бинарник bin/mirmid. Ход завершается
-  ошибкой (провайдер недоступен: 127.0.0.1:1) — сессия всё равно должна
-  лежать в <workdir>/.mirmid/sessions/<id>.json с сообщением пользователя.
-  Внешняя сеть не нужна: соединение отклоняется локально. Бинарник не
-  собран — тест пропускается (make test bin/mirmid не собирает). }
+  Integration test against the built bin/mirmid binary. The turn fails (the
+  provider is unreachable: 127.0.0.1:1) — the session must be stored in
+  <workdir>/.mirmid/sessions/<id>.json anyway, with the user message.
+  No external network is needed: the connection is refused locally. The binary is
+  not built — the test is skipped (make test does not build bin/mirmid). }
 
 function AppExePath: string;
 begin
-  { Расширение берём у тестраннера: на Windows это «.exe». }
+  { The extension comes from the test runner: on Windows it is ".exe". }
   Result := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) +
     'mirmid' + ExtractFileExt(ParamStr(0));
 end;
 
-{ Запускает mirmid с заданными аргументами и ждёт выхода. Окружение хоста
-  очищается от MIRMID_*: тест не должен зависеть от настроек разработчика
-  (например MIRMID_PLAN включил бы планировщик). stdout и stderr слиты в один
-  поток (poStderrToOutPut): проверяются сообщения об ошибках. }
+{ Runs mirmid with the given arguments and waits for the exit. The host
+  environment is cleaned of MIRMID_*: the test must not depend on the developer
+  settings (for example MIRMID_PLAN would enable the planner). stdout and stderr
+  are merged into one stream (poStderrToOutPut): the error messages are
+  checked. }
 function RunAppArgs(const Exe: string; const Args: array of string;
   out OutText: string; out ExitCode: Integer): Boolean;
 var
@@ -1226,7 +1250,7 @@ begin
   end;
 end;
 
-{ Запускает mirmid с недоступным провайдером в отдельном рабочем каталоге. }
+{ Runs mirmid with an unreachable provider in a separate working directory. }
 function RunAppWithBadProvider(const Exe, WorkDir: string;
   out OutText: string; out ExitCode: Integer): Boolean;
 begin
@@ -1242,7 +1266,8 @@ begin
     'session-save-check'], OutText, ExitCode);
 end;
 
-{ Первый JSON-файл основной сессии (вспомогательные *_sub_/_step_ не в счёт). }
+{ The first JSON file of the main session (the auxiliary *_sub_/_step_ ones do
+  not count). }
 function FirstMainSessionFile(const WorkDir: string): string;
 var
   SR: TSearchRec;
@@ -1254,8 +1279,8 @@ begin
   if FindFirst(IncludeTrailingPathDelimiter(Dir) + '*.json', faAnyFile, SR) <> 0 then
     Exit;
   try
-    { Без Continue/Break: выход из try-finally внутри repeat закрыл бы поиск,
-      и следующий FindNext работал бы с закрытым дескриптором. }
+    { No Continue/Break: leaving the try-finally inside repeat would close the
+      search, and the next FindNext would work with a closed handle. }
     More := True;
     while More do
     begin
@@ -1271,7 +1296,7 @@ begin
   end;
 end;
 
-{ Рекурсивное удаление временного каталога теста. }
+{ Recursive removal of the temporary test directory. }
 procedure RemoveTree(const Dir: string);
 var
   SR: TSearchRec;
@@ -1307,37 +1332,37 @@ var
 begin
   Exe := AppExePath;
   if not FileExists(Exe) then
-    Exit;   { bin/mirmid не собран — тест пропускается }
+    Exit;   { bin/mirmid is not built — the test is skipped }
 
   WorkDir := IncludeTrailingPathDelimiter(GetTempDir) +
     'mirmid_session_turn_' + FormatDateTime('hhnnsszzz', Now);
-  AssertTrue('временный каталог создан', ForceDirectories(WorkDir));
+  AssertTrue('the temporary directory is created', ForceDirectories(WorkDir));
   try
-    AssertTrue('приложение запущено', RunAppWithBadProvider(Exe, WorkDir,
+    AssertTrue('the application is started', RunAppWithBadProvider(Exe, WorkDir,
       OutText, ExitCode));
-    AssertTrue('ход завершился ошибкой (код ' + IntToStr(ExitCode) + ')',
+    AssertTrue('the turn failed (code ' + IntToStr(ExitCode) + ')',
       ExitCode <> 0);
 
     FileName := FirstMainSessionFile(WorkDir);
-    AssertTrue('сессия сохранена после неудачного хода (нет ' +
-      SessionDir(WorkDir) + '/*.json), вывод: ' + OutText, FileName <> '');
+    AssertTrue('the session is saved after the failed turn (no ' +
+      SessionDir(WorkDir) + '/*.json), output: ' + OutText, FileName <> '');
     if FileName = '' then
       Exit;
 
-    AssertTrue('сессия читается', ReadTextFile(FileName, SessionText, Err));
-    AssertTrue('в сессии сохранён запрос пользователя',
+    AssertTrue('the session is read', ReadTextFile(FileName, SessionText, Err));
+    AssertTrue('the user prompt is saved in the session',
       Pos('session-save-check', SessionText) > 0);
   finally
     RemoveTree(WorkDir);
   end;
 end;
 
-{ --- Неизвестный ключ [tools] — фатальная ошибка (E2E) ---------------------
+{ --- Unknown [tools] key — a fatal error (E2E) ----------------------------
 
-  Собранный bin/mirmid с INI, где в [tools] есть неизвестный ключ, обязан
-  завершиться с кодом 1 и назвать ключ со списком известных инструментов:
-  молчаливое включение/выключение инструмента из-за опечатки недопустимо.
-  Сети тест не требует — сессия не начинается. }
+  The built bin/mirmid with an INI whose [tools] contains an unknown key must
+  exit with code 1 and name the key together with the list of known tools:
+  silently enabling/disabling a tool because of a typo is not acceptable. The
+  test needs no network — the session does not start. }
 
 procedure TCliUnknownToolKeyTests.TestUnknownToolKeyExitsWithCodeOne;
 var
@@ -1346,38 +1371,39 @@ var
 begin
   Exe := AppExePath;
   if not FileExists(Exe) then
-    Exit;   { bin/mirmid не собран — тест пропускается }
+    Exit;   { bin/mirmid is not built — the test is skipped }
 
   WorkDir := IncludeTrailingPathDelimiter(GetTempDir) +
     'mirmid_unknown_tool_' + FormatDateTime('hhnnsszzz', Now);
-  AssertTrue('временный каталог создан', ForceDirectories(WorkDir));
+  AssertTrue('the temporary directory is created', ForceDirectories(WorkDir));
   try
     IniFile := IncludeTrailingPathDelimiter(WorkDir) + 'unknown.ini';
-    AssertTrue('INI с неизвестным ключом записан',
+    AssertTrue('the INI with the unknown key is written',
       WriteTextFile(IniFile, '[tools]' + LineEnding +
         'read_text_file=1' + LineEnding + 'no_such_tool=1' + LineEnding, Err));
 
-    AssertTrue('приложение запущено', RunAppArgs(Exe, ['--config', IniFile,
+    AssertTrue('the application is started', RunAppArgs(Exe, ['--config', IniFile,
       '--workdir', WorkDir, '--no-mcp', '--no-stream', 'hello'],
       OutText, ExitCode));
-    AssertEquals('неизвестный ключ [tools] — код возврата 1, вывод: ' + OutText,
+    AssertEquals('an unknown [tools] key — exit code 1, output: ' + OutText,
       1, ExitCode);
-    AssertTrue('сообщение называет неизвестный ключ: ' + OutText,
+    AssertTrue('the message names the unknown key: ' + OutText,
       Pos('unknown tool "no_such_tool"', OutText) > 0);
-    AssertTrue('сообщение перечисляет известные инструменты: ' + OutText,
+    AssertTrue('the message lists the known tools: ' + OutText,
       Pos('known tools:', OutText) > 0);
-    { Список известных инструментов непуст: в нём есть ключ из реестра. }
-    AssertTrue('в списке есть read_text_file: ' + OutText,
+    { The list of known tools is not empty: it contains a key from the
+      registry. }
+    AssertTrue('the list contains read_text_file: ' + OutText,
       Pos('read_text_file', OutText) > 0);
   finally
     RemoveTree(WorkDir);
   end;
 end;
 
-{ `--init` обязан починить и сломанный INI: если файл содержит неизвестный ключ
-  [tools], обычный старт завершается ошибкой, а пересоздать конфигурацию всё
-  равно нужно. Проверяется на собранном бинарнике: код 0 и образец со всеми
-  ключами [tools]. }
+{ `--init` must repair a broken INI too: if the file contains an unknown [tools]
+  key, a normal start fails, but the configuration still has to be recreated. It
+  is checked against the built binary: code 0 and a sample with all [tools]
+  keys. }
 procedure TCliUnknownToolKeyTests.TestInitRepairsBrokenToolsSection;
 var
   Exe, WorkDir, IniFile, ConfigFile, OutText, Text, Err: string;
@@ -1385,42 +1411,42 @@ var
 begin
   Exe := AppExePath;
   if not FileExists(Exe) then
-    Exit;   { bin/mirmid не собран — тест пропускается }
+    Exit;   { bin/mirmid is not built — the test is skipped }
 
   WorkDir := IncludeTrailingPathDelimiter(GetTempDir) +
     'mirmid_init_repair_' + FormatDateTime('hhnnsszzz', Now);
-  AssertTrue('временный каталог создан', ForceDirectories(WorkDir));
+  AssertTrue('the temporary directory is created', ForceDirectories(WorkDir));
   try
     IniFile := IncludeTrailingPathDelimiter(WorkDir) + 'broken.ini';
-    AssertTrue('INI с неизвестным ключом записан',
+    AssertTrue('the INI with the unknown key is written',
       WriteTextFile(IniFile, '[tools]' + LineEnding + 'shel=1' + LineEnding, Err));
 
-    AssertTrue('приложение запущено', RunAppArgs(Exe, ['--init', '--config',
+    AssertTrue('the application is started', RunAppArgs(Exe, ['--init', '--config',
       IniFile, '--workdir', WorkDir], OutText, ExitCode));
-    AssertEquals('--init со сломанным INI — код 0, вывод: ' + OutText,
+    AssertEquals('--init with a broken INI — code 0, output: ' + OutText,
       0, ExitCode);
 
     ConfigFile := IncludeTrailingPathDelimiter(WorkDir) + '.mirmid' + PathDelim +
       'mirmid.ini';
-    AssertTrue('образец создан: ' + ConfigFile, FileExists(ConfigFile));
-    AssertTrue('образец читается', ReadTextFile(ConfigFile, Text, Err));
-    AssertTrue('в образце есть секция [tools]', Pos('[tools]', Text) > 0);
-    AssertTrue('в образце есть ключ shell', Pos('shell=', Text) > 0);
+    AssertTrue('the sample is created: ' + ConfigFile, FileExists(ConfigFile));
+    AssertTrue('the sample is read', ReadTextFile(ConfigFile, Text, Err));
+    AssertTrue('the sample has the [tools] section', Pos('[tools]', Text) > 0);
+    AssertTrue('the sample has the shell key', Pos('shell=', Text) > 0);
   finally
     RemoveTree(WorkDir);
   end;
 end;
-
 procedure TCliParseToolOutputLinesTests.TestDefaultOff;
 var
   Cli: TCli;
   Err: string;
 begin
-  AssertTrue('командная строка разобрана', ParseCli(['привет', 'мир'], Cli, Err));
-  AssertEquals('ошибки нет', '', Err);
-  AssertFalse('ключ не задан без флага', Cli.HasToolOutputLines);
-  AssertEquals('значение по умолчанию — 0 (из настроек)', 0, Cli.ToolOutputLines);
-  AssertEquals('запрос сохранён', 'привет мир', Cli.Prompt);
+  AssertTrue('the command line is parsed', ParseCli(['grüße', 'welt'], Cli, Err));
+  AssertEquals('no error', '', Err);
+  AssertFalse('the key is not set without the flag', Cli.HasToolOutputLines);
+  AssertEquals('the default value is 0 (from the settings)', 0,
+    Cli.ToolOutputLines);
+  AssertEquals('the prompt is saved', 'grüße welt', Cli.Prompt);
 end;
 
 procedure TCliParseToolOutputLinesTests.TestSpaceForm;
@@ -1428,11 +1454,11 @@ var
   Cli: TCli;
   Err: string;
 begin
-  AssertTrue('командная строка разобрана',
+  AssertTrue('the command line is parsed',
     ParseCli(['--tool-output-lines', '15'], Cli, Err));
-  AssertEquals('ошибки нет', '', Err);
-  AssertTrue('ключ задан', Cli.HasToolOutputLines);
-  AssertEquals('значение из следующего аргумента', 15, Cli.ToolOutputLines);
+  AssertEquals('no error', '', Err);
+  AssertTrue('the key is set', Cli.HasToolOutputLines);
+  AssertEquals('the value from the next argument', 15, Cli.ToolOutputLines);
 end;
 
 procedure TCliParseToolOutputLinesTests.TestInlineForm;
@@ -1440,11 +1466,11 @@ var
   Cli: TCli;
   Err: string;
 begin
-  AssertTrue('командная строка разобрана',
+  AssertTrue('the command line is parsed',
     ParseCli(['--tool-output-lines=12'], Cli, Err));
-  AssertEquals('ошибки нет', '', Err);
-  AssertTrue('ключ задан', Cli.HasToolOutputLines);
-  AssertEquals('значение после «=»', 12, Cli.ToolOutputLines);
+  AssertEquals('no error', '', Err);
+  AssertTrue('the key is set', Cli.HasToolOutputLines);
+  AssertEquals('the value after "="', 12, Cli.ToolOutputLines);
 end;
 
 procedure TCliParseToolOutputLinesTests.TestZeroMeansUnlimited;
@@ -1452,11 +1478,11 @@ var
   Cli: TCli;
   Err: string;
 begin
-  AssertTrue('командная строка разобрана',
+  AssertTrue('the command line is parsed',
     ParseCli(['--tool-output-lines', '0'], Cli, Err));
-  AssertEquals('ошибки нет', '', Err);
-  AssertTrue('0 — тоже явно заданный ключ', Cli.HasToolOutputLines);
-  AssertEquals('0 — без ограничения', 0, Cli.ToolOutputLines);
+  AssertEquals('no error', '', Err);
+  AssertTrue('0 is an explicitly set key too', Cli.HasToolOutputLines);
+  AssertEquals('0 means no limit', 0, Cli.ToolOutputLines);
 end;
 
 procedure TCliParseToolOutputLinesTests.TestMissingValue;
@@ -1464,11 +1490,11 @@ var
   Cli: TCli;
   Err: string;
 begin
-  AssertFalse('опция без значения — ошибка разбора',
+  AssertFalse('an option without a value is a parse error',
     ParseCli(['--tool-output-lines'], Cli, Err));
-  AssertTrue('сообщение об ошибке непустое', Err <> '');
-  AssertTrue('сообщение упоминает опцию', Pos('--tool-output-lines', Err) > 0);
-  AssertFalse('ключ не выставлен', Cli.HasToolOutputLines);
+  AssertTrue('the error message is not empty', Err <> '');
+  AssertTrue('the message mentions the option', Pos('--tool-output-lines', Err) > 0);
+  AssertFalse('the key is not set', Cli.HasToolOutputLines);
 end;
 
 procedure TCliParseToolOutputLinesTests.TestAlongsideOtherOptions;
@@ -1476,34 +1502,32 @@ var
   Cli: TCli;
   Err: string;
 begin
-  AssertTrue('командная строка разобрана',
-    ParseCli(['--show-reasoning', '--tool-output-lines', '5', 'вопрос'], Cli, Err));
-  AssertEquals('ошибки нет', '', Err);
-  AssertTrue('--show-reasoning разобран', Cli.ShowReasoning);
-  AssertTrue('--tool-output-lines разобран', Cli.HasToolOutputLines);
-  AssertEquals('значение лимита', 5, Cli.ToolOutputLines);
-  AssertEquals('запрос не съеден как значение', 'вопрос', Cli.Prompt);
+  AssertTrue('the command line is parsed',
+    ParseCli(['--show-reasoning', '--tool-output-lines', '5', 'question'], Cli, Err));
+  AssertEquals('no error', '', Err);
+  AssertTrue('--show-reasoning is parsed', Cli.ShowReasoning);
+  AssertTrue('--tool-output-lines is parsed', Cli.HasToolOutputLines);
+  AssertEquals('the limit value', 5, Cli.ToolOutputLines);
+  AssertEquals('the prompt is not eaten as a value', 'question', Cli.Prompt);
 end;
-
-{ --- TCliToolsModelTests ------------------------------------------------ }
 
 procedure TCliToolsModelTests.TestHelpMentionsToolsSection;
 var
   H: string;
 begin
   H := UsageText;
-  AssertTrue('в справке есть секция [tools]', Pos('[tools]', H) > 0);
-  AssertTrue('справка описывает ключи 1/0', Pos('1/0', H) > 0);
-  AssertEquals('нет --allow-write', 0, Pos('--allow-write', H));
-  AssertEquals('нет --no-write', 0, Pos('--no-write', H));
-  AssertEquals('нет --allow-shell', 0, Pos('--allow-shell', H));
-  AssertEquals('нет --no-shell', 0, Pos('--no-shell', H));
-  AssertEquals('нет --allow-http', 0, Pos('--allow-http', H));
-  AssertEquals('нет --no-http', 0, Pos('--no-http', H));
-  { Настройки shell остаются флагами и не должны исчезнуть вместе с
-    переключателями. }
-  AssertTrue('--shell-timeout остался', Pos('--shell-timeout', H) > 0);
-  AssertTrue('--tool-output-lines остался', Pos('--tool-output-lines', H) > 0);
+  AssertTrue('the help has the [tools] section', Pos('[tools]', H) > 0);
+  AssertTrue('the help describes the 1/0 keys', Pos('1/0', H) > 0);
+  AssertEquals('no --allow-write', 0, Pos('--allow-write', H));
+  AssertEquals('no --no-write', 0, Pos('--no-write', H));
+  AssertEquals('no --allow-shell', 0, Pos('--allow-shell', H));
+  AssertEquals('no --no-shell', 0, Pos('--no-shell', H));
+  AssertEquals('no --allow-http', 0, Pos('--allow-http', H));
+  AssertEquals('no --no-http', 0, Pos('--no-http', H));
+  { The shell settings remain flags and must not disappear together with the
+    switches. }
+  AssertTrue('--shell-timeout is still there', Pos('--shell-timeout', H) > 0);
+  AssertTrue('--tool-output-lines is still there', Pos('--tool-output-lines', H) > 0);
 end;
 
 procedure TCliToolsModelTests.TestHelpHasNoCaFile;
@@ -1511,10 +1535,11 @@ var
   H: string;
 begin
   H := UsageText;
-  AssertEquals('нет ключа доверия', 0, Pos('ca' + '_file', H));
-  { Имени переменной окружения с путём к бандлу в справке тоже нет: строка
-    собирается по частям, чтобы сам тест не содержал искомого текста. }
-  AssertEquals('нет переменной окружения с бандлом',
+  AssertEquals('no trust key', 0, Pos('ca' + '_file', H));
+  { The name of the environment variable with the bundle path is not in the help
+    either: the string is built in parts so that the test itself does not contain
+    the searched text. }
+  AssertEquals('no environment variable with the bundle',
     0, Pos('CA' + '_FILE', H));
 end;
 
@@ -1523,17 +1548,17 @@ var
   Cli: TCli;
   Err: string;
 begin
-  AssertFalse('--allow-write отвергнут',
+  AssertFalse('--allow-write is rejected',
     ParseCli(['--allow-write'], Cli, Err));
-  AssertTrue('сообщение об опции: ' + Err, Pos('--allow-write', Err) > 0);
+  AssertTrue('the message about the option: ' + Err, Pos('--allow-write', Err) > 0);
 
-  AssertFalse('--allow-shell отвергнут',
+  AssertFalse('--allow-shell is rejected',
     ParseCli(['--allow-shell'], Cli, Err));
-  AssertFalse('--no-shell отвергнут', ParseCli(['--no-shell'], Cli, Err));
-  AssertFalse('--allow-http отвергнут',
+  AssertFalse('--no-shell is rejected', ParseCli(['--no-shell'], Cli, Err));
+  AssertFalse('--allow-http is rejected',
     ParseCli(['--allow-http'], Cli, Err));
-  AssertFalse('--no-http отвергнут', ParseCli(['--no-http'], Cli, Err));
-  AssertFalse('-w отвергнут', ParseCli(['-w'], Cli, Err));
+  AssertFalse('--no-http is rejected', ParseCli(['--no-http'], Cli, Err));
+  AssertFalse('-w is rejected', ParseCli(['-w'], Cli, Err));
 end;
 
 initialization

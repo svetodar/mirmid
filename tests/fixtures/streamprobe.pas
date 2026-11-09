@@ -1,7 +1,7 @@
 program streamprobe;
-{ Проба TStreamPrinter (потоковый вывод): прогоняет сценарий и пишет сырой
-  вывод (с ANSI-кодами) в stdout. Используется tests/test_stream.pas.
-  Аргумент: имя сценария. }
+{ Probe of TStreamPrinter (streaming output): runs a scenario and writes the raw
+  output (with ANSI codes) to stdout. Used by tests/test_stream.pas.
+  Argument: the scenario name. }
 
 {$mode objfpc}{$H+}
 
@@ -10,14 +10,14 @@ uses
 
 procedure RunScenario(const Name: string);
 const
-  { Длинная строка для сценария prefix-wrap (длиннее 80 колонок). }
+  { A long line for the prefix-wrap scenario (longer than 80 columns). }
   WRAP_TEXT = 'alpha beta gamma delta epsilon zeta eta theta iota kappa ' +
               'lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega';
-  { Контекст основной сессии (main-счётчик) для сценариев планировщика: в
-    режиме плана основная сессия к модели не обращается, и значение берётся из
-    кэша оценки агента. Числа у сценариев разные, чтобы в сыром выводе было
-    видно подстановку main-счётчика; формат строки статуса —
-    «[ЧЧ:ММ:СС|main/sub/total|процент-main%/процент-sub%]». }
+  { Context of the main session (the main counter) for the planner scenarios: in
+    plan mode the main session does not call the model, so the value comes from
+    the agent estimate cache. The numbers differ per scenario so that the raw
+    output shows the main counter substitution; the status line format is
+    "[HH:MM:SS|main/sub/total|main-percent%/sub-percent%]". }
   MAIN_CTX_STEP = 6000;
   MAIN_CTX_TASK = 5000;
   MAIN_CTX_TOOL = 4000;
@@ -28,12 +28,12 @@ var
 begin
   P := TStreamPrinter.Create;
   try
-    P.Live := True;   { форсируем ANSI-режим: stdout может быть конвейером }
+    P.Live := True;   { force ANSI mode: stdout may be a pipe }
     P.BeginStream('[st]');
     if Name = 'spaces-partial' then
     begin
-      { Строка приходит тремя чанками: сначала ведущие пробелы, затем
-        текст, затем перевод строки. }
+      { The line arrives in three chunks: leading spaces first, then the text,
+        then the newline. }
       P.FeedReasoning('  ', '[st]');
       P.FeedReasoning('word', '[st]');
       P.FeedReasoning(#10, '[st]');
@@ -44,9 +44,9 @@ begin
       P.FeedContent('  indented' + #10, '[st]')
     else if Name = 'prefix-wrap' then
     begin
-      { Префикс субагента из двух колонок: частичная строка должна
-        переноситься с учётом префикса и не занимать две строки терминала
-        (иначе перерисовка теряла и дублировала куски слов). }
+      { Subagent prefix of two columns: a partial line must wrap taking the
+        prefix into account and must not occupy two terminal lines (otherwise
+        the redraw lost and duplicated parts of words). }
       P.Prefix := '||';
       N := Length(WRAP_TEXT);
       I := 1;
@@ -59,12 +59,12 @@ begin
     end
     else if Name = 'done-status' then
     begin
-      { Конец под-сессии шага (task1.md п.4): временная строка статуса
-        стирается (EndStream), а PersistStatus закрепляет на её месте
-        done-строку с итоговыми счётчиками и коротким именем шага
-        («[ЧЧ:ММ:СС|main/sub/total|%/%] s1 done»). Прежний вариант статуса
-        «[s1 2]» в лог не попадает, а статичный вывод и следующий стрим идут с
-        чистой строки под done-строкой. Регрессия:
+      { End of a step sub-session (task1.md item 4): the temporary status line is
+        erased (EndStream), and PersistStatus fixes a done line in its place with
+        the final counters and the short step name
+        ("[HH:MM:SS|main/sub/total|%/%] s1 done"). The previous status variant
+        "[s1 2]" does not get into the log, and the static output and the next
+        stream start from a clean line under the done line. Regression:
         TMirmidApp.PersistDoneStatus/DoneStatusText, StepShortName,
         TStreamPrinter.PersistStatus/EndStream/PrepareStatic. }
       P.Prefix := '||';
@@ -72,11 +72,11 @@ begin
       P.FeedContent('first' + #10, '[s1 1]');
       P.FeedContent('second' + #10, '[s1 2]');
       P.EndStream('[s1 end]');
-      { aeSubSessionEnd: DoneStatusText + ' done' через PersistStatus. }
-      P.PersistStatus(FormatStepStatus(StepShortName('s1: шаг'), 2200, 128000,
+      { aeSubSessionEnd: DoneStatusText + ' done' via PersistStatus. }
+      P.PersistStatus(FormatStepStatus(StepShortName('s1: step'), 2200, 128000,
         MAIN_CTX_STEP) + ' done');
-      { Статичный вывод (как aeToolResult) начинается с чистой строки под
-        закреплённой done-строкой. }
+      { Static output (like aeToolResult) starts on a clean line under the fixed
+        done line. }
       P.PrepareStatic;
       WriteLn(P.Prefix + 'after done');
       P.BeginStream('[s2]');
@@ -85,50 +85,50 @@ begin
     end
     else if Name = 'prepare-static-status' then
     begin
-      { PrepareStatic при нарисованной строке статуса (FStatusShown=True)
-        стирает её, а не печатает в scrollback. Сценарий повторяет ветку
-        aeToolResult/статичного вывода: статус нарисован (BeginStream,
-        FeedContent) — статичная строка встаёт на его месте с начала чистой
-        строки; статус нарисован заново (DrawStatus, как после aeToolCall) —
-        PrepareStatic снова его стирает. Повторный PrepareStatic без статуса
-        не оставляет пустой строки. Регрессия: TStreamPrinter.PrepareStatic. }
+      { PrepareStatic with a drawn status line (FStatusShown=True) erases it
+        instead of printing it into the scrollback. The scenario repeats the
+        aeToolResult/static output branch: the status is drawn (BeginStream,
+        FeedContent) — the static line takes its place from the start of a clean
+        line; the status is drawn again (DrawStatus, as after aeToolCall) —
+        PrepareStatic erases it again. A repeated PrepareStatic without a status
+        does not leave an empty line. Regression: TStreamPrinter.PrepareStatic. }
       P.Prefix := '||';
       P.BeginStream('[s1 start long status tail]');
       P.FeedContent('line one' + #10, '[s1 1 long status tail]');
-      { Статичный вывод при нарисованном статусе (ветка aeToolResult). }
+      { Static output with a drawn status (the aeToolResult branch). }
       P.PrepareStatic;
       WriteLn(P.Prefix + 'static after status');
-      { Статус нарисован заново (DrawStatus после строки вызова) — стираем. }
+      { The status is drawn again (DrawStatus after the call line) — erase it. }
       P.DrawStatus('[s1 2 long status tail]');
       P.PrepareStatic;
       WriteLn(P.Prefix + 'static after draw');
-      { Статуса нет: PrepareStatic ничего не печатает и не добавляет строку. }
+      { No status: PrepareStatic prints nothing and adds no line. }
       P.PrepareStatic;
       WriteLn(P.Prefix + 'third static');
     end
     else if Name = 'endstream-prompt' then
     begin
-      { Конец стрима не оставляет строки статуса, поэтому следующий вывод
-        (приглашение REPL после PrepareStatic) начинается с начала чистой
-        строки. Сценарий повторяет ветки Repl: s1 — стрим с незавершённой
-        последней строкой и нарисованным под ней статусом (EndStream печатает
-        её как полную строку и стирает статус); s2 — стрим с завершённой
-        последней строкой (стирается только статус). Приглашение «|> »
-        печатается без хвоста статуса и не склеивается с текстом стрима.
-        Регрессия: TStreamPrinter.EndStream. }
+      { The end of a stream leaves no status line, so the next output (the REPL
+        prompt after PrepareStatic) starts at the beginning of a clean line. The
+        scenario repeats the Repl branches: s1 — a stream with an unfinished last
+        line and a status drawn under it (EndStream prints it as a complete line
+        and erases the status); s2 — a stream with a finished last line (only the
+        status is erased). The "|> " prompt is printed without a status tail and
+        does not glue to the stream text. Regression:
+        TStreamPrinter.EndStream. }
       P.Prefix := '||';
       P.BeginStream('[s1 1 tail-a]');
       P.FeedContent('first' + #10, '[s1 2 tail-a]');
-      { Незавершённая последняя строка: нарисована, статус под ней. }
+      { Unfinished last line: drawn, the status under it. }
       P.FeedContent('pending tail', '[s1 3 tail-a]');
       P.EndStream('[s1 4 tail-a]');
-      { Repl: погасить статус, затем приглашение. }
+      { Repl: clear the status, then the prompt. }
       P.PrepareStatic;
       Write('|> ');
-      WriteLn;   { пользователь нажал Enter }
+      WriteLn;   { the user pressed Enter }
 
-      { s2: последняя строка завершена переводом строки — на экране только
-        текст и нарисованный под ним статус. }
+      { s2: the last line is finished by a newline — only the text and the
+        status drawn under it are on the screen. }
       P.BeginStream('[s2 1 tail-b]');
       P.FeedContent('second' + #10, '[s2 2 tail-b]');
       P.EndStream('[s2 3 tail-b]');
@@ -138,184 +138,191 @@ begin
     end
     else if Name = 'step-status' then
     begin
-      { Под-сессия шага плана печатается без префикса «│» (глубина печати 0):
-        строка статуса шага — «[ЧЧ:ММ:СС|main/sub/total|процент-main%/
-        процент-sub%] имя» (статус первым, тега [шаг] нет) — и текст шага идут
-        от начала строки. Первый счётчик — контекст основной сессии из кэша
-        оценки (MAIN_CTX_STEP), второй и третий — шаг и общее окно модели.
-        Строка статуса временная: её стирает EndStream, а на aeSubSessionEnd
-        PersistDoneStatus закрепляет вместо неё done-строку с коротким именем
-        шага («…] s1 done») и итоговыми счётчиками — прежние варианты статуса
-        в лог не попадают. Отступ даёт только инструмент subagent — вложенный в
-        шаг субагент получает ровно один «│», а его результат печатается
-        статичной строкой на месте стёртого статуса; после выхода префикс
-        возвращается к пустому. Регрессия FPrintDepth/FPrinter.Prefix,
-        формата FormatStepStatus и PersistStatus. }
+      { A plan step sub-session is printed without the "│" prefix (print depth
+        0): the step status line is "[HH:MM:SS|main/sub/total|main-percent%/
+        sub-percent%] name" (the status first, no [step] tag) — and the step text
+        goes from the beginning of the line. The first counter is the main
+        session context from the estimate cache (MAIN_CTX_STEP), the second and
+        the third are the step and the common model window. The status line is
+        temporary: EndStream erases it, and on aeSubSessionEnd PersistDoneStatus
+        fixes a done line in its place with the short step name ("...] s1 done")
+        and the final counters — the previous status variants do not get into the
+        log. Only the subagent tool adds indentation — a subagent nested in a
+        step gets exactly one "│", and its result is printed as a static line in
+        place of the erased status; after it exits the prefix is empty again.
+        Regression: FPrintDepth/FPrinter.Prefix, the FormatStepStatus format and
+        PersistStatus. }
       P.Prefix := '';
-      P.BeginStream(FormatStepStatus('s1: шаг', 1200, 128000, MAIN_CTX_STEP));
+      P.BeginStream(FormatStepStatus('s1: step', 1200, 128000, MAIN_CTX_STEP));
       P.FeedContent('step line' + #10,
-        FormatStepStatus('s1: шаг', 1300, 128000, MAIN_CTX_STEP));
-      { Вложенный инструмент subagent: единственное место с префиксом. }
+        FormatStepStatus('s1: step', 1300, 128000, MAIN_CTX_STEP));
+      { Nested subagent tool: the only place with a prefix. }
       P.Prefix := DepthPrefix(1);
       P.BeginStream('sub status');
       P.FeedContent('sub line' + #10, 'sub status');
-      P.EndStream('sub status');   { нарисованный статус субагента стёрт }
-      { aeToolResult субагента: готовый ответ (с префиксом) встаёт на место
-        стёртого статуса — строка начинается с «│», хвоста статуса нет. }
+      P.EndStream('sub status');   { the drawn subagent status is erased }
+      { aeToolResult of the subagent: the ready answer (with the prefix) takes
+        the place of the erased status — the line starts with "│", there is no
+        status tail. }
       P.PrepareStatic;
       WriteLn(P.Prefix + 'sub result');
-      { Возврат на уровень шага: префикс печати снова пустой. }
+      { Back to the step level: the print prefix is empty again. }
       P.Prefix := '';
-      P.BeginStream(FormatStepStatus('s1: шаг', 1500, 128000, MAIN_CTX_STEP));
+      P.BeginStream(FormatStepStatus('s1: step', 1500, 128000, MAIN_CTX_STEP));
       P.FeedContent('step tail' + #10,
-        FormatStepStatus('s1: шаг', 1600, 128000, MAIN_CTX_STEP));
-      P.EndStream(FormatStepStatus('s1: шаг', 1700, 128000, MAIN_CTX_STEP));
-      { aeSubSessionEnd: строка шага стирается, а на её месте закрепляется
-        done-строка с коротким именем «s1» и итоговыми счётчиками. }
-      P.PersistStatus(FormatStepStatus(StepShortName('s1: шаг'), 1700, 128000,
+        FormatStepStatus('s1: step', 1600, 128000, MAIN_CTX_STEP));
+      P.EndStream(FormatStepStatus('s1: step', 1700, 128000, MAIN_CTX_STEP));
+      { aeSubSessionEnd: the step line is erased, and a done line with the short
+        name "s1" and the final counters is fixed in its place. }
+      P.PersistStatus(FormatStepStatus(StepShortName('s1: step'), 1700, 128000,
         MAIN_CTX_STEP) + ' done');
     end
     else if Name = 'step-task-gating' then
     begin
-      { Гейтинг задания шага плана (task1) и закрепление done-строки.
-        Сценарий повторяет ветки aeStepStart/aeToolCall/aeToolResult: имя
-        шага (задание) печатается без тега [шаг] только при StepTaskVisible
-        (то есть по --show-step-task или по --show-reasoning, при обоих off —
-        не печатается), причём статично, на месте стёртого статуса. Имя шага
-        в строке статуса (FormatStepStatus: сначала статус
-        «[ЧЧ:ММ:СС|main/sub/total|процент-main%/процент-sub%]», затем имя)
-        живёт только в терминале: EndStream её стирает, а на aeSubSessionEnd
-        PersistDoneStatus закрепляет done-строку с коротким именем «sN» и
-        итоговыми счётчиками — временных строк статуса в логе нет, остаются
-        только done-строки завершённых шагов. Первый счётчик строки — контекст
-        основной сессии (MAIN_CTX_TASK), второй — шага, третий — общее окно
-        модели. Вызов инструмента и результат печатаются на месте нарисованного
-        статуса (PrepareStatic/PrepareStaticOverStatus), а статус затем
-        рисуется заново (DrawStatus) — счётчики растут под ними. }
+      { Gating of the plan step task (task1) and the fixing of the done line.
+        The scenario repeats the aeStepStart/aeToolCall/aeToolResult branches:
+        the step name (the task) is printed without the [step] tag only when
+        StepTaskVisible is true (that is under --show-step-task or
+        --show-reasoning, with both off it is not printed), and it is printed
+        statically, in place of the erased status. The step name in the status
+        line (FormatStepStatus: the status
+        "[HH:MM:SS|main/sub/total|main-percent%/sub-percent%]" first, then the
+        name) lives only in the terminal: EndStream erases it, and on
+        aeSubSessionEnd PersistDoneStatus fixes the done line with the short name
+        "sN" and the final counters — there are no temporary status lines in the
+        log, only the done lines of the finished steps remain. The first counter
+        of the line is the main session context (MAIN_CTX_TASK), the second is
+        the step, the third is the common model window. The tool call and the
+        result are printed in place of the drawn status
+        (PrepareStatic/PrepareStaticOverStatus), and the status is then drawn
+        again (DrawStatus) — the counters grow under them. }
       P.Prefix := '';
 
-      { s1: оба флага выключены — задания нет, работа шага начинается сразу
-        со строки статуса (имя шага в ней всё равно есть, но она временная и
-        заменяется done-строкой при завершении шага). }
+      { s1: both flags are off — there is no task, the step work starts right
+        with the status line (the step name is still in it, but it is temporary
+        and is replaced by the done line when the step finishes). }
       if StepTaskVisible(False, False, False) then
       begin
         P.PrepareStatic;
-        WriteLn('s1: скрытое задание');
+        WriteLn('s1: hidden task');
       end;
-      P.BeginStream(FormatStepStatus('s1: скрытое задание', 1000, 128000,
+      P.BeginStream(FormatStepStatus('s1: hidden task', 1000, 128000,
         MAIN_CTX_TASK));
       P.FeedContent('step one' + #10,
-        FormatStepStatus('s1: скрытое задание', 1100, 128000, MAIN_CTX_TASK));
-      P.EndStream(FormatStepStatus('s1: скрытое задание', 1200, 128000,
+        FormatStepStatus('s1: hidden task', 1100, 128000, MAIN_CTX_TASK));
+      P.EndStream(FormatStepStatus('s1: hidden task', 1200, 128000,
         MAIN_CTX_TASK));
-      { aeSubSessionEnd: временная строка шага стирается, а PersistStatus
-        закрепляет done-строку «s1 done» с итоговыми счётчиками. }
-      P.PersistStatus(FormatStepStatus(StepShortName('s1: скрытое задание'), 1200,
+      { aeSubSessionEnd: the temporary step line is erased, and PersistStatus
+        fixes the done line "s1 done" with the final counters. }
+      P.PersistStatus(FormatStepStatus(StepShortName('s1: hidden task'), 1200,
         128000, MAIN_CTX_TASK) + ' done');
 
-      { s2: включён только --show-step-task — задание печатается до работы
-        шага, с начала чистой строки (статус шага уже стёрт). }
+      { s2: only --show-step-task is on — the task is printed before the step
+        work, from the beginning of a clean line (the step status is already
+        erased). }
       if StepTaskVisible(True, False, False) then
       begin
         P.PrepareStatic;
-        WriteLn('s2: задание по флагу');
+        WriteLn('s2: task by flag');
       end;
-      P.BeginStream(FormatStepStatus('s2: задание по флагу', 2000, 128000,
+      P.BeginStream(FormatStepStatus('s2: task by flag', 2000, 128000,
         MAIN_CTX_TASK));
       P.FeedContent('step two' + #10,
-        FormatStepStatus('s2: задание по флагу', 2100, 128000, MAIN_CTX_TASK));
-      P.EndStream(FormatStepStatus('s2: задание по флагу', 2200, 128000,
+        FormatStepStatus('s2: task by flag', 2100, 128000, MAIN_CTX_TASK));
+      P.EndStream(FormatStepStatus('s2: task by flag', 2200, 128000,
         MAIN_CTX_TASK));
-      P.PersistStatus(FormatStepStatus(StepShortName('s2: задание по флагу'), 2200,
+      P.PersistStatus(FormatStepStatus(StepShortName('s2: task by flag'), 2200,
         128000, MAIN_CTX_TASK) + ' done');
 
-      { s3: включён только --show-reasoning (--show-step-result тоже задан, но
-        на задание он не влияет) — задание печатается. }
+      { s3: only --show-reasoning is on (--show-step-result is set too, but it
+        does not affect the task) — the task is printed. }
       if StepTaskVisible(False, True, True) then
       begin
         P.PrepareStatic;
-        WriteLn('s3: задание по размышлениям');
+        WriteLn('s3: task by reasoning');
       end;
-      P.BeginStream(FormatStepStatus('s3: задание по размышлениям', 3000, 128000,
+      P.BeginStream(FormatStepStatus('s3: task by reasoning', 3000, 128000,
         MAIN_CTX_TASK));
       P.FeedContent('step three' + #10,
-        FormatStepStatus('s3: задание по размышлениям', 3100, 128000,
+        FormatStepStatus('s3: task by reasoning', 3100, 128000,
           MAIN_CTX_TASK));
-      P.EndStream(FormatStepStatus('s3: задание по размышлениям', 3100, 128000,
+      P.EndStream(FormatStepStatus('s3: task by reasoning', 3100, 128000,
         MAIN_CTX_TASK));
 
-      { aeToolCall: после конца стрима статуса на экране уже нет (EndStream
-        его стёр), поэтому строка вызова печатается с начала чистой строки —
-        без склейки с хвостом статуса. ClearLine приложения приватный, здесь
-        эмулируем его через CR + ESC[K. Затем DrawStatus рисует статус с
-        новыми счётчиками (3.1k → 3.2k), чтобы он не исчезал на время работы
-        инструмента. }
+      { aeToolCall: after the end of the stream the status is no longer on the
+        screen (EndStream erased it), so the call line is printed from the
+        beginning of a clean line — without gluing to the status tail. The
+        application ClearLine is private, here it is emulated with CR + ESC[K.
+        Then DrawStatus draws the status with the new counters (3.1k → 3.2k) so
+        that it does not disappear while the tool runs. }
       P.PrepareStatic;
       Write(#13, #27, '[K');
       WriteLn('[read] task1.md');
-      P.DrawStatus(FormatStepStatus('s3: задание по размышлениям', 3200, 128000,
+      P.DrawStatus(FormatStepStatus('s3: task by reasoning', 3200, 128000,
         MAIN_CTX_TASK));
 
-      { aeToolResult: нарисованный статус стирается, результат встаёт на его
-        место, статус рисуется заново под результатом. }
+      { aeToolResult: the drawn status is erased, the result takes its place,
+        the status is drawn again under the result. }
       P.PrepareStaticOverStatus;
       WriteLn('result text');
-      { Разделитель после вывода инструмента (task1.md). }
+      { Separator after the tool output (task1.md). }
       P.RequestBlankLine;
-      P.DrawStatus(FormatStepStatus('s3: задание по размышлениям', 3300, 128000,
+      P.DrawStatus(FormatStepStatus('s3: task by reasoning', 3300, 128000,
         MAIN_CTX_TASK));
-      { aeSubSessionEnd: последний вариант временного статуса (3.3k) стирается и
-        заменяется done-строкой «s3 done» — счётчики 3.2k/3.3k остаются только в
-        сыром выводе. }
-      P.PersistStatus(FormatStepStatus(StepShortName('s3: задание по размышлениям'),
+      { aeSubSessionEnd: the last variant of the temporary status (3.3k) is
+        erased and replaced by the done line "s3 done" — the counters 3.2k/3.3k
+        remain only in the raw output. }
+      P.PersistStatus(FormatStepStatus(StepShortName('s3: task by reasoning'),
         3300, 128000, MAIN_CTX_TASK) + ' done');
     end
     else if Name = 'tool-gating' then
     begin
-      { Гейтинг вывода инструментов (ToolOutputVisible): строки вызова и
-        результата инструмента печатаются только вместе с размышлениями —
-        --show-reasoning. Сессия роли не играет: в шаге и в основной сессии
-        без флага вывод скрыт, в анализе и в основной сессии с флагом виден
-        (task2.md). Сценарий повторяет ветки aeToolCall/aeShellCommand/
-        aeToolResult: строка статуса временная, её стирает EndStream, а на
-        aeSubSessionEnd PersistDoneStatus закрепляет done-строку с итоговыми
-        счётчиками (у основной сессии из этого сценария закрепления нет —
-        там статус просто стирается). ClearLine/DrawStatus (приватный ClearLine
-        эмулируем через CR + ESC[K) выполняются безусловно — поэтому скрытый
-        вывод не оставляет пустых строк, а видимый встаёт на место стёртого
-        статуса. }
+      { Gating of the tool output (ToolOutputVisible): the tool call and result
+        lines are printed only together with the reasoning — --show-reasoning.
+        The session role plays no part: in a step and in the main session
+        without the flag the output is hidden, in the analysis and in the main
+        session with the flag it is visible (task2.md). The scenario repeats the
+        aeToolCall/aeShellCommand/aeToolResult branches: the status line is
+        temporary, EndStream erases it, and on aeSubSessionEnd PersistDoneStatus
+        fixes a done line with the final counters (the main session from this
+        scenario has no fixing — there the status is simply erased).
+        ClearLine/DrawStatus (the private ClearLine is emulated with
+        CR + ESC[K) run unconditionally — therefore the hidden output leaves no
+        empty lines, and the visible one takes the place of the erased status. }
       P.Prefix := '';
 
-      { s1: под-сессия шага без --show-reasoning — вызов и результат скрыты,
-        на экране остаётся текст шага и done-строка; счётчики статуса
-        (main/sub/total: 4.0k/1.0k → 1.4k/128k) видны в сыром выводе, а в лог
-        попадают только итоговые — из done-строки. }
-      P.BeginStream(FormatStepStatus('s1: скрытый вывод', 1000, 128000,
+      { s1: a step sub-session without --show-reasoning — the call and the result
+        are hidden, the step text and the done line remain on the screen; the
+        status counters (main/sub/total: 4.0k/1.0k → 1.4k/128k) are visible in
+        the raw output, while only the final ones get into the log — from the
+        done line. }
+      P.BeginStream(FormatStepStatus('s1: hidden output', 1000, 128000,
         MAIN_CTX_TOOL));
       P.FeedContent('step one' + #10,
-        FormatStepStatus('s1: скрытый вывод', 1100, 128000, MAIN_CTX_TOOL));
-      P.EndStream(FormatStepStatus('s1: скрытый вывод', 1200, 128000,
+        FormatStepStatus('s1: hidden output', 1100, 128000, MAIN_CTX_TOOL));
+      P.EndStream(FormatStepStatus('s1: hidden output', 1200, 128000,
         MAIN_CTX_TOOL));
       P.PrepareStatic;
       Write(#13, #27, '[K');
       if ToolOutputVisible(False) then
         WriteLn('[read] hidden.md');
-      P.DrawStatus(FormatStepStatus('s1: скрытый вывод', 1300, 128000,
+      P.DrawStatus(FormatStepStatus('s1: hidden output', 1300, 128000,
         MAIN_CTX_TOOL));
       P.PrepareStaticOverStatus;
       if ToolOutputVisible(False) then
         WriteLn('hidden result');
-      P.DrawStatus(FormatStepStatus('s1: скрытый вывод', 1400, 128000,
+      P.DrawStatus(FormatStepStatus('s1: hidden output', 1400, 128000,
         MAIN_CTX_TOOL));
-      { aeSubSessionEnd: временная строка шага заменяется done-строкой «s1». }
-      P.PersistStatus(FormatStepStatus(StepShortName('s1: скрытый вывод'), 1400,
+      { aeSubSessionEnd: the temporary step line is replaced by the done line
+        "s1". }
+      P.PersistStatus(FormatStepStatus(StepShortName('s1: hidden output'), 1400,
         128000, MAIN_CTX_TOOL) + ' done');
 
-      { s2: под-сессия анализа с --show-reasoning — вывод инструментов
-        виден: печатаются строка shell-команды («$ …», ветка
-        aeShellCommand) и результат, каждый на месте стёртого статуса.
-        Строка анализа того же формата, что у шага: main (MAIN_CTX_ANALYSIS),
-        под-сессия анализа, общее окно и два процента. }
+      { s2: an analysis sub-session with --show-reasoning — the tool output is
+        visible: the shell command line ("$ ...", the aeShellCommand branch) and
+        the result are printed, each in place of the erased status. The analysis
+        line has the same format as the step one: main (MAIN_CTX_ANALYSIS), the
+        analysis sub-session, the common window and two percentages. }
       P.BeginStream(FormatAnalysisStatus(0, 128000, MAIN_CTX_ANALYSIS));
       P.FeedContent('analysis line' + #10,
         FormatAnalysisStatus(200, 128000, MAIN_CTX_ANALYSIS));
@@ -329,19 +336,20 @@ begin
       if ToolOutputVisible(True) then
       begin
         WriteLn('shown result');
-        { Разделитель после вывода инструмента (task1.md). }
+        { Separator after the tool output (task1.md). }
         P.RequestBlankLine;
       end;
       P.DrawStatus(FormatAnalysisStatus(500, 128000, MAIN_CTX_ANALYSIS));
-      { aeSubSessionEnd анализа: временный статус заменяется done-строкой
-        «анализ done» с итоговыми счётчиками (main/sub/total из
-        MAIN_CTX_ANALYSIS и 500). }
+      { aeSubSessionEnd of the analysis: the temporary status is replaced by the
+        done line "analysis done" with the final counters (main/sub/total from
+        MAIN_CTX_ANALYSIS and 500). }
       P.PersistStatus(FormatAnalysisStatus(500, 128000, MAIN_CTX_ANALYSIS) +
         ' done');
 
-      { Основная сессия без флагов — вызов и результат тоже скрыты (task2.md:
-        гейтинг одинаков для всех сессий); статус стирается, а не остаётся
-        строкой в логе: закрепление done-строки есть только у под-сессий. }
+      { The main session without flags — the call and the result are hidden too
+        (task2.md: the gating is the same for all sessions); the status is
+        erased instead of staying a line in the log: only sub-sessions fix a
+        done line. }
       P.BeginStream('[main]');
       P.FeedContent('main line' + #10, '[main 1]');
       P.EndStream('[main 2]');
@@ -356,7 +364,8 @@ begin
       P.DrawStatus('[main 4]');
       P.FreezeStatus('');
 
-      { Основная сессия с --show-reasoning — вывод виден, как в анализе. }
+      { The main session with --show-reasoning — the output is visible, as in the
+        analysis. }
       P.BeginStream('[main2]');
       P.FeedContent('main line two' + #10, '[main2 1]');
       P.EndStream('[main2 2]');
@@ -369,7 +378,7 @@ begin
       if ToolOutputVisible(True) then
       begin
         WriteLn('main2 result');
-        { Разделитель после вывода инструмента (task1.md). }
+        { Separator after the tool output (task1.md). }
         P.RequestBlankLine;
       end;
       P.DrawStatus('[main2 4]');
@@ -377,25 +386,25 @@ begin
     end
     else if Name = 'tool-blank' then
     begin
-      { Пустая строка после вывода инструмента (task1.md): результат
-        отделяется от следующего блока информации. Сценарий повторяет ветки
-        aeToolCall/aeToolResult/aeAssistant/aeSubSessionEnd:
-        1) результат инструмента, затем статичный блок (ответ модели) — между
-           ними ровно одна пустая строка (свою пустую строку ответ подавляет
-           по BlankSeparated, второй не появляется);
-        2) два результата инструментов подряд — тоже одна пустая строка;
-        3) результат, затем done-строка (PersistStatus) — пустая строка и перед
-           ней;
-        4) скрытый вывод (ToolOutputVisible = False) пустых строк не
-           добавляет: заказывать разделитель нечему.
-        Регрессия: TStreamPrinter.RequestBlankLine/PrepareStatic/PersistStatus и
-        ветка aeToolResult в TMirmidApp.OnAgentEvent. }
+      { The empty line after the tool output (task1.md): the result is separated
+        from the next block of information. The scenario repeats the
+        aeToolCall/aeToolResult/aeAssistant/aeSubSessionEnd branches:
+        1) a tool result, then a static block (the model answer) — exactly one
+           empty line between them (the answer suppresses its own empty line by
+           BlankSeparated, a second one does not appear);
+        2) two tool results in a row — also one empty line;
+        3) a result, then the done line (PersistStatus) — an empty line before
+           it too;
+        4) hidden output (ToolOutputVisible = False) adds no empty lines: there
+           is nothing to order the separator for.
+        Regression: TStreamPrinter.RequestBlankLine/PrepareStatic/PersistStatus
+        and the aeToolResult branch in TMirmidApp.OnAgentEvent. }
       P.Prefix := '';
       P.BeginStream('[st start]');
       P.FeedContent('answer zero' + #10, '[st 1]');
       P.EndStream('[st 2]');
 
-      { aeToolCall + aeToolResult первого инструмента (вывод виден). }
+      { aeToolCall + aeToolResult of the first tool (the output is visible). }
       P.PrepareStatic;
       Write(#13, #27, '[K');
       WriteLn('[read] a.txt');
@@ -405,15 +414,15 @@ begin
       P.RequestBlankLine;
       P.DrawStatus('[st 4]');
 
-      { aeAssistant: PrepareStatic уже напечатал разделитель, вторая пустая
-        строка не нужна (проверка BlankSeparated). }
+      { aeAssistant: PrepareStatic has already printed the separator, a second
+        empty line is not needed (the BlankSeparated check). }
       P.PrepareStatic;
       if not P.BlankSeparated then
         WriteLn;
       WriteLn('answer one');
 
-      { Второй инструмент: перед строкой вызова разделителя нет — его никто не
-        заказывал. }
+      { The second tool: there is no separator before the call line — nobody
+        ordered it. }
       P.PrepareStatic;
       WriteLn('[read] b.txt');
       P.DrawStatus('[st 5]');
@@ -422,7 +431,7 @@ begin
       P.RequestBlankLine;
       P.DrawStatus('[st 6]');
 
-      { Третий инструмент подряд: между результатами ровно одна пустая строка. }
+      { The third tool in a row: exactly one empty line between the results. }
       P.PrepareStatic;
       WriteLn('[read] c.txt');
       P.DrawStatus('[st 7]');
@@ -431,10 +440,10 @@ begin
       P.RequestBlankLine;
       P.DrawStatus('[st 8]');
 
-      { aeSubSessionEnd: done-строка встаёт под разделителем. }
+      { aeSubSessionEnd: the done line goes under the separator. }
       P.PersistStatus('[st 9 done]');
 
-      { Скрытый вывод: ни строк вызова/результата, ни пустых строк. }
+      { Hidden output: neither call/result lines nor empty lines. }
       P.PrepareStatic;
       Write(#13, #27, '[K');
       P.DrawStatus('[st 10]');
@@ -447,24 +456,24 @@ begin
     end
     else if Name = 'persist-status' then
     begin
-      { Конец хода (task2.md): итоговая строка статуса остаётся на экране.
-        Сценарий повторяет ветку TMirmidApp.KeepContextStatus в потоковом
-        режиме: после EndStream (он стёр временный статус) принтер фиксирует
-        строку с итоговыми счётчиками (PersistStatus), а следующий вывод —
-        приглашение REPL после PrepareStatic — идёт с чистой строки под ней.
-        Два хода подряд: у каждого в логе ровно одна строка статуса, и она
-        стоит под ответом, а не вместо него. Регрессия:
+      { The end of a turn (task2.md): the final status line stays on the screen.
+        The scenario repeats the TMirmidApp.KeepContextStatus branch in streaming
+        mode: after EndStream (it erased the temporary status) the printer fixes
+        the line with the final counters (PersistStatus), and the next output —
+        the REPL prompt after PrepareStatic — goes from a clean line under it.
+        Two turns in a row: each has exactly one status line in the log, and it
+        stands under the answer, not instead of it. Regression:
         TStreamPrinter.PersistStatus. }
       P.Prefix := '||';
       P.BeginStream('[turn 1 start]');
       P.FeedContent('answer one' + #10, '[turn 1 1.0k]');
-      { Незавершённая последняя строка: она станет полной строкой в EndStream,
-        статус под ней — временным. }
+      { The unfinished last line: it becomes a complete line in EndStream, the
+        status under it is temporary. }
       P.FeedContent('answer tail', '[turn 1 2.0k]');
       P.EndStream('[turn 1 3.0k]');
-      { KeepContextStatus (стрим): фиксируем итоговую строку в логе. }
+      { KeepContextStatus (stream): fix the final line in the log. }
       P.PersistStatus('[turn 1 final 2.1k/128k]');
-      { Repl: приглашение под зафиксированной строкой. }
+      { Repl: the prompt under the fixed line. }
       P.PrepareStatic;
       Write('|> ');
       WriteLn;
