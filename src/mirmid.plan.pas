@@ -1,8 +1,8 @@
 unit mirmid.plan;
-{ Модель данных плана для режима планирования: шаги со статусами,
-  JSON-(де)сериализация, разбор ответа модели, человекочитаемый рендер,
-  детерминированный отчёт и подсказки планировщика.
-  Зависимости: SysUtils, fpjson, mirmid.types (без сетевого слоя). }
+{ Plan data model for the planning mode: steps with statuses, JSON
+  (de)serialisation, parsing of the model answer, human-readable rendering,
+  deterministic report and planner prompts.
+  Dependencies: SysUtils, fpjson, mirmid.types (no network layer). }
 
 {$mode objfpc}{$H+}
 
@@ -12,10 +12,10 @@ uses
   SysUtils, fpjson, mirmid.types;
 
 type
-  { Статус шага плана. }
+  { Status of a plan step. }
   TPlanStepStatus = (psPending, psInProgress, psDone, psFailed, psSkipped);
 
-  { Один шаг плана. }
+  { One plan step. }
   TPlanStep = record
     Id: string;
     Description: string;
@@ -23,111 +23,113 @@ type
     Result: string;
   end;
 
-  { Список шагов плана (FPC не позволяет объявлять поле/свойство класса
-    открытым массивом напрямую — нужен именованный тип). }
+  { List of plan steps (FPC does not allow declaring a class field/property as
+    an open array directly - a named type is needed). }
   TPlanSteps = array of TPlanStep;
 
-  { План: упорядоченный список шагов. }
+  { Plan: an ordered list of steps. }
   TPlan = class
   private
     FSteps: TPlanSteps;
   public
     constructor Create;
     property Steps: TPlanSteps read FSteps;
-    { Добавляет шаг с авто-id sN (N = количество шагов + 1) и статусом
-      psPending; возвращает индекс нового шага. }
+    { Adds a step with the auto id sN (N = number of steps + 1) and the status
+      psPending; returns the index of the new step. }
     function AddStep(const ADesc: string): Integer;
-    { Индекс шага по id или -1. }
+    { Index of the step by id, or -1. }
     function FindStep(const AId: string): Integer;
-    { Удаляет шаг по id; False, если шага нет. }
+    { Removes the step by id; False if there is no such step. }
     function RemoveStep(const AId: string): Boolean;
-    { Новый порядок шагов по id; False, если множество id не совпадает
-      с шагами плана (план не меняется). }
+    { New order of the steps by id; False if the set of ids does not match the
+      plan steps (the plan is left unchanged). }
     function Reorder(const AOrder: array of string): Boolean;
-    { Ставит статус и результат шага; False, если шага нет. }
+    { Sets the status and the result of a step; False if there is no such step. }
     function SetStatus(const AId: string; AStatus: TPlanStepStatus; const AResult: string): Boolean;
-    { Индекс первого шага со статусом psPending или -1. }
+    { Index of the first step with the status psPending, or -1. }
     function NextPending: Integer;
-    { Количество шагов с заданным статусом. }
+    { Number of steps with the given status. }
     function CountByStatus(AStatus: TPlanStepStatus): Integer;
-    { Усекает план до AMax шагов (удаляет хвост); возвращает число
-      удалённых шагов (0, если AMax <= 0 или план уже короче AMax). }
+    { Truncates the plan to AMax steps (drops the tail); returns the number of
+      removed steps (0 if AMax <= 0 or the plan is already shorter than AMax). }
     function Truncate(AMax: Integer): Integer;
-    { JSON: объект с массивом steps; у каждого шага id, description, status, result. }
+    { JSON: an object with the steps array; every step has id, description,
+      status, result. }
     function ToJSON: TJSONObject;
-    { Обратный разбор; nil, если невалидно (Err — текст ошибки). }
+    { Parses back; nil if invalid (Err holds the error text). }
     class function FromJSON(D: TJSONData; out Err: string): TPlan;
-    { Человекочитаемый план: по строке на шаг
-      «N. [статус] описание — результат» (результат — только если непустой). }
+    { Human-readable plan: one line per step
+      "N. [status] description - result" (the result only if not empty). }
     function Render: string;
-    { Сводка: «3/5 выполнено, 1 ошибка, 1 пропущено» (только ненулевые
-      категории, порядок: выполнено / ошибка / пропущено). }
+    { Summary: "3/5 done, 1 failed, 1 skipped" (only non-zero categories,
+      order: done / failed / skipped). }
     function Summary: string;
   end;
 
-{ Имя статуса в нотации JSON: pending, in_progress, done, failed, skipped. }
+{ Status name in JSON notation: pending, in_progress, done, failed, skipped. }
 function PlanStatusName(S: TPlanStepStatus): string;
-{ Статус по имени (регистр не важен); False, если имя неизвестно. }
+{ Status by name (case-insensitive); False if the name is unknown. }
 function PlanStatusFromName(const S: string; out St: TPlanStepStatus): Boolean;
 
-{ Первый JSON-объект в тексте (в т.ч. внутри ```json-ограждения и с
-  окружающим текстом); пустая строка, если не найден. }
+{ The first JSON object in the text (also inside a ```json fence and with
+  surrounding text); an empty string if none is found. }
 function ExtractJSONBlock(const S: string): string;
-{ План из ответа модели: ExtractJSONBlock + разбор JSON + FromJSON;
-  nil при ошибке (Err — текст ошибки). }
+{ Plan from the model answer: ExtractJSONBlock + JSON parsing + FromJSON;
+  nil on error (Err holds the error text). }
 function ParsePlanFromText(const S: string; out Err: string): TPlan;
 
-{ Детерминированный отчёт: задача, рендер плана, сводка. }
+{ Deterministic report: task, rendered plan, summary. }
 function BuildPlanReport(const Plan: TPlan; const Task: string): string;
 
-{ Подсказка аналитика: до составления плана изучить задачу и её окружение
-  (только чтение) и вернуть структурированный анализ; сам план не строить.
-  Инструменты при этом доступны по правам сессии — запрет на изменения задаёт
-  подсказка, а не отключение инструментов. }
+{ Analyst prompt: study the task and its environment before building a plan
+  (read-only) and return a structured analysis; do not build the plan itself.
+  The tools stay available according to the session permissions - the no-change
+  rule comes from the prompt, not from disabling tools. }
 const
   PLANNER_ANALYSIS_PROMPT =
-    'Ты — аналитик планировщика. До составления плана изучи задачу и её ' +
-    'окружение и верни предварительный анализ. Работай только на чтение: ' +
-    'просматривай каталоги, читай файлы, ищи по содержимому и, если это ' +
-    'разрешено, выполняй команды только для просмотра (например git status, ' +
-    'git log, git diff); ничего не изменяй. Если задача ссылается на файл ' +
-    '(например, план), обязательно прочитай его. Выясни: 1) в чём суть ' +
-    'задачи и что требуется на самом деле; 2) что уже сделано и какие ' +
-    'файлы, сущности и ограничения относятся к задаче; 3) какие факты нужны ' +
-    'для плана и есть риски; 4) что конкретно предстоит сделать. Опирайся ' +
-    'только на факты из инструментов и не выдумывай. Не составляй ' +
-    'нумерованный план шагов — это сделает планировщик. Отвечай по-русски, ' +
-    'структурировано и по делу.';
+    'You are the planner analyst. Before building a plan, study the task and ' +
+    'its environment and return a preliminary analysis. Work read-only: list ' +
+    'directories, read files, search contents and, if allowed, run commands ' +
+    'for inspection only (for example git status, git log, git diff); do not ' +
+    'change anything. If the task refers to a file (for example a plan), ' +
+    'be sure to read it. Determine: 1) what the task is about and what is ' +
+    'actually required; 2) what has already been done and which files, ' +
+    'entities and constraints are relevant to the task; 3) which facts the ' +
+    'plan needs and what the risks are; 4) what exactly has to be done. Rely ' +
+    'only on facts from the tools and do not invent anything. Do not produce ' +
+    'a numbered plan of steps - the planner does that. Reply in the same ' +
+    'language the user writes in, structured and to the point.';
 
-{ Подсказка планировщика: разбить задачу на атомарные шаги и вернуть
-  только JSON-массив steps (описание каждого шага) без лишнего текста. }
+{ Planner prompt: break the task into atomic steps and return only the JSON
+  array steps (the description of each step) without extra text. }
 const
   PLANNER_SYSTEM_PROMPT =
-    'Ты — планировщик. Разбей задачу на атомарные шаги: каждый шаг — одно ' +
-    'конкретное действие (один вызов инструмента или одна короткая команда), ' +
-    'выполнимое без дополнительных раздумий. Перечисли шаги в порядке ' +
-    'выполнения. Опирайся на переданный предварительный анализ задачи и не ' +
-    'противоречь фактам из него. Верни ТОЛЬКО JSON без пояснений, без ' +
-    'markdown-ограждений и без лишнего текста: ' +
-    '{"steps": [{"description": "..."}]}. ' +
-    'В description — краткое описание шага (до 100 символов); других полей ' +
-    'не добавляй.';
+    'You are the planner. Break the task into atomic steps: every step is one ' +
+    'concrete action (one tool call or one short command) that can be done ' +
+    'without further deliberation. List the steps in execution order. Rely on ' +
+    'the provided preliminary task analysis and do not contradict its facts. ' +
+    'Return ONLY JSON without explanations, without markdown fences and ' +
+    'without extra text: {"steps": [{"description": "..."}]}. ' +
+    'The description is a short description of the step (up to 100 ' +
+    'characters); do not add other fields.';
 
-{ Запрос фазы плана: задача и результаты предварительного анализа (может
-  быть пустым). Модель должна вернуть только JSON-план. }
+{ Plan phase request: the task and the results of the preliminary analysis
+  (may be empty). The model must return only the JSON plan. }
 function BuildPlanPrompt(const Task, Analysis: string): string;
 
-{ Подсказка шага: общая задача, текущий план (отрендеренный), цель
-  текущего шага, инструкция выполнить шаг и вернуть краткий результат. }
+{ Step prompt: the overall task, the current plan (rendered), the goal of the
+  current step, and the instruction to perform the step and return a short
+  result. }
 function BuildStepPrompt(const Task, PlanRender, StepDesc: string): string;
 
-{ Подсказка отчётчика: итоговый ответ по состоянию плана (что сделано,
-  что пропущено, что упало). }
+{ Reporter prompt: the final answer based on the state of the plan (what is
+  done, what is skipped, what failed). }
 const
   REPORT_SYSTEM_PROMPT =
-    'Ты — отчётчик. По состоянию плана дай итоговый ответ по задаче: ' +
-    'что сделано, что пропущено, что упало и каков итог. ' +
-    'Отвечай по-русски, кратко и по делу, без описания процесса.';
+    'You are the reporter. Based on the state of the plan, give the final ' +
+    'answer on the task: what is done, what is skipped, what failed and what ' +
+    'the outcome is. Reply briefly and to the point, in the same language the ' +
+    'user writes in, without describing the process.';
 
 implementation
 
@@ -229,7 +231,7 @@ begin
   SetLength(Found, Length(FSteps));
   for I := 0 to High(Found) do
     Found[I] := False;
-  { Множество id должно совпадать с шагами плана: без дублей и чужих id. }
+  { The set of ids must match the plan steps: no duplicates and no foreign ids. }
   for I := 0 to High(AOrder) do
   begin
     J := FindStep(AOrder[I]);
@@ -316,7 +318,7 @@ begin
   Result.Add('steps', A);
 end;
 
-{ Строка по ключу JSON-объекта; '' — ключа нет или значение null. }
+{ String by the key of a JSON object; '' - the key is missing or the value is null. }
 function JStrLocal(O: TJSONObject; const Key: string): string;
 var
   X: TJSONData;
@@ -348,7 +350,7 @@ begin
   Err := '';
   if (D = nil) or not (D is TJSONObject) then
   begin
-    Err := 'план должен быть JSON-объектом';
+    Err := 'the plan must be a JSON object';
     Exit;
   end;
   O := TJSONObject(D);
@@ -360,13 +362,13 @@ begin
   end;
   if (Item = nil) or not (Item is TJSONArray) then
   begin
-    Err := 'нет массива "steps"';
+    Err := 'no "steps" array';
     Exit;
   end;
   A := TJSONArray(Item);
   if A.Count = 0 then
   begin
-    Err := 'план пуст: нужен минимум один шаг';
+    Err := 'empty plan: at least one step is required';
     Exit;
   end;
   P := TPlan.Create;
@@ -376,7 +378,7 @@ begin
       Item := A.Items[I];
       if not (Item is TJSONObject) then
       begin
-        Err := 'шаг ' + IntToStr(I + 1) + ' должен быть JSON-объектом';
+        Err := 'step ' + IntToStr(I + 1) + ' must be a JSON object';
         P.Free;
         Exit;
       end;
@@ -384,21 +386,21 @@ begin
       Desc := JStrLocal(StepO, 'description');
       if Trim(Desc) = '' then
       begin
-        Err := 'шаг ' + IntToStr(I + 1) + ': пустое "description"';
+        Err := 'step ' + IntToStr(I + 1) + ': empty "description"';
         P.Free;
         Exit;
       end;
-      { id опционален: автоприсваивается sN по порядку шагов. }
+      { id is optional: assigned automatically as sN in the order of the steps. }
       Id := JStrLocal(StepO, 'id');
       if Id = '' then
         Id := 's' + IntToStr(I + 1);
       if P.FindStep(Id) >= 0 then
       begin
-        Err := 'дублирующийся id шага: ' + Id;
+        Err := 'duplicate step id: ' + Id;
         P.Free;
         Exit;
       end;
-      { status опционален: по умолчанию pending, неизвестный — ошибка. }
+      { status is optional: pending by default, an unknown name is an error. }
       StName := JStrLocal(StepO, 'status');
       if StName = '' then
         St := psPending
@@ -406,12 +408,12 @@ begin
       begin
         if not PlanStatusFromName(StName, St) then
         begin
-          Err := 'шаг ' + IntToStr(I + 1) + ': неизвестный статус "' + StName + '"';
+          Err := 'step ' + IntToStr(I + 1) + ': unknown status "' + StName + '"';
           P.Free;
           Exit;
         end;
       end;
-      { result опционален: по умолчанию пустая строка. }
+      { result is optional: an empty string by default. }
       Res := JStrLocal(StepO, 'result');
       Step.Id := Id;
       Step.Description := Desc;
@@ -444,7 +446,7 @@ begin
       Inc(I);
       Continue;
     end;
-    { Кандидат: сбалансированный по скобкам блок, начинающийся с открывающей скобки. }
+    { Candidate: a brace-balanced block that starts with an opening brace. }
     Start := I;
     Depth := 1;
     InStr := False;
@@ -481,7 +483,7 @@ begin
               Result := Block;
               Found := True;
             except
-              { не JSON — ищем следующий кандидат }
+              { not JSON - try the next candidate }
             end;
           end;
         end;
@@ -489,7 +491,7 @@ begin
       Inc(I);
     end;
     if not Found then
-      I := Start + 1; { следующий кандидат — после этой открывающей скобки }
+      I := Start + 1; { the next candidate starts after this opening brace }
   end;
 end;
 
@@ -503,7 +505,7 @@ begin
   Block := ExtractJSONBlock(S);
   if Block = '' then
   begin
-    Err := 'JSON-объект в тексте не найден';
+    Err := 'no JSON object found in the text';
     Exit;
   end;
   D := nil;
@@ -512,7 +514,7 @@ begin
   except
     on E: Exception do
     begin
-      Err := 'ошибка разбора JSON: ' + E.Message;
+      Err := 'JSON parse error: ' + E.Message;
       Exit;
     end;
   end;
@@ -541,24 +543,6 @@ begin
   end;
 end;
 
-{ Русская плюрализация: 1 — One, 2–4 — Few, остальное — Many. }
-function PluralNoun(N: Integer; const One, Few, Many: string): string;
-var
-  M100, M10: Integer;
-begin
-  M100 := N mod 100;
-  M10 := N mod 10;
-  if (M100 >= 11) and (M100 <= 14) then
-    Result := Many
-  else
-    case M10 of
-      1:    Result := One;
-      2..4: Result := Few;
-    else
-      Result := Many;
-    end;
-end;
-
 function TPlan.Summary: string;
 var
   Done, Failed, Skipped, Total: Integer;
@@ -567,12 +551,11 @@ begin
   Done := CountByStatus(psDone);
   Failed := CountByStatus(psFailed);
   Skipped := CountByStatus(psSkipped);
-  Result := IntToStr(Done) + '/' + IntToStr(Total) + ' выполнено';
+  Result := IntToStr(Done) + '/' + IntToStr(Total) + ' done';
   if Failed > 0 then
-    Result := Result + ', ' + IntToStr(Failed) + ' ' +
-              PluralNoun(Failed, 'ошибка', 'ошибки', 'ошибок');
+    Result := Result + ', ' + IntToStr(Failed) + ' failed';
   if Skipped > 0 then
-    Result := Result + ', ' + IntToStr(Skipped) + ' пропущено';
+    Result := Result + ', ' + IntToStr(Skipped) + ' skipped';
 end;
 
 function BuildPlanReport(const Plan: TPlan; const Task: string): string;
@@ -584,10 +567,10 @@ begin
   else
     P := Plan;
   try
-    Result := 'Задача: ' + Task + LineEnding + LineEnding +
-              'План:' + LineEnding +
+    Result := 'Task: ' + Task + LineEnding + LineEnding +
+              'Plan:' + LineEnding +
               P.Render + LineEnding + LineEnding +
-              'Сводка: ' + P.Summary;
+              'Summary: ' + P.Summary;
   finally
     if (P <> nil) and (P <> Plan) then
       P.Free;
@@ -596,24 +579,24 @@ end;
 
 function BuildPlanPrompt(const Task, Analysis: string): string;
 begin
-  Result := 'Задача: ' + Task + LineEnding + LineEnding;
+  Result := 'Task: ' + Task + LineEnding + LineEnding;
   if Trim(Analysis) <> '' then
-    Result := Result + 'Предварительный анализ задачи:' + LineEnding +
+    Result := Result + 'Preliminary task analysis:' + LineEnding +
               Analysis + LineEnding + LineEnding +
-              'Составь план выполнения задачи на основании этого анализа.'
+              'Build a plan for the task based on this analysis.'
   else
-    Result := Result + 'Составь план выполнения задачи.';
-  Result := Result + ' Верни только JSON в формате ' +
+    Result := Result + 'Build a plan for the task.';
+  Result := Result + ' Return only JSON in the format ' +
             '{"steps":[{"description":"..."}]}.';
 end;
 
 function BuildStepPrompt(const Task, PlanRender, StepDesc: string): string;
 begin
-  Result := 'Общая задача: ' + Task + LineEnding + LineEnding +
-            'Текущий план:' + LineEnding + PlanRender + LineEnding + LineEnding +
-            'Цель текущего шага: ' + StepDesc + LineEnding + LineEnding +
-            'Выполни только этот шаг с помощью инструментов и верни краткий ' +
-            'результат (1–3 предложения). Не выполняй другие шаги плана.';
+  Result := 'Overall task: ' + Task + LineEnding + LineEnding +
+            'Current plan:' + LineEnding + PlanRender + LineEnding + LineEnding +
+            'Goal of the current step: ' + StepDesc + LineEnding + LineEnding +
+            'Perform only this step using the tools and return a short ' +
+            'result (1-3 sentences). Do not perform other plan steps.';
 end;
 
 end.

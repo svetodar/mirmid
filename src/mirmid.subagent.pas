@@ -1,9 +1,9 @@
 unit mirmid.subagent;
-{ Инструмент subagent: запускает отдельную агентскую сессию модели со своим
-  контекстом (своя системная подсказка и чистая история сообщений) и тем же
-  набором инструментов, что у родительской сессии. Финальный ответ субагента
-  возвращается как результат инструмента. Сессия субагента сохраняется в файл
-  <база>_sub_<n>.json (по аналогии с основной сессией). }
+{ The subagent tool: runs a separate agent session of the model with its own
+  context (its own system prompt and a clean message history) and the same tool
+  set as the parent session. The final answer of the subagent is returned as
+  the tool result. The subagent session is stored in the file
+  <base>_sub_<n>.json (following the pattern of the main session). }
 
 {$mode objfpc}{$H+}
 
@@ -14,29 +14,29 @@ uses
 
 const
   SUBAGENT_TOOL_NAME = 'subagent';
-  { Максимальная глубина вложенности субагентов (корневая сессия — уровень 0). }
+  { Maximum subagent nesting depth (the root session is level 0). }
   MAX_SUBAGENT_DEPTH = 3;
 
-  { Финальный ответ субагента пуст: модель завершила ход без текста. Частая
-    причина — исчерпанный max_tokens при включённом режиме рассуждений, когда
-    весь бюджет уходит на reasoning. }
+  { The final answer of the subagent is empty: the model finished the turn
+    without text. A frequent cause is an exhausted max_tokens with reasoning
+    enabled, when the whole budget goes to reasoning. }
   SUBAGENT_EMPTY_ANSWER_MSG =
-    'субагент завершил работу без финального текста: ответ модели пуст ' +
-    '(частая причина — исчерпан лимит max_tokens при включённом режиме ' +
-    'рассуждений; увеличьте max_tokens или упростите задание)';
+    'subagent finished without a final text: the model answer is empty ' +
+    '(a frequent cause is an exhausted max_tokens limit with reasoning ' +
+    'enabled; increase max_tokens or simplify the task)';
 
-{ Результат инструмента subagent по финальному тексту сессии. Пустой ответ
-  модели — ошибка: CLI не печатает пустые результаты инструментов, поэтому без
-  этого строка результата субагента молча пропадала бы на экране. }
+{ The subagent tool result derived from the final text of the session. An empty
+  model answer is an error: the CLI does not print empty tool results, so
+  without this the subagent result line would silently vanish from the screen. }
 function SubagentOutcome(const FinalText: string): TToolOutcome;
 
-{ Регистрирует инструмент subagent в реестре. }
+{ Registers the subagent tool in the registry. }
 procedure RegisterSubagentTool(R: TToolRegistry);
 
-{ Полный набор инструментов сессии: встроенные инструменты, subagent и
-  http_request. Набор фильтруется секцией [tools]: выключенный инструмент в
-  реестр не попадает. Используется и родительской сессией, и субагентами —
-  доступность инструментов одинаковая. }
+{ Full session tool set: the built-in tools, subagent and http_request.
+  The set is filtered by the [tools] section: a disabled tool does not get
+  into the registry. It is used both by the parent session and by subagents —
+  the tools are equally available everywhere. }
 procedure RegisterSessionTools(R: TToolRegistry; const Cfg: TMirmidConfig);
 
 implementation
@@ -62,26 +62,26 @@ var
   FinalText, Err: string;
   SubBase, SaveErr: string;
 begin
-  { Гейт в обработчике: ключ subagent в секции [tools]. }
+  { Handler gate: the subagent key in the [tools] section. }
   if not ToolEnabled(Ctx.Cfg, SUBAGENT_TOOL_NAME) then
     Exit(ToolDisabled(SUBAGENT_TOOL_NAME));
   if Ctx.SubAgentDepth >= MAX_SUBAGENT_DEPTH then
-    Exit(ErrResult(Format('превышена глубина вложенности субагентов (максимум %d)',
+    Exit(ErrResult(Format('subagent nesting depth exceeded (maximum %d)',
       [MAX_SUBAGENT_DEPTH])));
 
   Prompt := JStr(A, 'prompt', '');
   if Trim(Prompt) = '' then
-    Exit(ErrResult('не задан prompt'));
+    Exit(ErrResult('prompt is not set'));
 
-  { Свой контекст: своя системная подсказка и чистая история сообщений.
-    Модель, ключи, политики и лимиты наследуются от родительской сессии. }
+  { Own context: its own system prompt and a clean message history. The model,
+    keys, policies and limits are inherited from the parent session. }
   SubCfg := Ctx.Cfg;
   SubCfg.SystemPrompt := SUBAGENT_SYSTEM_PROMPT;
   SubBase := Ctx.SessionBase;
 
-  { Набор инструментов — как у родительской сессии. Если у контекста есть
-    готовый реестр (обычный случай), переиспользуем его: MCP-серверы уже
-    запущены, повторно их поднимать не нужно. }
+  { Tool set as in the parent session. If the context already has a ready
+    registry (the usual case), reuse it: the MCP servers are already running
+    and need not be started again. }
   SubReg := Ctx.Registry;
   OwnReg := SubReg = nil;
   if OwnReg then
@@ -91,9 +91,9 @@ begin
   end;
 
   SubAgent := TAgent.Create(SubCfg, SubReg);
-  { Маршрутизация событий субагента в обработчик родителя: OnEvent — для
-    собственных событий субагента, OnSubAgentEvent — для его вложенных
-    субагентов (рекурсивно). Без этого события просто отбрасывались. }
+  { Routing the subagent events into the parent handler: OnEvent — for the
+    subagent's own events, OnSubAgentEvent — for its nested subagents
+    (recursively). Without this the events were simply dropped. }
   if Assigned(Ctx.OnSubAgentEvent) then
   begin
     SubAgent.OnEvent := Ctx.OnSubAgentEvent;
@@ -101,18 +101,18 @@ begin
   end;
   try
     SubAgent.SubAgentDepth := Ctx.SubAgentDepth + 1;
-    { База имени файла сессии субагента: <база родителя>_sub_<n>. }
+    { Session file base of the subagent: <parent base>_sub_<n>. }
     if SubBase <> '' then
       SubAgent.SessionBase := SubagentSessionId(SessionDir(Ctx.Cfg.WorkDir), SubBase);
-    { Пересобираем системное сообщение без AGENTS.md: в конструкторе Reset
-      выполнялся при глубине 0. }
+    { Rebuild the system message without AGENTS.md: the constructor ran Reset
+      at depth 0. }
     SubAgent.Reset;
     SubAgent.AddUser(Prompt);
     if SubAgent.RunTurn(FinalText, Err) then
       Result := SubagentOutcome(FinalText)
     else
       Result := ErrResult(Err);
-    { Лог сессии субагента (по аналогии с основной сессией). }
+    { Session log of the subagent (same pattern as the main session). }
     if SubAgent.SessionBase <> '' then
       SaveSession(SessionDir(Ctx.Cfg.WorkDir), SubAgent.SessionBase,
         Ctx.Cfg.Model, SubAgent.Messages, nil, SaveErr);
@@ -126,19 +126,19 @@ end;
 procedure RegisterSubagentTool(R: TToolRegistry);
 begin
   R.Add(SUBAGENT_TOOL_NAME,
-    'Запускает отдельную агентскую сессию со своим контекстом и тем же набором инструментов. Возвращает финальный ответ субагента.',
+    'Runs a separate agent session with its own context and the same tool set. Returns the final answer of the subagent.',
     SchemaObject(
-      TJSONObject.Create(['prompt', PropStr('Задание для субагента')]),
+      TJSONObject.Create(['prompt', PropStr('Task for the subagent')]),
       ['prompt']),
     @ToolSubagent);
 end;
 
 procedure RegisterSessionTools(R: TToolRegistry; const Cfg: TMirmidConfig);
 begin
-  { Набор фильтруется секцией [tools]: выключенный инструмент не регистрируется
-    и потому не уходит модели в массиве tools. Обработчики дополнительно
-    проверяют свой ключ (ToolDisabled) — субагенты, шаги плана и MCP собирают
-    собственные представления реестра. }
+  { The set is filtered by the [tools] section: a disabled tool is not
+    registered and therefore never reaches the model in the tools array. The
+    handlers additionally check their own key (ToolDisabled) — subagents, plan
+    steps and MCP build their own views of the registry. }
   R.ApplyToolSwitches(Cfg);
   RegisterBuiltinTools(R);
   RegisterMediaTool(R);

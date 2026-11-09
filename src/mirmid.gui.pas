@@ -1,9 +1,10 @@
 unit mirmid.gui;
-{ Инструменты GUI-автоматизации (этап 1 «глаза»): list_windows, find_window,
-  window_info. На Windows — нативно через WinAPI (EnumWindows, GetWindowTextW,
-  GetClassNameW, GetWindowRect, EnumChildWindows); на Unix — через утилиты
-  xwininfo/xprop (пакет x11-utils) через shell. Инструменты только читают
-  состояние окон: не пишут файлы и не требуют отдельного разрешения. }
+{ GUI automation tools (stage 1, the "eyes"): list_windows, find_window,
+  window_info. On Windows -- natively through the WinAPI (EnumWindows,
+  GetWindowTextW, GetClassNameW, GetWindowRect, EnumChildWindows); on Unix --
+  through the xwininfo/xprop utilities (x11-utils package) via shell. The tools
+  only read the window state: they write no files and need no separate
+  permission. }
 
 {$mode objfpc}{$H+}
 
@@ -17,7 +18,7 @@ const
   FIND_WINDOW_TOOL_NAME  = 'find_window';
   WINDOW_INFO_TOOL_NAME  = 'window_info';
 
-{ Регистрирует инструменты list_windows, find_window, window_info в реестре. }
+{ Registers the list_windows, find_window and window_info tools in the registry. }
 procedure RegisterGuiTools(R: TToolRegistry);
 
 implementation
@@ -26,9 +27,9 @@ uses
   SysUtils, Classes, fpjson, mirmid.util, mirmid.json
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
-{ ------------------------------------------------------------- общий формат }
+{ ------------------------------------------------------- common formatting }
 
-{ Строка окна: hwnd  "заголовок"  [класс]  (x, y)  WxH. }
+{ Window line: hwnd  "title"  [class]  (x, y)  WxH. }
 function FormatWinLine(const HwndStr, Title, Cls: string;
   X, Y, W, H: Integer): string;
 begin
@@ -36,8 +37,8 @@ begin
     IntToStr(X) + ', ' + IntToStr(Y) + ')  ' + IntToStr(W) + 'x' + IntToStr(H);
 end;
 
-{ Совпадает ли подстрока Needle с Hay: Exact — точное совпадение, иначе
-  поиск подстроки. Пустой Needle — не фильтрует (совпадение). }
+{ Does Needle match Hay: Exact -- exact match, otherwise a substring search.
+  An empty Needle does not filter (it matches). }
 function MatchStr(const Needle, Hay: string; Exact: Boolean): Boolean;
 begin
   if Needle = '' then
@@ -47,7 +48,7 @@ begin
   Result := Pos(Needle, Hay) > 0;
 end;
 
-{ Платформенные backend-функции (реализация ниже, в блоке IFDEF). }
+{ Platform backend functions (implemented below, in the IFDEF block). }
 function GuiListWindows(var Lines: TStringList; out Err: string): Boolean; forward;
 function GuiFindWindow(const Title, Cls: string; Exact: Boolean;
   var Lines: TStringList; out Err: string): Boolean; forward;
@@ -58,7 +59,7 @@ function GuiWindowInfo(const HwndStr: string; IncludeChildren: Boolean;
 
 {$IFDEF WINDOWS}
 
-{ Заголовок окна (Unicode → UTF-8). }
+{ Window title (Unicode -> UTF-8). }
 function WinTitle(Wnd: HWND): string;
 var
   Buf: array[0..4095] of WideChar;
@@ -76,7 +77,7 @@ begin
     Result := '';
 end;
 
-{ Класс окна (Unicode → UTF-8). }
+{ Window class (Unicode -> UTF-8). }
 function WinClass(Wnd: HWND): string;
 var
   Buf: array[0..255] of WideChar;
@@ -94,7 +95,7 @@ begin
     Result := '';
 end;
 
-{ Дескриптор окна в шестнадцатеричном виде (0x...), без ведущих нулей. }
+{ Window handle in hexadecimal form (0x...), without leading zeros. }
 function HwndHex(Wnd: HWND): string;
 const
   HexChars = '0123456789abcdef';
@@ -119,7 +120,7 @@ begin
   Result := '0x' + Copy(S, I, MaxInt);
 end;
 
-{ Разбор hwnd: 0x... (hex) или десятичное число. 0 — некорректно. }
+{ Parses hwnd: 0x... (hex) or a decimal number. 0 -- invalid. }
 function ParseHwnd(const S: string): QWord;
 var
   T: string;
@@ -137,7 +138,7 @@ begin
   Result := StrToQWordDef(T, 0);
 end;
 
-{ Строка окна. }
+{ Window line. }
 function WinLine(Wnd: HWND): string;
 var
   R: TRect;
@@ -151,7 +152,7 @@ begin
     R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top);
 end;
 
-{ --- перечисление верхних окон --- }
+{ --- enumerating top-level windows --- }
 
 function EnumTopProc(Wnd: HWND; Param: LPARAM): WINBOOL; stdcall;
 var
@@ -171,7 +172,7 @@ begin
   Result := True;
 end;
 
-{ --- поиск окна по заголовку/классу --- }
+{ --- finding a window by title/class --- }
 
 type
   TFindState = record
@@ -213,7 +214,7 @@ begin
   Result := True;
 end;
 
-{ --- детали окна и дочерние контролы --- }
+{ --- window details and child controls --- }
 
 function EnumChildProc(Wnd: HWND; Param: LPARAM): WINBOOL; stdcall;
 var
@@ -238,13 +239,13 @@ begin
   H := ParseHwnd(HwndStr);
   if H = 0 then
   begin
-    Err := 'некорректный hwnd: ' + HwndStr;
+    Err := 'invalid hwnd: ' + HwndStr;
     Exit(False);
   end;
   Wnd := HWND(H);
   if not IsWindow(Wnd) then
   begin
-    Err := 'окно не найдено: ' + HwndStr;
+    Err := 'window not found: ' + HwndStr;
     Exit(False);
   end;
   R.Left := 0;
@@ -252,9 +253,9 @@ begin
   R.Right := 0;
   R.Bottom := 0;
   GetWindowRect(Wnd, R);
-  Info := 'окно: ' + HwndHex(Wnd) + '  "' + WinTitle(Wnd) + '"' + sLineBreak +
-    'класс: ' + WinClass(Wnd) + sLineBreak +
-    Format('позиция: (%d, %d), размер: %dx%d',
+  Info := 'window: ' + HwndHex(Wnd) + '  "' + WinTitle(Wnd) + '"' + sLineBreak +
+    'class: ' + WinClass(Wnd) + sLineBreak +
+    Format('position: (%d, %d), size: %dx%d',
       [R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top]);
   if IncludeChildren then
   begin
@@ -263,10 +264,10 @@ begin
       EnumChildWindows(Wnd, @EnumChildProc, LPARAM(Children));
       if Children.Count > 0 then
         Info := Info + sLineBreak +
-          Format('дочерних контролов: %d', [Children.Count]) +
+          Format('child controls: %d', [Children.Count]) +
           sLineBreak + Children.Text
       else
-        Info := Info + sLineBreak + 'дочерних контролов: 0';
+        Info := Info + sLineBreak + 'child controls: 0';
     finally
       Children.Free;
     end;
@@ -278,11 +279,11 @@ end;
 { ================================================================== Unix }
 
 const
-  { Таймаут внешних X-утилит, сек. }
+  { Timeout of the external X utilities, sec. }
   X_TIMEOUT = 15;
 
-{ Запускает команду, возвращает stdout+stderr и код выхода. False при ошибке
-  запуска (таймаут/не удалось запустить). }
+{ Runs a command, returns stdout+stderr and the exit code. False on a start
+  failure (timeout/could not start). }
 function RunXCode(const Cmd: string; out Out: string;
   out ExitCode: Integer): Boolean;
 var
@@ -295,7 +296,7 @@ begin
     Out := Err;
 end;
 
-{ Запускает команду, возвращает stdout+stderr (без кода выхода). }
+{ Runs a command, returns stdout+stderr (without the exit code). }
 function RunX(const Cmd: string; out Out: string): Boolean;
 var
   ExitCode: Integer;
@@ -303,7 +304,7 @@ begin
   Result := RunXCode(Cmd, Out, ExitCode);
 end;
 
-{ Утилита доступна в PATH? }
+{ Is the utility available in PATH? }
 function ToolAvailable(const Name: string): Boolean;
 var
   Out: string;
@@ -315,13 +316,13 @@ begin
     Result := Trim(Out) <> '';
 end;
 
-{ X-дисплей доступен? }
+{ Is an X display available? }
 function DisplayAvailable: Boolean;
 begin
   Result := (GetEnvironmentVariable('DISPLAY') <> '');
 end;
 
-{ n-я quoted-строка в S (1-based). Пусто, если такой нет. }
+{ The n-th quoted string in S (1-based). Empty if there is none. }
 function ExtractNthQuoted(const S: string; N: Integer): string;
 var
   Pos, Open, Close: Integer;
@@ -360,7 +361,8 @@ begin
   end;
 end;
 
-{ Геометрия xwininfo: "WxH+X+Y  +X+Y" → W, H (из первого) и абсолютные X, Y. }
+{ xwininfo geometry: "WxH+X+Y  +X+Y" -> W, H (from the first part) and the
+  absolute X, Y. }
 procedure ParseGeometry(const S: string; out X, Y, W, H: Integer);
 var
   L: TStringList;
@@ -403,7 +405,7 @@ type
   end;
   TGuiWinArr = array of TGuiWin;
 
-{ Разбирает строку xwininfo -children:
+{ Parses a xwininfo -children line:
   "     0x400003 ""ibus-xim"": (""i"" ""c"")  2x2+0+0  +0+0". }
 function ParseXwininfoLine(const Line: string; out W: TGuiWin): Boolean;
 var
@@ -453,7 +455,7 @@ begin
   Result := True;
 end;
 
-{ Читает список верхних окон (xwininfo -root -children). }
+{ Reads the list of top-level windows (xwininfo -root -children). }
 function ReadAllWindows(out Wins: TGuiWinArr; out Err: string): Boolean;
 var
   Out: string;
@@ -466,17 +468,17 @@ begin
   SetLength(Wins, 0);
   if not DisplayAvailable then
   begin
-    Err := 'нет X-дисплея (DISPLAY не задан)';
+    Err := 'no X display (DISPLAY is not set)';
     Exit;
   end;
   if not ToolAvailable('xwininfo') then
   begin
-    Err := 'нужна утилита xwininfo (пакет x11-utils)';
+    Err := 'the xwininfo utility is required (x11-utils package)';
     Exit;
   end;
   if not RunX('xwininfo -root -children', Out) then
   begin
-    Err := 'не удалось выполнить xwininfo: ' + Out;
+    Err := 'failed to run xwininfo: ' + Out;
     Exit;
   end;
   L := TStringList.Create;
@@ -523,7 +525,7 @@ begin
   Result := True;
 end;
 
-{ Значение строкового свойства xprop: "PROP(TYPE) = ""value""". }
+{ Value of a string xprop property: "PROP(TYPE) = ""value""". }
 function XpropValue(const Out, Prop: string): string;
 var
   L: TStringList;
@@ -558,7 +560,7 @@ begin
   end;
 end;
 
-{ Класс окна из xprop: WM_CLASS = "instance", "class" → class (или instance). }
+{ Window class from xprop: WM_CLASS = "instance", "class" -> class (or instance). }
 function XpropClass(const Out: string): string;
 var
   L: TStringList;
@@ -587,7 +589,7 @@ begin
   end;
 end;
 
-{ Поле xwininfo: "  Field:  value" → value. }
+{ xwininfo field: "  Field:  value" -> value. }
 function XwininfoField(const Out, Field: string): string;
 var
   L: TStringList;
@@ -626,22 +628,22 @@ begin
   Result := False;
   if not DisplayAvailable then
   begin
-    Err := 'нет X-дисплея (DISPLAY не задан)';
+    Err := 'no X display (DISPLAY is not set)';
     Exit;
   end;
   if not ToolAvailable('xprop') then
   begin
-    Err := 'нужна утилита xprop (пакет x11-utils)';
+    Err := 'the xprop utility is required (x11-utils package)';
     Exit;
   end;
   if not RunXCode('xprop -id ' + HwndStr, Out, ExitCode) then
   begin
-    Err := 'не удалось выполнить xprop: ' + Out;
+    Err := 'failed to run xprop: ' + Out;
     Exit;
   end;
   if ExitCode <> 0 then
   begin
-    Err := 'окно не найдено: ' + HwndStr;
+    Err := 'window not found: ' + HwndStr;
     Exit;
   end;
   Name := XpropValue(Out, '_NET_WM_NAME');
@@ -660,9 +662,9 @@ begin
     W := StrToIntDef(Ws, 0);
     H := StrToIntDef(Hs, 0);
   end;
-  Info := 'окно: ' + HwndStr + '  "' + Name + '"' + sLineBreak +
-    'класс: ' + Cls + sLineBreak +
-    Format('позиция: (%d, %d), размер: %dx%d', [X, Y, W, H]);
+  Info := 'window: ' + HwndStr + '  "' + Name + '"' + sLineBreak +
+    'class: ' + Cls + sLineBreak +
+    Format('position: (%d, %d), size: %dx%d', [X, Y, W, H]);
   if IncludeChildren and ToolAvailable('xwininfo') then
   begin
     Children := TStringList.Create;
@@ -682,10 +684,10 @@ begin
       end;
       if Children.Count > 0 then
         Info := Info + sLineBreak +
-          Format('дочерних контролов: %d', [Children.Count]) +
+          Format('child controls: %d', [Children.Count]) +
           sLineBreak + Children.Text
       else
-        Info := Info + sLineBreak + 'дочерних контролов: 0';
+        Info := Info + sLineBreak + 'child controls: 0';
     finally
       Children.Free;
     end;
@@ -711,8 +713,8 @@ begin
     if not GuiListWindows(Lines, Err) then
       Exit(ErrResult(Err));
     if Lines.Count = 0 then
-      Exit(OkResult('открытых окон не найдено'));
-    Out := Format('открытых окон: %d', [Lines.Count]);
+      Exit(OkResult('no open windows found'));
+    Out := Format('open windows: %d', [Lines.Count]);
     I := 0;
     while (I < Lines.Count) and ((Limit <= 0) or (I < Limit)) do
     begin
@@ -721,7 +723,7 @@ begin
     end;
     if (Limit > 0) and (Lines.Count > Limit) then
       Out := Out + sLineBreak +
-        Format('... и ещё %d (укажите limit, чтобы показать все)',
+        Format('... and %d more (pass limit to show all)',
           [Lines.Count - Limit]);
     Result := OkResult(Out);
   finally
@@ -741,18 +743,18 @@ begin
   Cls := JStr(A, 'class', '');
   Exact := JBool(A, 'exact', False);
   if (Title = '') and (Cls = '') then
-    Exit(ErrResult('задайте title и/или class'));
+    Exit(ErrResult('pass title and/or class'));
   Lines := TStringList.Create;
   try
     if not GuiFindWindow(Title, Cls, Exact, Lines, Err) then
       Exit(ErrResult(Err));
     if Lines.Count = 0 then
-      Exit(OkResult(Format('окно не найдено (title="%s", class="%s")',
+      Exit(OkResult(Format('window not found (title="%s", class="%s")',
         [Title, Cls])));
     if Lines.Count = 1 then
-      Out := 'окно: ' + Lines[0]
+      Out := 'window: ' + Lines[0]
     else
-      Out := Format('найдено окон: %d', [Lines.Count]) + sLineBreak + Lines.Text;
+      Out := Format('windows found: %d', [Lines.Count]) + sLineBreak + Lines.Text;
     Result := OkResult(Out);
   finally
     Lines.Free;
@@ -767,7 +769,7 @@ var
 begin
   HwndStr := Trim(JStr(A, 'hwnd', ''));
   if HwndStr = '' then
-    Exit(ErrResult('не задан hwnd'));
+    Exit(ErrResult('hwnd is not set'));
   IncludeChildren := JBool(A, 'children', True);
   if not GuiWindowInfo(HwndStr, IncludeChildren, Info, Err) then
     Exit(ErrResult(Err));
@@ -779,35 +781,35 @@ end;
 procedure RegisterGuiTools(R: TToolRegistry);
 begin
   R.Add(LIST_WINDOWS_TOOL_NAME,
-    'Перечисляет открытые окна: hwnd, заголовок, класс, позиция (x, y) и размер ' +
-    'WxH. На Windows — нативно (EnumWindows), на Unix — через xwininfo/xprop. ' +
-    'limit — максимум строк (0 — все).',
+    'Lists the open windows: hwnd, title, class, position (x, y) and size ' +
+    'WxH. On Windows -- natively (EnumWindows), on Unix -- via xwininfo/xprop. ' +
+    'limit -- maximum number of lines (0 -- all).',
     SchemaObject(
       TJSONObject.Create([
-        'limit', PropInt('Максимум окон в выводе (0 — все, по умолчанию 0)')]),
+        'limit', PropInt('Maximum windows in the output (0 -- all, the default is 0)')]),
       []),
     @ToolListWindows);
 
   R.Add(FIND_WINDOW_TOOL_NAME,
-    'Находит окно по подстроке заголовка (title) и/или класса (class) и ' +
-    'возвращает его hwnd. exact=true — точное совпадение. Задайте title, class ' +
-    'или оба.',
+    'Finds a window by a title substring (title) and/or a class substring ' +
+    '(class) and returns its hwnd. exact=true -- exact match. Pass title, class ' +
+    'or both.',
     SchemaObject(
       TJSONObject.Create([
-        'title', PropStr('Подстрока заголовка окна'),
-        'class', PropStr('Подстрока класса окна'),
-        'exact', PropBool('Точное совпадение (по умолчанию нет)')]),
+        'title', PropStr('Window title substring'),
+        'class', PropStr('Window class substring'),
+        'exact', PropBool('Exact match (default: no)')]),
       []),
     @ToolFindWindow);
 
   R.Add(WINDOW_INFO_TOOL_NAME,
-    'Детали окна по hwnd: заголовок, класс, позиция, размер и список дочерних ' +
-    'контролов (hwnd, заголовок, класс, позиция, размер). children=false — ' +
-    'без дочерних контролов.',
+    'Window details by hwnd: title, class, position, size and the list of child ' +
+    'controls (hwnd, title, class, position, size). children=false -- without ' +
+    'child controls.',
     SchemaObject(
       TJSONObject.Create([
-        'hwnd', PropStr('Дескриптор окна (0x... или десятичное)'),
-        'children', PropBool('Включать ли дочерние контролы (по умолчанию да)')]),
+        'hwnd', PropStr('Window handle (0x... or decimal)'),
+        'children', PropBool('Include child controls (default: yes)')]),
       ['hwnd']),
     @ToolWindowInfo);
 end;

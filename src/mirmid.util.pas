@@ -1,5 +1,5 @@
 unit mirmid.util;
-{ Прикладные утилиты: пути, файлы, запуск процессов, время. }
+{ Application helpers: paths, files, process launch, time. }
 
 {$mode objfpc}{$H+}
 
@@ -8,182 +8,182 @@ interface
 uses
   SysUtils, Classes;
 
-{ Каталог для временных файлов (с концевым слэшем). }
+{ Temporary files directory (with a trailing slash). }
 function TempDir: string;
-{ Домашний каталог (с концевым слэшем). }
+{ Home directory (with a trailing slash). }
 function HomeDir: string;
-{ Раскрывает «~» и делает путь абсолютным относительно Base. }
+{ Expands "~" and makes the path absolute relative to Base. }
 function ExpPath(const Path, Base: string): string;
-{ Каталог, в котором лежит исполняемый файл (с концевым слэшем). }
+{ Directory where the executable lives (with a trailing slash). }
 function AppDir: string;
 
-{ --- Числа --- }
-{ Настройки формата с десятичной точкой (независимо от локали системы). }
+{ --- Numbers --- }
+{ Format settings with a decimal point (independent of the system locale). }
 function DotFormatSettings: TFormatSettings;
-{ Разбор числа с десятичной точкой: "0.7" и "0,7" дают 0.7 при любой локали.
-  Пустая строка или мусор — Def. }
+{ Parses a number with a decimal point: "0.7" and "0,7" both give 0.7 in any
+  locale. An empty string or garbage - Def. }
 function DotToFloat(const S: string; Def: Double): Double;
-{ Форматирование числа с десятичной точкой ("0.7") при любой локали. }
+{ Formats a number with a decimal point ("0.7") in any locale. }
 function FloatToDotStr(const Value: Double): string;
 
-{ Каталог конфигурации и сессий проекта: <WorkDir>/.mirmid (без концевого слэша). }
+{ Project configuration and sessions directory: <WorkDir>/.mirmid (no trailing slash). }
 function MirmidDir(const WorkDir: string): string;
-{ True, если Path указывает на <WorkDir>/.mirmid или внутрь него. }
+{ True if Path points to <WorkDir>/.mirmid or inside it. }
 function IsMirmidPath(const WorkDir, Path: string): Boolean;
 
-{ Побайтовое чтение/запись текстовых файлов в UTF-8. }
+{ Byte-wise reading/writing of UTF-8 text files. }
 function ReadTextFile(const Path: string; out Text: string; out Err: string): Boolean;
 function WriteTextFile(const Path, Text: string; out Err: string): Boolean;
-{ Дописывает Text в конец файла (создаёт каталог и сам файл при отсутствии). }
+{ Appends Text to the end of the file (creates the directory and the file when missing). }
 function AppendTextFile(const Path, Text: string; out Err: string): Boolean;
-{ Создаёт родительские каталоги для файла. True, если каталог существует. }
+{ Creates the parent directories of a file. True if the directory exists. }
 function EnsureParentDir(const Path: string): Boolean;
 
-{ Список файлов и подкаталогов. Каталоги помечаются концевым «/».
-  При Recursive=True обходит подкаталоги. Список сортируется. }
+{ Lists files and subdirectories. Directories are marked with a trailing "/".
+  With Recursive=True subdirectories are walked. The list is sorted. }
 function ListDir(const Dir: string; Recursive: Boolean;
   out Lines: TStringList; out Err: string): Boolean;
 
-{ Запускает команду оболочки в каталоге WorkDir: на Unix — /bin/bash -lc,
-  на Windows — %COMSPEC% /c. Результат возвращает в Output (stdout+stderr).
-  Возвращает True, если процесс завершился сам (в т.ч. с ненулевым кодом).
-  False — при ошибке запуска/таймауте.
-  MaxOutput > 0 — предел накапливаемого вывода в байтах (0 — без предела);
-  обрезка выполняется по границе символа UTF-8 (TruncateUTF8) после
-  завершения процесса и не меняет Result/ExitCode,
-  TotalBytes — сколько байт реально прочитано из процесса. }
+{ Runs a shell command in WorkDir: /bin/bash -lc on Unix,
+  %COMSPEC% /c on Windows. The result is returned in Output (stdout+stderr).
+  Returns True if the process finished by itself (even with a non-zero code).
+  False on a launch error or a timeout.
+  MaxOutput > 0 - limit of the accumulated output in bytes (0 - no limit);
+  truncation happens at a UTF-8 character boundary (TruncateUTF8) after the
+  process has finished and does not change Result/ExitCode;
+  TotalBytes - how many bytes were actually read from the process. }
 function RunProcess(const Cmd, WorkDir: string; TimeoutSec: Integer;
   out Output: string; out ExitCode: Integer; out Err: string): Boolean; overload;
 function RunProcess(const Cmd, WorkDir: string; TimeoutSec: Integer;
   out Output: string; out ExitCode: Integer; out Err: string;
   MaxOutput: Integer; out TotalBytes: Int64): Boolean; overload;
 
-{ Заполняет список переменных окружения текущего процесса (строки «KEY=VALUE»). }
+{ Fills a list with the environment variables of the current process ("KEY=VALUE" lines). }
 procedure EnvironmentToList(L: TStrings);
 
-{ Монотонные миллисекунды (для таймаутов). }
+{ Monotonic milliseconds (for timeouts). }
 function TicksMs: QWord;
-{ --- Окружение (для системного промпта) --- }
-{ Имя ОС: Windows — по GetVersionEx и номеру сборки из реестра
-  (22000+ — Windows 11); Unix — PRETTY_NAME из /etc/os-release. }
+{ --- Environment (for the system prompt) --- }
+{ OS name: Windows - via GetVersionEx and the build number from the registry
+  (22000+ - Windows 11); Unix - PRETTY_NAME from /etc/os-release. }
 function OsName: string;
-{ Архитектура ЦП (x86_64, arm64, x86, ...). }
+{ CPU architecture (x86_64, arm64, x86, ...). }
 function OsArch: string;
-{ Текущие дата и время в локаленезависимом формате yyyy-mm-dd hh:nn:ss. }
+{ Current date and time in a locale-independent format yyyy-mm-dd hh:nn:ss. }
 function NowStamp: string;
-{ Строка сведений об окружении для системного промпта: ОС, дата, время. }
+{ Environment summary line for the system prompt: OS, date, time. }
 function EnvironmentInfo: string;
-{ Содержимое AGENTS.md из рабочей папки (пустая строка, если файла нет). }
+{ Contents of AGENTS.md from the working directory (empty string if there is no file). }
 function ReadAgentsMd(const WorkDir: string): string;
-{ --- GUI (координаты) --- }
-{ Объявляет процесс DPI-осведомлённым (Windows): без этого система отдаёт
-  координаты и размеры в виртуализованном (масштабированном) виде. На Unix —
-  нет-оп (DPI-виртуализации нет). Вызов идемпотентен. }
+{ --- GUI (coordinates) --- }
+{ Marks the process as DPI-aware (Windows): without it the system returns
+  coordinates and sizes virtualised (scaled). A no-op on Unix (there is no DPI
+  virtualisation there). The call is idempotent. }
 procedure EnsureDpiAware;
 
-{ --- Экран и ANSI-цвета --- }
-{ Яркость терминальных цветов (0..1): палитра консоли Windows ярче, чем у
-  Unix-терминалов, поэтому на Windows цвета приглушаются; на Linux — полная
-  яркость. }
+{ --- Screen and ANSI colors --- }
+{ Brightness of terminal colors (0..1): the Windows console palette is brighter
+  than the palette of Unix terminals, so colors are dimmed on Windows; on Linux -
+  full brightness. }
 const
   {$IFDEF WINDOWS}
   COLOR_BRIGHTNESS = 0.6;
   {$ELSE}
   COLOR_BRIGHTNESS = 1.0;
   {$ENDIF}
-{ True, если файловый дескриптор подключён к терминалу. }
+{ True if the file descriptor is attached to a terminal. }
 function IsTerminal(FD: Integer): Boolean;
-{ True, если в поток FD можно подмешивать ANSI-последовательности: дескриптор
-  подключён к терминалу и терминал их обрабатывает. На Windows при первом
-  обращении включается режим ENABLE_VIRTUAL_TERMINAL_PROCESSING (в conhost он
-  бывает выключен, и тогда ESC-коды печатаются как обычный текст); если
-  включить не удалось — False. Для дескрипторов вне 0..2 — False. }
+{ True if ANSI sequences may be interleaved into stream FD: the descriptor is
+  attached to a terminal and the terminal handles them. On Windows the
+  ENABLE_VIRTUAL_TERMINAL_PROCESSING mode is enabled on the first call (in
+  conhost it may be off, and then ESC codes are printed as plain text); if
+  enabling fails - False. For descriptors outside 0..2 - False. }
 function AnsiEnabled(FD: Integer = 1): Boolean;
-{ Явная инициализация ANSI-вывода (без неё включение сделается лениво при
-  первом обращении к AnsiEnabled/Colored). True — ANSI-коды допустимы. }
+{ Explicit initialisation of ANSI output (without it the enabling will happen
+  lazily on the first AnsiEnabled/Colored call). True - ANSI codes are allowed. }
 function InitConsoleAnsi: Boolean;
-{ True, если цвета разрешены (не задан NO_COLOR) и в поток можно писать ANSI. }
+{ True if colors are allowed (NO_COLOR is not set) and ANSI may be written to the stream. }
 function ColorsEnabled(FD: Integer): Boolean;
-{ Оборачивает Text в ANSI-последовательность цвета Color со сбросом.
-  Вне терминала (или при пустом Color) возвращает Text без кодов. }
+{ Wraps Text into the ANSI color sequence Color with a reset.
+  Outside a terminal (or with an empty Color) returns Text without codes. }
 function Colored(const Color, Text: string; FD: Integer = 1): string;
-{ SGR-код с приглушённой яркостью: цветовые части (30..37, 90..97, 38;5;N,
-  38;2;R;G;B и фоновые 48;...) пересчитываются в 24-битный цвет с умножением
-  компонентов на Brightness; прочие атрибуты (жирный, курсив, подчёркивание,
-  сброс) сохраняются. При Brightness >= 1 код возвращается без изменений. }
+{ SGR code with dimmed brightness: the color parts (30..37, 90..97, 38;5;N,
+  38;2;R;G;B and the background 48;...) are recalculated into a 24-bit color by
+  multiplying the components by Brightness; other attributes (bold, italic,
+  underline, reset) are kept. With Brightness >= 1 the code is returned unchanged. }
 function DimSGR(const SGR: string; Brightness: Double = COLOR_BRIGHTNESS): string;
 
-{ Ширина терминала в колонках для FD (ioctl TIOCGWINSZ; запас — переменная
-  окружения COLUMNS, затем 80). }
+{ Terminal width in columns for FD (ioctl TIOCGWINSZ; fallback - the COLUMNS
+  environment variable, then 80). }
 function TermWidth(FD: Integer = 1): Integer;
-{ Видимая длина строки в колонках: без ANSI-последовательностей. Широкие
-  символы (CJK, эмодзи, полные формы) считаются за 2 колонки, нулевые
-  (связки, вариативные селекторы, диакритика) — за 0. }
+{ Visible length of a string in columns: without ANSI sequences. Wide characters
+  (CJK, emoji, fullwidth forms) count as 2 columns, zero-width ones (joiners,
+  variation selectors, diacritics) - as 0. }
 function VisibleLen(const S: string): Integer;
 
 { --- UTF-8 --- }
-{ Обрезает S до MaxBytes байт, не разрывая многобайтовый символ UTF-8:
-  возвращает самый длинный префикс из целых символов не длиннее MaxBytes.
-  Без этой защиты Copy(S, 1, N) может разрезать символ и породить
-  некорректную UTF-8-строку (HTTP 400 при отправке в API). }
+{ Truncates S to MaxBytes bytes without breaking a multi-byte UTF-8 character:
+  returns the longest prefix of whole characters not longer than MaxBytes.
+  Without this guard Copy(S, 1, N) may cut a character and produce an invalid
+  UTF-8 string (HTTP 400 when sending to the API). }
 function TruncateUTF8(const S: string; MaxBytes: Integer): string;
-{ True, если S — корректная UTF-8-строка (без «битых» байтов). }
+{ True if S is a valid UTF-8 string (no broken bytes). }
 function IsValidUTF8(const S: string): Boolean;
-{ Заменяет некорректные UTF-8-последовательности на U+FFFD, чтобы строка
-  была пригодна для JSON/HTTP. }
+{ Replaces invalid UTF-8 sequences with U+FFFD so that the string is
+  suitable for JSON/HTTP. }
 function SanitizeUTF8(const S: string): string;
 
-{ --- Сокращение многострочного текста --- }
-{ Отступ маркера «…» от начала строки (в пробелах): маркер отделяет части
-  вывода инструмента, а не выглядит его первой строкой (task1.md) — для
-  отступа 8 троеточие печатается с 9-й позиции. }
+{ --- Shortening multi-line text --- }
+{ Indent of the "..." marker from the start of the line (in spaces): the marker
+  separates the parts of tool output and must not look like its first line
+  (task1.md) - with indent 8 the ellipsis is printed from position 9. }
 const
   SHORTEN_ELLIPSIS_INDENT = 8;
-{ Сокращает S до MaxLines строк за счёт середины: остаются первые
-  (MaxLines - 1) div 2 строк, маркер «…» (с отступом SHORTEN_ELLIPSIS_INDENT)
-  и остаток строк снизу (при чётном лимите снизу на одну строку больше).
-  Для MaxLines = 9 это 4 + «…» + 4.
-  MaxLines = 1 — только «…»; MaxLines = 2 — «…» + последняя строка.
-  MaxLines <= 0 (0 и отрицательные — «без лимита») — S возвращается как есть;
-  S короче лимита — тоже как есть. Переводы строк сохраняются
-  (CRLF/LF исходного текста), завершающий перевод не добавляется. }
+{ Shortens S to MaxLines lines by cutting the middle: the first
+  (MaxLines - 1) div 2 lines stay, then the "..." marker (indented by
+  SHORTEN_ELLIPSIS_INDENT) and the tail lines below (with an even limit the
+  bottom keeps one line more). For MaxLines = 9 that is 4 + "..." + 4.
+  MaxLines = 1 - only "..."; MaxLines = 2 - "..." + the last line.
+  MaxLines <= 0 (0 and negative mean "no limit") - S is returned as is;
+  S shorter than the limit - also as is. Line breaks are preserved
+  (CRLF/LF of the source text), no trailing break is added. }
 function ShortenLinesMiddle(const S: string; MaxLines: Integer): string;
-{ Убирает пустые строки в начале и в конце текста (task1.md: вывод
-  инструмента перед обрезкой по лимиту строк должен начинаться и заканчиваться
-  содержимым, иначе лимит тратится на пустые строки, а на экране остаются
-  лишние пустые строки). Пустой считается строка из одних пробелов/табуляций;
-  внутренние пустые строки сохраняются. Стиль перевода строк исходного текста
-  (CRLF/LF) сохраняется, завершающий перевод не добавляется: текст из одних
-  пустых строк даёт '' (печатать нечего). }
+{ Removes blank lines at the start and at the end of the text (task1.md: tool
+  output must start and end with content before the line limit is applied,
+  otherwise the limit is spent on blank lines and extra blank lines remain on
+  the screen). A line of only spaces/tabs counts as blank; inner blank lines
+  are kept. The line break style of the source text (CRLF/LF) is preserved, no
+  trailing break is added: text of blank lines only gives an empty string
+  (nothing to print). }
 function TrimBlankLines(const S: string): string;
 
-{ --- Перенос длинных строк --- }
-{ Функция измерения видимой ширины строки (например, VisibleLen для чистого
-  текста или VisibleLen(RenderMarkdown(...)) для размеченного). }
+{ --- Wrapping long lines --- }
+{ Visible width measuring function (for example VisibleLen for plain text or
+  VisibleLen(RenderMarkdown(...)) for marked-up text). }
 type
   TTextMeasure = function(const S: string): Integer of object;
-  { Разрешён ли разрыв перед пробелом (Prefix — текст до пробела). nil —
-    разрешён любой пробел. }
+{ Whether a break before a space is allowed (Prefix - the text before the
+    space). nil - any space is allowed. }
   TBreakAllowed = function(const Prefix: string): Boolean of object;
 
-{ Переносит строку S по словам так, чтобы каждый фрагмент был уже Width
-  колонок по Measure. Разрыв делается по пробелу, сам пробел отбрасывается;
-  знаки препинания остаются при предыдущем слове. Слово длиннее строки
-  разрывается принудительно. Ведущие пробелы строки (отступ) сохраняются
-  в первом фрагменте. BreakAllowed (необязательно) отсеивает разрывы внутри
-  разметки (например, внутри **жирного**). Возвращает список фрагментов
-  (минимум один). }
+{ Wraps line S by words so that every fragment is narrower than Width columns
+  according to Measure. The break is made at a space and the space itself is
+  dropped; punctuation stays with the previous word. A word longer than the
+  line is broken forcibly. Leading spaces of the line (the indent) are kept in
+  the first fragment. BreakAllowed (optional) filters out breaks inside markup
+  (for example inside **bold**). Returns the list of fragments
+  (at least one). }
 function WrapText(const S: string; Width: Integer; Measure: TTextMeasure;
   BreakAllowed: TBreakAllowed = nil): TStringList;
 
 { --- Diff --- }
-{ Генерирует unified diff между двумя списками строк.
-  OldLines — исходные строки, NewLines — новые строки.
-  OldName/NewName — имена для заголовка (например, "a/file" и "b/file").
-  OldStartLine — 1-базированный номер первой строки OldLines в файле
-    (по умолчанию 1).
-  Context — количество контекстных строк вокруг изменений (по умолчанию 3).
-  Возвращает строку с unified diff; пустая строка, если списки идентичны. }
+{ Generates a unified diff between two line lists.
+  OldLines - the original lines, NewLines - the new lines.
+  OldName/NewName - names for the header (for example "a/file" and "b/file").
+  OldStartLine - 1-based number of the first line of OldLines in the file
+    (1 by default).
+  Context - number of context lines around the changes (3 by default).
+  Returns a string with the unified diff; an empty string if the lists match. }
 function MakeUnifiedDiff(const OldLines, NewLines: TStringList;
   const OldName, NewName: string; OldStartLine: Integer = 1;
   Context: Integer = 3): string;
@@ -220,18 +220,18 @@ begin
     try
       F();
     except
-      { нет функции или вызов запрещён — работаем как есть }
+      { no such function or the call is forbidden - work as is }
     end;
 end;
 {$ELSE}
 begin
-  { На Unix DPI-виртуализации нет — ничего делать не нужно. }
+  { On Unix there is no DPI virtualisation - nothing to do. }
 end;
 {$ENDIF}
 
 function TempDir: string;
 begin
-  { GetTempDir учитывает TMPDIR/TEMP/TMP и возвращает путь с концевым слэшем. }
+  { GetTempDir honours TMPDIR/TEMP/TMP and returns a path with a trailing slash. }
   Result := GetTempDir;
 end;
 
@@ -245,7 +245,7 @@ begin
   Result := IncludeTrailingPathDelimiter(ExtractFileDir(ParamStr(0)));
 end;
 
-{ --- Числа --- }
+{ --- Numbers --- }
 
 function DotFormatSettings: TFormatSettings;
 begin
@@ -261,7 +261,7 @@ begin
   T := Trim(S);
   if T = '' then
     Exit(Def);
-  { Принимаем и запятую: конфиг мог быть сохранён в локали с запятой. }
+  { Accept a comma too: the config may have been saved in a comma locale. }
   T := StringReplace(T, ',', '.', [rfReplaceAll]);
   Result := StrToFloatDef(T, Def, DotFormatSettings);
 end;
@@ -297,7 +297,7 @@ begin
   {$ENDIF}
 end;
 
-{ True, если путь абсолютный на текущей платформе. }
+{ True if the path is absolute on the current platform. }
 function PathIsAbsolute(const P: string): Boolean;
 begin
   Result := False;
@@ -324,15 +324,15 @@ begin
   Result := ExpandFileName(P);
 end;
 
-{ Собирает окружение текущего процесса в список «KEY=VALUE». }
+{ Collects the environment of the current process into a "KEY=VALUE" list. }
 procedure EnvironmentToList(L: TStrings);
 {$IFDEF WINDOWS}
 var
   P, Q: PWideChar;
   S: WideString;
 begin
-  { Берём Unicode-версию: DefaultSystemCodePage = UTF-8, поэтому строки
-    окружения должны быть в UTF-8 (не в ANSI/OEM-кодировке). }
+  { Take the Unicode version: DefaultSystemCodePage = UTF-8, so the environment
+    strings must be UTF-8 (not ANSI/OEM encoded). }
   P := GetEnvironmentStringsW;
   if P = nil then
     Exit;
@@ -395,7 +395,7 @@ begin
   Result := False;
   if not EnsureParentDir(Path) then
   begin
-    Err := 'не удалось создать каталог для ' + Path;
+    Err := 'cannot create directory for ' + Path;
     Exit;
   end;
   B := Text;
@@ -426,11 +426,11 @@ begin
     Exit(True);
   if not EnsureParentDir(Path) then
   begin
-    Err := 'не удалось создать каталог для ' + Path;
+    Err := 'cannot create directory for ' + Path;
     Exit;
   end;
   try
-    { fmOpenWrite не создаёт файл — поэтому при отсутствии создаём его явно. }
+    { fmOpenWrite does not create the file - create it explicitly when missing. }
     if FileExists(Path) then
       F := TFileStream.Create(Path, fmOpenWrite)
     else
@@ -494,7 +494,7 @@ begin
   Lines.Duplicates := dupIgnore;
   if not DirectoryExists(Dir) then
   begin
-    Err := 'каталог не найден: ' + Dir;
+    Err := 'directory not found: ' + Dir;
     Exit(False);
   end;
   try
@@ -511,18 +511,18 @@ end;
 
 {$IFDEF UNIX}
 type
-  { Отсоединяет дочерний процесс от управляющего терминала: OnForkEvent
-    вызывается в потомке после fork и до exec. Без этого интерактивные
-    команды (sudo, ssh, редакторы) открывают /dev/tty, печатают приглашение
-    прямо в терминал и блокируются на чтении — инструмент shell «зависает»
-    до срабатывания таймаута (а при нулевом таймауте — навсегда). }
+  { Detaches the child process from the controlling terminal: OnForkEvent is
+    called in the child after fork and before exec. Without it interactive
+    commands (sudo, ssh, editors) open /dev/tty, print the prompt straight
+    into the terminal and block on reading - the shell tool hangs
+    until the timeout (and with a zero timeout - forever). }
   TDetachFromTerminal = class
     procedure OnFork(Sender: TObject);
   end;
 
 procedure TDetachFromTerminal.OnFork(Sender: TObject);
 begin
-  { Новая сессия: управляющий терминал не наследуется. }
+  { New session: the controlling terminal is not inherited. }
   FpSetsid;
 end;
 {$ENDIF}
@@ -559,11 +559,11 @@ var
       if N <= 0 then
         Break;
       Inc(TotalBytes, N);
-      { Предел накопления: лишние байты всё равно вычитываем из канала
-        (иначе процесс заблокируется на заполненном pipe), но в Output
-        не добавляем. Держим запас в 3 байта (максимальная длина символа
-        UTF-8 минус один), чтобы финальная обрезка TruncateUTF8 могла
-        отступить от границы к ведущему байту последнего символа. }
+      { Accumulation limit: extra bytes are still drained from the pipe
+        (otherwise the process blocks on a full pipe) but not appended to
+        Output. Keep a reserve of 3 bytes (the maximum length of a UTF-8
+        character minus one) so that the final TruncateUTF8 call can step
+        back from the boundary to the leading byte of the last character. }
       if MaxOutput > 0 then
       begin
         Room := MaxOutput + 3 - Length(Output);
@@ -616,12 +616,12 @@ begin
     except
       on E: Exception do
       begin
-        Err := 'не удалось запустить процесс: ' + E.Message;
+        Err := 'cannot start process: ' + E.Message;
         Exit;
       end;
     end;
-    { Закрываем свою половину stdin-канала: команды, читающие stdin,
-      получают EOF, а не ждут ввод до срабатывания таймаута. }
+    { Close our half of the stdin pipe: commands reading stdin get EOF
+      instead of waiting for input until the timeout. }
     P.CloseInput;
     Deadline := TicksMs + QWord(TimeoutSec) * 1000;
     while True do
@@ -638,15 +638,15 @@ begin
       Sleep(15);
     end;
     Drain;
-    { Обрезаем собранный вывод по границе символа UTF-8 — только теперь,
-      когда процесс уже завершён (или остановлен по таймауту): Copy по
-      байту мог бы разрезать многобайтовый символ. Ни флаг Result, ни код
-      возврата ExitCode обрезка не меняет. }
+    { Truncate the collected output at a UTF-8 character boundary - only now,
+      when the process has already finished (or was stopped by the timeout):
+      a byte-wise Copy could cut a multi-byte character. Neither the Result
+      flag nor the ExitCode is changed by the truncation. }
     if MaxOutput > 0 then
       Output := TruncateUTF8(Output, MaxOutput);
     if TimedOut then
     begin
-      Err := Format('превышено время выполнения команды (%d c)', [TimeoutSec]);
+      Err := Format('command timed out (%d s)', [TimeoutSec]);
       Output := Output + sLineBreak + '[mirmid] ' + Err;
       Exit;
     end;
@@ -664,10 +664,10 @@ function TicksMs: QWord;
 begin
   Result := GetTickCount64;
 end;
-{ --- Окружение (для системного промпта) --- }
+{ --- Environment (for the system prompt) --- }
 
 {$IFDEF WINDOWS}
-{ Номер сборки Windows из реестра (0, если недоступен). }
+{ Windows build number from the registry (0 if unavailable). }
 function WindowsBuildNumber: Integer;
 var
   K: HKEY;
@@ -696,8 +696,8 @@ function OsName: string;
 var
   B: Integer;
 begin
-  { GetVersionEx на современных Windows ненадёжен (возвращает 6.0 для
-    8/10/11), поэтому опираемся на номер сборки из реестра. }
+  { GetVersionEx is unreliable on modern Windows (it returns 6.0 for
+     8/10/11), so rely on the build number from the registry. }
   B := WindowsBuildNumber;
   if B >= 22000 then
     Result := 'Windows 11'
@@ -745,7 +745,7 @@ end;
 function OsArch: string;
 {$IFDEF WINDOWS}
 const
-  { Значения архитектур, отсутствующие в юните Windows этой сборки FPC. }
+  { Architecture values missing in the Windows unit of this FPC build. }
   PROC_ARCH_AMD64 = 9;
   PROC_ARCH_IA64  = 6;
   PROC_ARCH_ARM64 = 14;
@@ -776,7 +776,7 @@ end;
 function NowStamp: string;
 var
   D: TDateTime;
-  { Две цифры с ведущим нулём: Format('%02d') в FPC дополняет пробелом. }
+  { Two digits with a leading zero: FPC pads Format output with a space. }
   function Pad2(V: Integer): string;
   begin
     if V < 10 then
@@ -786,16 +786,16 @@ var
   end;
 begin
   D := Now;
-  { Ручное форматирование: FormatDateTime зависит от разделителей локали. }
+  { Manual formatting: FormatDateTime depends on locale separators. }
   Result := IntToStr(YearOf(D)) + '-' + Pad2(MonthOf(D)) + '-' + Pad2(DayOf(D)) +
             ' ' + Pad2(HourOf(D)) + ':' + Pad2(MinuteOf(D)) + ':' + Pad2(SecondOf(D));
 end;
 
 function EnvironmentInfo: string;
 begin
-  Result := 'Окружение: ОС ' + OsName + ' (' + OsArch + '); ' +
-            'дата ' + Copy(NowStamp, 1, 10) + '; ' +
-            'время ' + Copy(NowStamp, 12, 8);
+  Result := 'Environment: OS ' + OsName + ' (' + OsArch + '); ' +
+            'date ' + Copy(NowStamp, 1, 10) + '; ' +
+            'time ' + Copy(NowStamp, 12, 8);
 end;
 function ReadAgentsMd(const WorkDir: string): string;
 var
@@ -813,10 +813,10 @@ end;
 var
   FColorsAllowed: Boolean;
   FAnsiChecked: Boolean;
-  { По индексу дескриптора (0..2): можно ли писать ANSI-последовательности. }
+  { By descriptor index (0..2): whether ANSI sequences may be written. }
   FAnsiOK: array[0..2] of Boolean;
 
-{ RGB базовой 16-цветной палитры (xterm). }
+{ RGB of the basic 16-color palette (xterm). }
 const
   BASIC_RGB: array[0..15, 0..2] of Byte = (
     (0, 0, 0),       (195, 5, 5),   (5, 195, 5),   (195, 195, 5),
@@ -824,11 +824,11 @@ const
     (75, 75, 75),    (255, 5, 5),   (5, 255, 5),   (255, 255, 5),
     (5, 5, 255),     (255, 5, 255), (5, 255, 255), (255, 255, 255));
 
-{ Шаги компонента в кубе 6x6x6 (индексы 16..231). }
+{ Component steps in the 6x6x6 cube (indices 16..231). }
   CUBE_STEP: array[0..5] of Byte = (0, 95, 135, 175, 215, 255);
 
-{ RGB-компоненты цвета 256-цветной палитры по индексу N (0..255):
-  0..15 — базовая палитра, 16..231 — куб 6x6x6, 232..255 — серый градиент. }
+{ RGB components of a 256-color palette entry by index N (0..255):
+   0..15 - the basic palette, 16..231 - the 6x6x6 cube, 232..255 - the gray gradient. }
 function PaletteRGB(N: Integer; out R, G, B: Byte): Boolean;
 begin
   if (N < 0) or (N > 255) then
@@ -855,8 +855,8 @@ begin
   Result := True;
 end;
 
-{ Индекс базовой 16-цветной палитры по SGR-коду переднего цвета
-  (30..37 — тёмные, 90..97 — яркие); -1, если код не базовый цвет. }
+{ Index of the basic 16-color palette by an SGR foreground code
+  (30..37 - dark, 90..97 - bright); -1 if the code is not a basic color. }
 function BasicColorIndex(const P: string): Integer;
 begin
   Result := -1;
@@ -876,7 +876,7 @@ var
   N, Idx: Integer;
   P: string;
 
-  { Компонент цвета, умноженный на Brightness (0..255). }
+  { Color component multiplied by Brightness (0..255). }
   function Scale(C: Byte): Byte;
   var
     V: LongInt;
@@ -889,7 +889,7 @@ var
     Result := Byte(V);
   end;
 
-  { 24-битный SGR-код с приглушёнными компонентами. }
+  { 24-bit SGR code with dimmed components. }
   function ScaledColor(const Prefix: string; R, G, B: Byte): string;
   begin
     Result := Prefix + ';2;' + IntToStr(Scale(R)) + ';' +
@@ -938,7 +938,7 @@ begin
           Inc(I, 5);
         end
         else
-          { Нераспознанный 38/48 — пропускаем как есть. }
+          { Unrecognised 38/48 - pass it through as is. }
           Inc(I);
       end
       else
@@ -952,7 +952,7 @@ begin
   end;
 end;
 {$IFDEF WINDOWS}
-{ Дескриптор стандартного потока: 0 — ввод, 2 — ошибки, иначе вывод. }
+{ Standard stream handle: 0 - input, 2 - errors, otherwise output. }
 function StdHandleFor(FD: Integer): THandle;
 begin
   case FD of
@@ -972,10 +972,10 @@ begin
   Result := (H <> 0) and (H <> INVALID_HANDLE_VALUE) and (GetConsoleMode(H, Mode) <> False);
 end;
 
-{ True, если консоль обработает ESC-последовательности в этом потоке. Если
-  ENABLE_VIRTUAL_TERMINAL_PROCESSING не выставлен, включаем его сами — иначе
-  ANSI-коды печатаются как обычный текст (в буфере видно «←[38;5;101m»).
-  False — поток не консоль (файл, канал) или включить режим не удалось. }
+{ True if the console will handle ESC sequences in this stream. If
+  ENABLE_VIRTUAL_TERMINAL_PROCESSING is not set, enable it ourselves - otherwise
+  ANSI codes are printed as plain text (the buffer shows a raw escape sequence).
+  False - the stream is not a console (file, pipe) or enabling the mode failed. }
 function ConsoleAnsiSupported(FD: Integer): Boolean;
 var
   H: THandle;
@@ -999,7 +999,7 @@ begin
   Result := (isatty(FD) <> 0);
 end;
 
-{ На Unix VT-режим включать не нужно — терминал всегда разбирает ANSI. }
+{ On Unix the VT mode need not be enabled - the terminal always parses ANSI. }
 function ConsoleAnsiSupported(FD: Integer): Boolean;
 begin
   Result := IsTerminal(FD);
@@ -1014,7 +1014,7 @@ begin
     Exit(False);
   if not FAnsiChecked then
   begin
-    { Ленивая инициализация: режим консоли проверяется/включается один раз. }
+    { Lazy initialisation: the console mode is checked/enabled once. }
     FAnsiOK[0] := IsTerminal(0);
     for I := 1 to 2 do
       FAnsiOK[I] := ConsoleAnsiSupported(I);
@@ -1037,12 +1037,12 @@ function Colored(const Color, Text: string; FD: Integer = 1): string;
 begin
   if (Color = '') or not ColorsEnabled(FD) then
     Exit(Text);
-  { Цвет приглушается платформенной яркостью (COLOR_BRIGHTNESS). }
+  { The color is dimmed by the platform brightness (COLOR_BRIGHTNESS). }
   Result := #27 + '[' + DimSGR(Color) + 'm' + Text + #27 + '[0m';
 end;
 
 {$IFDEF WINDOWS}
-{ Ширина окна консоли (GetConsoleScreenBufferInfo); запас — COLUMNS, затем 80. }
+{ Console window width (GetConsoleScreenBufferInfo); fallback - COLUMNS, then 80. }
 function TermWidth(FD: Integer = 1): Integer;
 var
   H: THandle;
@@ -1074,11 +1074,11 @@ type
   end;
 
 const
-  TIOCGWINSZ = $5413;   { запрос размера терминала (Linux) }
+  TIOCGWINSZ = $5413;   { terminal size query (Linux) }
 
 function ioctl(fd: Integer; request: LongInt; arg: Pointer): Integer; cdecl; external 'c';
 
-{ Ширина терминала в колонках. }
+{ Terminal width in columns. }
 function TermWidth(FD: Integer = 1): Integer;
 var
   WS: TWinsize;
@@ -1093,13 +1093,13 @@ begin
 end;
 {$ENDIF}
 
-{ True, если кодовая точка нулевая по ширине: связки (ZWJ/ZWNJ),
-  вариативные селекторы, комбинируемая диакритика, модификаторы тона
-  кожи, невидимые форматные символы. }
+{ True if the code point is zero-width: joiners (ZWJ/ZWNJ),
+  variation selectors, combining diacritics, skin tone modifiers,
+  invisible format characters. }
 function IsZeroWidthCP(CP: Integer): Boolean;
 begin
   Result :=
-    ((CP >= $0300) and (CP <= $036F)) or  { комбинируемая диакритика }
+    ((CP >= $0300) and (CP <= $036F)) or  { combining diacritics }
     ((CP >= $0483) and (CP <= $0489)) or
     ((CP >= $0591) and (CP <= $05BD)) or
     ((CP >= $0610) and (CP <= $061A)) or
@@ -1107,42 +1107,42 @@ begin
     ((CP >= $0670) and (CP <= $0670)) or
     ((CP >= $06D6) and (CP <= $06DC)) or
     ((CP >= $0900) and (CP <= $0902)) or
-    ((CP >= $1100) and (CP <= $115F)) or  { хангыль: комбинируемые части }
-    ((CP >= $1F3FB) and (CP <= $1F3FF)) or  { тон кожи }
+    ((CP >= $1100) and (CP <= $115F)) or  { Hangul: combining parts }
+    ((CP >= $1F3FB) and (CP <= $1F3FF)) or  { skin tone }
     ((CP >= $200B) and (CP <= $200F)) or  { ZWSP/ZWNJ/ZWJ/LRM/RLM }
     ((CP >= $202A) and (CP <= $202E)) or
     ((CP >= $2060) and (CP <= $206F)) or
-    ((CP >= $FE00) and (CP <= $FE0F)) or  { вариативные селекторы }
+    ((CP >= $FE00) and (CP <= $FE0F)) or  { variation selectors }
     (CP = $FEFF) or
     ((CP >= $E0100) and (CP <= $E01EF));
 end;
 
-{ True, если кодовая точка широкая (2 колонки в терминале): CJK, полные
-  формы, а также символы и эмодзи, которые терминалы рисуют широкими. }
+{ True if the code point is wide (2 columns in a terminal): CJK, fullwidth
+  forms, plus symbols and emoji that terminals draw wide. }
 function IsWideCP(CP: Integer): Boolean;
 begin
   Result :=
-    ((CP >= $1100) and (CP <= $115F)) or    { хангыль: джамо }
-    ((CP >= $2E80) and (CP <= $2FFF)) or    { CJK-радикалы, символы }
+    ((CP >= $1100) and (CP <= $115F)) or    { Hangul: jamo }
+    ((CP >= $2E80) and (CP <= $2FFF)) or    { CJK radicals, symbols }
     ((CP >= $3000) and (CP <= $303E)) or
-    ((CP >= $3041) and (CP <= $33FF)) or    { хирагана, катакана, CJK }
+    ((CP >= $3041) and (CP <= $33FF)) or    { hiragana, katakana, CJK }
     ((CP >= $3400) and (CP <= $4DBF)) or    { CJK ext A }
     ((CP >= $4E00) and (CP <= $9FFF)) or    { CJK unified }
-    ((CP >= $A000) and (CP <= $A4CF)) or    { и }
-    ((CP >= $A960) and (CP <= $A97F)) or    { хангыль ext A }
-    ((CP >= $AC00) and (CP <= $D7A3)) or    { хангыль: слоговые }
+    ((CP >= $A000) and (CP <= $A4CF)) or    { Yi }
+    ((CP >= $A960) and (CP <= $A97F)) or    { Hangul ext A }
+    ((CP >= $AC00) and (CP <= $D7A3)) or    { Hangul: syllables }
     ((CP >= $F900) and (CP <= $FAFF)) or    { CJK compat }
-    ((CP >= $FF00) and (CP <= $FF60)) or    { полные формы }
-    ((CP >= $FFE0) and (CP <= $FFFD)) or    { полные пунктуация }
+    ((CP >= $FF00) and (CP <= $FF60)) or    { fullwidth forms }
+    ((CP >= $FFE0) and (CP <= $FFFD)) or    { fullwidth punctuation }
     ((CP >= $20000) and (CP <= $3FFFD)) or  { CJK ext B+ }
-    { Символы и эмодзи: на практике рисуются в 2 колонки. }
-    ((CP >= $2600) and (CP <= $27BF)) or    { символы, dingbats (✅) }
+    { Symbols and emoji: in practice they are drawn in 2 columns. }
+    ((CP >= $2600) and (CP <= $27BF)) or    { symbols, dingbats }
     ((CP >= $2900) and (CP <= $29FF)) or
     ((CP >= $2B00) and (CP <= $2BFF)) or
-    ((CP >= $1F000) and (CP <= $1FAFF));    { эмодзи и доп. символы }
+    ((CP >= $1F000) and (CP <= $1FAFF));    { emoji and extra symbols }
 end;
 
-{ Видимая длина строки в колонках: без ANSI-последовательностей. }
+{ Visible length of a string in columns: without ANSI sequences. }
 function VisibleLen(const S: string): Integer;
 var
   I, J, N, CP, Len: Integer;
@@ -1154,9 +1154,9 @@ begin
   begin
     if S[I] = #27 then
     begin
-      { Пропускаем ANSI-последовательность: ESC, введущий байт
-        ($3C..$3F, $5B..$5F), параметрные ($30..$3F) и промежуточные
-        ($20..$2F) байты — до конечного байта ($40..$7E). }
+      { Skip the ANSI sequence: ESC, the lead byte ($3C..$3F, $5B..$5F),
+        the parameter ($30..$3F) and intermediate ($20..$2F) bytes - up to
+        the final byte ($40..$7E). }
       Inc(I);
       if (I <= N) and ((Ord(S[I]) in [$3C..$3F]) or (Ord(S[I]) in [$5B..$5F])) then
         Inc(I);
@@ -1172,13 +1172,13 @@ begin
     end
     else if (Ord(S[I]) and $C0) <> $C0 then
     begin
-      { Байт продолжения без стартового — считаем за один символ. }
+      { A continuation byte without a lead byte - count it as one character. }
       Inc(Result);
       Inc(I);
     end
     else
     begin
-      { Декодируем кодовую точку UTF-8. }
+      { Decode the UTF-8 code point. }
       CP := Ord(S[I]);
       if CP < $E0 then
       begin
@@ -1197,7 +1197,7 @@ begin
       end;
       if I + Len - 1 > N then
       begin
-        { Обрыв последовательности — считаем за один символ. }
+        { Truncated sequence - count it as one character. }
         Inc(Result);
         Inc(I);
         Continue;
@@ -1213,10 +1213,10 @@ begin
   end;
 end;
 
-{ Переносит строку по словам: последний пробел, перед которым фрагмент ещё
-  влезает в Width, становится точкой разрыва; сам пробел не попадает ни в
-  предыдущий, ни в следующий фрагмент. Если пробелов нет (или ни один не
-  подходит) — принудительный разрыв по наибольшему влезающему префиксу. }
+{ Wraps a line by words: the last space before which the fragment still fits
+  into Width becomes the break point; the space itself goes into neither the
+  previous nor the next fragment. If there are no spaces (or none fits) -
+  a forced break at the largest fitting prefix. }
 function WrapText(const S: string; Width: Integer; Measure: TTextMeasure;
   BreakAllowed: TBreakAllowed): TStringList;
 var
@@ -1233,8 +1233,8 @@ begin
   begin
     if First then
     begin
-      { Ведущие пробелы строки (отступ) сохраняем — они принадлежат
-        первому слову. Строка из одних пробелов — пустая строка. }
+      { Keep the leading spaces of the line (the indent) - they belong to
+        the first word. A line of only spaces is an empty line. }
       if TrimLeft(Rem) = '' then
       begin
         Result.Add('');
@@ -1242,7 +1242,7 @@ begin
       end;
     end
     else
-      { Фрагмент после разрыва не должен начинаться с пробела. }
+      { A fragment after a break must not start with a space. }
       while (Rem <> '') and (Rem[1] = ' ') do
         Delete(Rem, 1, 1);
     if Rem = '' then
@@ -1252,15 +1252,15 @@ begin
       Result.Add(Rem);
       Break;
     end;
-    { Точки разрыва — пробелы. Для первого фрагмента ведущие пробелы
-      (отступ) точками разрыва не являются: они остаются при первом слове. }
+    { Break points are spaces. For the first fragment the leading spaces
+      (the indent) are not break points: they stay with the first word. }
     IStart := 1;
     if First then
       while (IStart <= Length(Rem)) and (Rem[IStart] = ' ') do
         Inc(IStart);
-    { Последний пробел, перед которым фрагмент ещё влезает и разрыв в этой
-      точке разрешён. Проверяем все пробелы (без раннего выхода): видимая
-      ширина не всегда монотонна из-за закрывающей разметки. }
+    { The last space before which the fragment still fits and where a break
+      is allowed. Check every space (no early exit): the visible width is not
+      always monotonic because of closing markup. }
     BestP := 0;
     for I := IStart to Length(Rem) do
       if Rem[I] = ' ' then
@@ -1276,12 +1276,12 @@ begin
       Rem := Copy(Rem, BestP + 1, MaxInt);
     end
     else if BestP = 1 then
-      Rem := Copy(Rem, 2, MaxInt)   { ведущий пробел — отбросить }
+      Rem := Copy(Rem, 2, MaxInt)   { leading space - drop it }
     else
     begin
-      { Безопасного пробела нет: наибольший префикс, влезающий в строку.
-        Разрыв внутри разметки возможен, но сохраняется главное — фрагмент
-        не шире строки (иначе частичную строку нельзя перерисовать). }
+      { No safe space: the largest prefix that fits into the line. The break
+        may land inside markup, but the main thing is kept - the fragment is
+        not wider than the line (otherwise a partial line cannot be redrawn). }
       L := 0;
       for I := 1 to Length(Rem) do
       begin
@@ -1292,9 +1292,9 @@ begin
           Break;
       end;
       if L = 0 then
-        L := 1;   { хотя бы один символ, иначе зацикливание }
+        L := 1;   { at least one character, otherwise an endless loop }
       if First and (L < IStart) then
-        L := IStart;   { отступ не терять: хотя бы до первого слова }
+        L := IStart;   { do not lose the indent: at least up to the first word }
       Result.Add(Copy(Rem, 1, L));
       Rem := Copy(Rem, L + 1, MaxInt);
     end;
@@ -1304,8 +1304,8 @@ begin
     Result.Add('');
 end;
 
-{ Число байтов в UTF-8-последовательности по ведущему байту; 1 — для
-  ASCII и для некорректного ведущего байта. }
+{ Number of bytes in a UTF-8 sequence by its lead byte; 1 - for
+  ASCII and for an invalid lead byte. }
 function UTF8SeqLenByLead(Lead: Byte): Integer;
 begin
   if Lead < $80 then
@@ -1340,7 +1340,7 @@ begin
   for J := 1 to N - 1 do
     if (Byte(S[I + J]) and $C0) <> $80 then
       Exit;
-  { Отсеиваем перегруженные последовательности и суррогаты. }
+  { Filter out overlong sequences and surrogates. }
   if N = 2 then
     Result := B >= $C2
   else if N = 3 then
@@ -1360,8 +1360,8 @@ begin
     Exit('');
   if Length(S) <= MaxBytes then
     Exit(S);
-  { Байт MaxBytes может быть продолжением многобайтового символа:
-    отступаем к его ведущему байту. }
+  { Byte MaxBytes may be a continuation of a multi-byte character:
+    step back to its lead byte. }
   I := MaxBytes;
   while (I >= 1) and ((Byte(S[I]) and $C0) = $80) do
     Dec(I);
@@ -1412,7 +1412,7 @@ begin
     end
     else
     begin
-      Result := Result + #$EF#$BF#$BD;   { U+FFFD вместо «битого» байта }
+      Result := Result + #$EF#$BF#$BD;   { U+FFFD instead of the broken byte }
       Inc(I);
     end;
   end;
@@ -1428,17 +1428,17 @@ begin
     Exit(S);
   Lines := TStringList.Create;
   try
-    { Text делит по CRLF/LF/CR; завершающий перевод строки не порождает
-      лишнюю пустую строку. }
+    { Text splits at CRLF/LF/CR; a trailing line break does not produce
+      an extra empty line. }
     Lines.Text := S;
     if Lines.Count <= MaxLines then
       Exit(S);
-    { В N строк результата входят N - 1 строка содержимого и маркер «…»;
-      при чётном N на одну строку больше оставляем снизу (конец вывода
-      обычно важнее). Для N = 9 получается 4 + «…» + 4. }
+    { The N result lines consist of N - 1 content lines and the "..." marker;
+      with an even N one line more is kept at the bottom (the end of the output
+      is usually more important). For N = 9 that gives 4 + "..." + 4. }
     Head := (MaxLines - 1) div 2;
     Tail := (MaxLines - 1) - Head;
-    { Сохраняем стиль перевода строки исходного текста. }
+    { Keep the line break style of the source text. }
     if Pos(#13#10, S) > 0 then
       Sep := #13#10
     else if Pos(#10, S) > 0 then
@@ -1449,9 +1449,9 @@ begin
     Result := '';
     for I := 0 to Head - 1 do
       Result := Result + Lines[I] + Sep;
-    { Маркер сокращения печатается с отступом (SHORTEN_ELLIPSIS_INDENT):
-      иначе троеточие стоит вплотную к началу строки и читается как первая
-      строка вывода, а не как разделитель его частей (task1.md). }
+    { The truncation marker is printed with an indent (SHORTEN_ELLIPSIS_INDENT):
+      otherwise the ellipsis sits flush with the start of the line and reads as
+      the first line of the output instead of a separator (task1.md). }
     Result := Result + StringOfChar(' ', SHORTEN_ELLIPSIS_INDENT) + '…' + Sep;
     for I := Lines.Count - Tail to Lines.Count - 1 do
       Result := Result + Lines[I] + Sep;
@@ -1472,19 +1472,19 @@ begin
     Exit('');
   Lines := TStringList.Create;
   try
-    { Text делит по CRLF/LF/CR; завершающий перевод строки не порождает
-      лишнюю пустую строку. }
+    { Text splits at CRLF/LF/CR; a trailing line break does not produce
+      an extra empty line. }
     Lines.Text := S;
     First := 0;
     while (First < Lines.Count) and (Trim(Lines[First]) = '') do
       Inc(First);
-    { Весь текст из пустых строк — печатать нечего. }
+    { The whole text is blank lines - nothing to print. }
     if First >= Lines.Count then
       Exit('');
     Last := Lines.Count - 1;
     while (Last > First) and (Trim(Lines[Last]) = '') do
       Dec(Last);
-    { Сохраняем стиль перевода строки исходного текста. }
+    { Keep the line break style of the source text. }
     if Pos(#13#10, S) > 0 then
       Sep := #13#10
     else if Pos(#10, S) > 0 then
@@ -1506,7 +1506,7 @@ function MakeUnifiedDiff(const OldLines, NewLines: TStringList;
   const OldName, NewName: string; OldStartLine: Integer = 1;
   Context: Integer = 3): string;
 const
-  { Предел размера таблицы LCS: 8 млн ячеек (~32 МБ) — примерно 0,3 с. }
+  { LCS table size limit: 8 million cells (~32 MB) - about 0.3 s. }
   LCS_MAX_CELLS = 8 * 1000 * 1000;
 var
   N, M: Integer;
@@ -1531,10 +1531,10 @@ begin
   if (N = 0) and (M = 0) then
     Exit('');
 
-  { Отсекаем общий префикс и суффикс: обычная правка затрагивает один участок,
-    и LCS достаточно считать для «середины». Без отсечения таблица строится по
-    всему файлу (N*M ячеек): 10k строк — 400 МБ и секунды, 50k строк —
-    практическое зависание правки. }
+  { Cut off the common prefix and suffix: a normal edit touches one place, and
+    the LCS is enough for the "middle". Without cutting, the table is built for
+    the whole file (N*M cells): 10k lines - 400 MB and seconds, 50k lines -
+    an edit that practically hangs. }
   Prefix := 0;
   while (Prefix < N) and (Prefix < M) and
         (OldLines[Prefix] = NewLines[Prefix]) do
@@ -1557,19 +1557,19 @@ begin
     N := OldMid.Count;
     M := NewMid.Count;
 
-    { Совпали целиком — изменений нет. }
+    { Fully equal - no changes. }
     if (N = 0) and (M = 0) then
       Exit('');
 
-    { Если одна из сторон пуста или середина слишком велика (правка переписала
-      почти весь файл), LCS не считаем — отдаём её сплошной заменой. }
+    { If one side is empty or the middle is too large (the edit rewrote
+      almost the whole file), do not compute the LCS - return it as a full replacement. }
     Cells := Int64(N) * Int64(M);
     NoLcs := (N = 0) or (M = 0) or (Cells > LCS_MAX_CELLS);
 
     if not NoLcs then
     begin
-      { Таблица LCS: LCS[i,j] = длина наибольшей общей подпоследовательности
-        OldMid[i..N-1] и NewMid[j..M-1]. }
+      { LCS table: LCS[i,j] = length of the longest common subsequence
+        of OldMid[i..N-1] and NewMid[j..M-1]. }
       SetLength(LCS, N + 1, M + 1);
       for I := N - 1 downto 0 do
         for J := M - 1 downto 0 do
@@ -1582,8 +1582,8 @@ begin
               LCS[I, J] := LCS[I, J + 1];
     end;
 
-    { Список операций (' ' — совпадение, '-' — удалено из Old,
-      '+' — добавлено из New) по всему файлу: префикс, середина, суффикс. }
+    { List of operations (' ' - match, '-' - removed from Old,
+      '+' - added from New) for the whole file: prefix, middle, suffix. }
     for I := 1 to Prefix do
       Ops.Add(' ');
 
@@ -1625,15 +1625,15 @@ begin
     for I := 1 to Suffix do
       Ops.Add(' ');
 
-    { Нет изменений — пустой diff. }
+    { No changes - an empty diff. }
     I := 0;
     while (I < Ops.Count) and (Ops[I] = ' ') do
       Inc(I);
     if I = Ops.Count then
       Exit('');
 
-    { Формируем unified diff. Строки копим в TStringList: склейка
-      S := S + … на каждой строке файла даёт квадратичный объём копирования. }
+    { Build the unified diff. Accumulate lines in a TStringList: gluing
+      S := S + ... on every line of the file gives quadratic copying volume. }
     if OldName <> '' then
       DiffLines.Add('--- ' + OldName);
     if NewName <> '' then
@@ -1648,25 +1648,25 @@ begin
         Continue;
       end;
 
-      { Начало блока изменений; расширяем влево контекстом. }
+      { Start of the change block; extend it to the left with context. }
       HunkStart := I;
       while (HunkStart > 0) and (Ops[HunkStart - 1] = ' ') and
             (I - HunkStart < Context) do
         Dec(HunkStart);
 
 
-      { Конец блока изменений. }
+      { End of the change block. }
       ChangeEnd := I;
       while (ChangeEnd < Ops.Count) and (Ops[ChangeEnd] <> ' ') do
         Inc(ChangeEnd);
       HunkEnd := ChangeEnd;
 
-      { Расширяем вправо контекстом (отсчёт от конца блока изменений). }
+      { Extend to the right with context (counted from the end of the change block). }
       while (HunkEnd < Ops.Count) and (Ops[HunkEnd] = ' ') and
             (HunkEnd - ChangeEnd < Context) do
         Inc(HunkEnd);
 
-      { Номера строк на момент начала ханка (0-базированные индексы). }
+      { Line numbers at the start of the hunk (0-based indices). }
       OldLineNum := 0;
       NewLineNum := 0;
       for J := 0 to HunkStart - 1 do
@@ -1677,7 +1677,7 @@ begin
           Inc(NewLineNum);
       end;
 
-      { Число строк в ханке. }
+      { Number of lines in the hunk. }
       OldCount := 0;
       NewCount := 0;
       for J := HunkStart to HunkEnd - 1 do
@@ -1688,7 +1688,7 @@ begin
           Inc(NewCount);
       end;
 
-      { Заголовок ханка: @@ -old_start,old_count +new_start,new_count @@ }
+      { Hunk header: @@ -old_start,old_count +new_start,new_count @@ }
       OldStart := OldLineNum + OldStartLine;
       NewStart := NewLineNum + OldStartLine;
       if OldCount = 0 then
@@ -1699,7 +1699,7 @@ begin
       DiffLines.Add('@@ -' + IntToStr(OldStart) + ',' + IntToStr(OldCount) +
         ' +' + IntToStr(NewStart) + ',' + IntToStr(NewCount) + ' @@');
 
-      { Тело ханка. }
+      { Hunk body. }
       for J := HunkStart to HunkEnd - 1 do
       begin
         Line := Ops[J];

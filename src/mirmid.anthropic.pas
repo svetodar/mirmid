@@ -1,6 +1,6 @@
 unit mirmid.anthropic;
-{ Клиент Anthropic Messages API (POST /v1/messages).
-  Поддерживает обычный и streaming (SSE) режимы, tools, system prompt. }
+{ Anthropic Messages API client (POST /v1/messages).
+  Supports the regular and the streaming (SSE) mode, tools, system prompt. }
 
 {$mode objfpc}{$H+}
 
@@ -9,42 +9,42 @@ interface
 uses
   SysUtils, Classes, fpjson, mirmid.types, mirmid.tools;
 const
-  { Версия API Anthropic (заголовок anthropic-version). }
+  { Anthropic API version (anthropic-version header). }
   ANTHROPIC_API_VERSION = '2023-06-01';
 
 type
-  { Тип блока контента в ответе Anthropic. }
-  { Модель запроса к Anthropic Messages API (POST /v1/messages).
-    Соответствует документации: https://docs.anthropic.com/en/api/messages }
+  { Content block type in an Anthropic response. }
+  { Model of a request to the Anthropic Messages API (POST /v1/messages).
+    Follows the documentation: https://docs.anthropic.com/en/api/messages }
   TAnthropicRequest = record
-    Model: string;              { required: идентификатор модели, напр. "claude-sonnet-4-20250514" }
-    Messages: TMessages;        { required: массив сообщений (role + content) }
-    MaxTokens: Integer;         { required: максимальное число токенов в ответе }
-    System: string;             { optional: системный промпт }
-    Stream: Boolean;            { optional: true — SSE-поток }
-    Temperature: Double;        { optional: 0..1, 0 — не отправляется }
-    TopP: Double;               { optional: 0..1, 0 — не отправляется }
-    TopK: Integer;              { optional: 0 — не отправляется }
-    StopSequences: array of string; { optional: последовательности остановки }
-    Tools: TJSONArray;          { optional: схемы инструментов (nil — нет) }
-    ToolChoice: TJSONObject;    { optional: объект type ("auto"|"any"|"tool") и name }
-    Metadata: TJSONObject;      { optional: объект с полем user_id }
+    Model: string;              { required: model id, e.g. "claude-sonnet-4-20250514" }
+    Messages: TMessages;        { required: message array (role + content) }
+    MaxTokens: Integer;         { required: maximum number of tokens in the answer }
+    System: string;             { optional: system prompt }
+    Stream: Boolean;            { optional: true — SSE stream }
+    Temperature: Double;        { optional: 0..1, 0 — not sent }
+    TopP: Double;               { optional: 0..1, 0 — not sent }
+    TopK: Integer;              { optional: 0 — not sent }
+    StopSequences: array of string; { optional: stop sequences }
+    Tools: TJSONArray;          { optional: tool schemas (nil — none) }
+    ToolChoice: TJSONObject;    { optional: object with type ("auto"|"any"|"tool") and name }
+    Metadata: TJSONObject;      { optional: object with a user_id field }
   end;
 
   TAnthropicBlockType = (abtText, abtToolUse, abtThinking, abtUnknown);
 
-  { Один блок контента в ответе. }
+  { A single content block in the response. }
   TAnthropicContentBlock = record
     BlockType: TAnthropicBlockType;
-    Text: string;           { abtText: текст }
-    ToolId: string;         { abtToolUse: id вызова }
-    ToolName: string;       { abtToolUse: имя инструмента }
-    ToolInput: string;      { abtToolUse: JSON-аргументы (сырая строка) }
-    Thinking: string;       { abtThinking: текст рассуждения }
-    Signature: string;      { abtThinking: подпись (extended thinking) }
+    Text: string;           { abtText: text }
+    ToolId: string;         { abtToolUse: call id }
+    ToolName: string;       { abtToolUse: tool name }
+    ToolInput: string;      { abtToolUse: JSON arguments (raw string) }
+    Thinking: string;       { abtThinking: reasoning text }
+    Signature: string;      { abtThinking: signature (extended thinking) }
   end;
 
-  { Учёт токенов (usage) в ответе Anthropic. }
+  { Token usage in an Anthropic response. }
   TAnthropicUsage = record
     InputTokens: Integer;              { input_tokens }
     OutputTokens: Integer;             { output_tokens }
@@ -52,47 +52,47 @@ type
     CacheReadInputTokens: Integer;     { cache_read_input_tokens }
   end;
 
-  { Ответ Anthropic Messages API (не-стримовый режим).
-    Соответствует: https://docs.anthropic.com/en/api/messages }
+  { Anthropic Messages API response (non-streaming mode).
+    Follows: https://docs.anthropic.com/en/api/messages }
   TAnthropicResponse = record
     Id: string;             { "msg_..." }
-    MsgType: string;          { всегда "message" }
-    Role: string;           { всегда "assistant" }
+    MsgType: string;          { always "message" }
+    Role: string;           { always "assistant" }
     Model: string;
     Content: array of TAnthropicContentBlock;
     StopReason: string;     { "end_turn" | "max_tokens" | "stop_sequence" | "tool_use" }
-    StopSequence: string;   { фактическая stop-последовательность (если stop_reason="stop_sequence") }
+    StopSequence: string;   { actual stop sequence (when stop_reason="stop_sequence") }
     Usage: TAnthropicUsage;
-    ServiceTier: string;    { "standard" | "priority" (если задано) }
+    ServiceTier: string;    { "standard" | "priority" (when set) }
   end;
-  { Ошибка Anthropic API: тип, сообщение, HTTP-статус и признак повторности.
-    Формат ответа: type "error" и объект error с полями type и message. }
+  { Anthropic API error: type, message, HTTP status and the retryable flag.
+    Response format: type "error" and an error object with the fields type and message. }
   TAnthropicError = record
     ErrorType: string;    { "authentication_error" | "rate_limit_error" | "api_error" | ... }
-    Message: string;      { человекочитаемое сообщение }
-    StatusCode: Integer;  { HTTP-статус (401, 429, 500, ...); 0 — не удалось соединиться }
-    Retryable: Boolean;   { True для 429 и 5xx — запрос можно повторить }
+    Message: string;      { human-readable message }
+    StatusCode: Integer;  { HTTP status (401, 429, 500, ...); 0 — could not connect }
+    Retryable: Boolean;   { True for 429 and 5xx — the request may be retried }
   end;
-  { Список ошибок валидации запроса. }
+  { List of request validation errors. }
   TAnthropicValidationErrors = array of string;
 
-  { Middleware-валидатор входных параметров запроса к /v1/messages.
-    Вызывается клиентом до отправки HTTP-запроса и отклоняет некорректные
-    запросы (400 invalid_request_error), не обращаясь к сети. }
+  { Middleware validator of the request parameters of /v1/messages.
+    Called by the client before the HTTP request is sent and rejects invalid
+    requests (400 invalid_request_error) without touching the network. }
   TAnthropicValidator = class
   public
-    { Проверяет обязательные поля и диапазоны параметров. Возврат True —
-      запрос валиден; иначе Errors содержит список ошибок. }
+    { Checks the required fields and the parameter ranges. Returns True when
+      the request is valid; otherwise Errors holds the list of errors. }
     function Validate(const Req: TAnthropicRequest;
       out Errors: TAnthropicValidationErrors): Boolean;
-    { Человекочитаемое сообщение по списку ошибок (через «; »). }
+    { Human-readable message for a list of errors (joined with "; "). }
     class function JoinErrors(const Errors: TAnthropicValidationErrors): string;
   end;
 
-  { Дельта стрима Anthropic: часть текста или tool_use-аргументов. }
+  { Anthropic stream delta: a piece of text or of tool_use arguments. }
   TAnthropicDeltaHandler = procedure(const TextDelta, ToolInputDelta: string) of object;
 
-  { Аккумулятор SSE-потока Anthropic. Собирает content-блоки, stop_reason, usage. }
+  { Accumulator of the Anthropic SSE stream. Collects content blocks, stop_reason, usage. }
   TAnthropicSSEAccumulator = class
   private
     FBlocks: array of TAnthropicContentBlock;
@@ -111,65 +111,65 @@ type
     procedure Reset;
     property Done: Boolean read FDone;
     property OnDelta: TAnthropicDeltaHandler read FOnDelta write FOnDelta;
-    { Принимает фрагмент SSE-потока. Возврат False — поток завершён. }
+    { Accepts a fragment of the SSE stream. Returns False when the stream is done. }
     function FeedChunk(const Chunk: RawByteString): Boolean;
     function Flush: Boolean;
     function FeedLine(const Line: string): Boolean;
     procedure Collect(out Resp: TAnthropicResponse);
   end;
 
-  { Клиент Anthropic Messages API. }
+  { Anthropic Messages API client. }
   TAnthropicClient = class
   private
     FApiKey: string;
-    FBaseUrl: string;       { по умолчанию https://api.anthropic.com }
-    FRequestTimeout: Integer; { мс; общий таймаут HTTP-запроса }
-    FConnectTimeout: Integer; { мс; таймаут соединения }
+    FBaseUrl: string;       { https://api.anthropic.com by default }
+    FRequestTimeout: Integer; { ms; overall HTTP request timeout }
+    FConnectTimeout: Integer; { ms; connect timeout }
     FAcc: TAnthropicSSEAccumulator;
     FValidator: TAnthropicValidator;
   public
     constructor Create(const AApiKey, ABaseUrl: string);
     destructor Destroy; override;
-    { Один запрос к Anthropic Messages API (обычный режим). }
+    { A single request to the Anthropic Messages API (regular mode). }
     function SendMessages(const Req: TAnthropicRequest;
       out Resp: TAnthropicResponse; out Err: string;
       out ErrJson: TJSONData): Boolean;
-    { Запрос в потоковом режиме (SSE). }
+    { Request in the streaming mode (SSE). }
     function SendMessagesStream(const Req: TAnthropicRequest;
       const OnDelta: TAnthropicDeltaHandler;
       out Resp: TAnthropicResponse; out Err: string;
       out ErrJson: TJSONData): Boolean;
-    { Принять фрагмент SSE-потока. Возврат False — получен message_stop. }
+    { Accept a fragment of the SSE stream. Returns False once message_stop arrived. }
     function SSEChunk(const Chunk: RawByteString): Boolean;
-    { Middleware: валидация входных параметров до отправки HTTP-запроса.
-      Возврат False — запрос отклонён, Err/ErrJson заполнены (400). }
+    { Middleware: validation of the input parameters before the HTTP request is
+      sent. Returns False when the request is rejected, Err/ErrJson are filled (400). }
     function ValidateRequest(const Req: TAnthropicRequest;
       out Err: string; out ErrJson: TJSONData): Boolean;
     property Accumulator: TAnthropicSSEAccumulator read FAcc;
   end;
 
-{ Создаёт запрос с разумными значениями по умолчанию. }
+{ Creates a request with sensible defaults. }
 function MakeAnthropicRequest(const AModel: string; const AMsgs: TMessages;
   AMaxTokens: Integer): TAnthropicRequest;
 
-{ Формирует JSON-тело запроса к /v1/messages из модели TAnthropicRequest. }
+{ Builds the JSON body of a request to /v1/messages from the TAnthropicRequest model. }
 function BuildRequestJson(const Req: TAnthropicRequest): TJSONData;
 
-{ Разбирает JSON-ответ Anthropic в TAnthropicResponse. }
+{ Parses an Anthropic JSON response into TAnthropicResponse. }
 function ParseResponse(const D: TJSONData): TAnthropicResponse;
 
-{ Склеивает все text-блоки ответа в одну строку. }
+{ Concatenates all text blocks of the response into a single string. }
 function AnthropicResponseText(const R: TAnthropicResponse): string;
-{ Разбирает JSON-тело ошибки Anthropic в TAnthropicError. Если тело не JSON
-  или не содержит ожидаемой структуры, тип и сообщение выводятся из статуса. }
+{ Parses an Anthropic JSON error body into TAnthropicError. If the body is not
+  JSON or lacks the expected structure, the type and the message come from the status. }
 function ParseError(const D: TJSONData; AStatusCode: Integer): TAnthropicError;
 
-{ Строит JSON-объект ошибки для возврата вызывающему коду:
-  type "error" и объект error с полями type, message, status, retryable.
-  Вызывающий код обязан освободить результат. }
+{ Builds the JSON error object returned to the calling code:
+  type "error" and an error object with the fields type, message, status, retryable.
+  The calling code must free the result. }
 function BuildErrorJson(const E: TAnthropicError): TJSONObject;
 
-{ Человекочитаемое описание ошибки (для поля Err). }
+{ Human-readable description of an error (for the Err field). }
 function AnthropicErrorText(const E: TAnthropicError): string;
 
 implementation
@@ -331,9 +331,9 @@ begin
       Result := Result + R.Content[i].Text;
     end;
 end;
-{--- Ошибки Anthropic API ---}
+{--- Anthropic API errors ---}
 
-{ Тип ошибки Anthropic по HTTP-статусу (когда тело не дало свой тип). }
+{ Anthropic error type by HTTP status (when the body did not provide its own). }
 function ErrorTypeFromStatus(AStatusCode: Integer): string;
 begin
   case AStatusCode of
@@ -347,20 +347,20 @@ begin
   end;
 end;
 
-{ Человекочитаемое сообщение по HTTP-статусу (когда тело не дало своё). }
+{ Human-readable message by HTTP status (when the body did not provide its own). }
 function ErrorMessageFromStatus(AStatusCode: Integer): string;
 begin
   case AStatusCode of
-    400: Result := 'некорректный запрос (400)';
-    401: Result := 'неверный API-ключ (401)';
-    403: Result := 'недостаточно прав (403)';
-    404: Result := 'не найдено (404)';
-    429: Result := 'превышен лимит запросов (429)';
+    400: Result := 'invalid request (400)';
+    401: Result := 'invalid API key (401)';
+    403: Result := 'insufficient permissions (403)';
+    404: Result := 'not found (404)';
+    429: Result := 'rate limit exceeded (429)';
   else
     if AStatusCode >= 500 then
-      Result := Format('ошибка сервера Anthropic (%d)', [AStatusCode])
+      Result := Format('Anthropic server error (%d)', [AStatusCode])
     else
-      Result := Format('ошибка Anthropic (%d)', [AStatusCode]);
+      Result := Format('Anthropic error (%d)', [AStatusCode]);
   end;
 end;
 
@@ -374,7 +374,7 @@ begin
   Result.StatusCode := AStatusCode;
   Result.Retryable  := (AStatusCode = 429) or (AStatusCode >= 500);
 
-  { Anthropic: type "error" и объект error с полями type и message. }
+  { Anthropic: type "error" and an error object with the fields type and message. }
   ErrD := nil;
   if (D <> nil) and (D is TJSONObject) then
     ErrD := D.FindPath('error');
@@ -388,7 +388,7 @@ begin
       Result.Message := EMsg;
   end;
 
-  { Тело не дало тип/сообщение — выводим из HTTP-статуса. }
+  { The body gave neither type nor message — derive them from the HTTP status. }
   if Result.ErrorType = '' then
     Result.ErrorType := ErrorTypeFromStatus(AStatusCode);
   if Result.Message = '' then
@@ -416,9 +416,9 @@ begin
   if E.ErrorType <> '' then
     Result := Result + ' [' + E.ErrorType + ']';
   if E.Retryable then
-    Result := Result + ' (можно повторить)';
+    Result := Result + ' (retryable)';
 end;
-{--- TAnthropicValidator (middleware валидации входных параметров) ---}
+{--- TAnthropicValidator (middleware for input parameter validation) ---}
 
 class function TAnthropicValidator.JoinErrors(const Errors: TAnthropicValidationErrors): string;
 var
@@ -443,28 +443,28 @@ begin
   SetLength(Errors, 0);
   Result := True;
 
-  { model: обязательное поле. }
+  { model: required field. }
   if Trim(Req.Model) = '' then
   begin
     SetLength(Errors, Length(Errors) + 1);
-    Errors[High(Errors)] := 'model: обязательное поле не задано';
+    Errors[High(Errors)] := 'model: the required field is not set';
     Result := False;
   end;
 
-  { max_tokens: обязательное, положительное. }
+  { max_tokens: required, positive. }
   if Req.MaxTokens <= 0 then
   begin
     SetLength(Errors, Length(Errors) + 1);
     Errors[High(Errors)] :=
-      Format('max_tokens: должно быть положительным (получено %d)', [Req.MaxTokens]);
+      Format('max_tokens: must be positive (got %d)', [Req.MaxTokens]);
     Result := False;
   end;
 
-  { messages: обязательный непустой массив. }
+  { messages: required, non-empty array. }
   if Length(Req.Messages) = 0 then
   begin
     SetLength(Errors, Length(Errors) + 1);
-    Errors[High(Errors)] := 'messages: обязательное поле, массив не может быть пустым';
+    Errors[High(Errors)] := 'messages: required field, the array must not be empty';
     Result := False;
   end
   else
@@ -473,47 +473,47 @@ begin
     PrevRole := mrUser;
     for i := 0 to High(Req.Messages) do
     begin
-      { system-роль не допускается в messages (идёт в поле system). }
+      { the system role is not allowed in messages (it goes into the system field). }
       if Req.Messages[i].Role = mrSystem then
       begin
         SetLength(Errors, Length(Errors) + 1);
         Errors[High(Errors)] :=
-          Format('messages[%d]: роль "system" не допускается в messages (используйте поле system)', [i]);
+          Format('messages[%d]: the role "system" is not allowed in messages (use the system field)', [i]);
         Result := False;
       end;
 
-      { tool-роль не поддерживается (content — строка). }
+      { the tool role is not supported (content is a string). }
       if Req.Messages[i].Role = mrTool then
       begin
         SetLength(Errors, Length(Errors) + 1);
         Errors[High(Errors)] :=
-          Format('messages[%d]: роль "tool" не поддерживается', [i]);
+          Format('messages[%d]: the role "tool" is not supported', [i]);
         Result := False;
       end;
 
-      { пустой контент. }
+      { empty content. }
       if Trim(Req.Messages[i].Content) = '' then
       begin
         SetLength(Errors, Length(Errors) + 1);
         Errors[High(Errors)] :=
-          Format('messages[%d]: content не может быть пустым', [i]);
+          Format('messages[%d]: content must not be empty', [i]);
         Result := False;
       end;
 
-      { первое сообщение — от user. }
+      { the first message comes from the user. }
       if (i = 0) and (Req.Messages[i].Role <> mrUser) then
       begin
         SetLength(Errors, Length(Errors) + 1);
-        Errors[High(Errors)] := 'messages[0]: первое сообщение должно быть от user';
+        Errors[High(Errors)] := 'messages[0]: the first message must come from the user';
         Result := False;
       end;
 
-      { чередование ролей user/assistant. }
+      { alternation of the user/assistant roles. }
       if HasPrev and (Req.Messages[i].Role = PrevRole) then
       begin
         SetLength(Errors, Length(Errors) + 1);
         Errors[High(Errors)] :=
-          Format('messages[%d]: роли должны чередоваться (user/assistant)', [i]);
+          Format('messages[%d]: roles must alternate (user/assistant)', [i]);
         Result := False;
       end;
 
@@ -527,7 +527,7 @@ begin
   begin
     SetLength(Errors, Length(Errors) + 1);
     Errors[High(Errors)] :=
-      Format('temperature: должно быть в диапазоне 0..1 (получено %s)', [FloatToStr(Req.Temperature)]);
+      Format('temperature: must be in the range 0..1 (got %s)', [FloatToStr(Req.Temperature)]);
     Result := False;
   end;
 
@@ -536,7 +536,7 @@ begin
   begin
     SetLength(Errors, Length(Errors) + 1);
     Errors[High(Errors)] :=
-      Format('top_p: должно быть в диапазоне 0..1 (получено %s)', [FloatToStr(Req.TopP)]);
+      Format('top_p: must be in the range 0..1 (got %s)', [FloatToStr(Req.TopP)]);
     Result := False;
   end;
 
@@ -545,7 +545,7 @@ begin
   begin
     SetLength(Errors, Length(Errors) + 1);
     Errors[High(Errors)] :=
-      Format('top_k: должно быть неотрицательным (получено %d)', [Req.TopK]);
+      Format('top_k: must be non-negative (got %d)', [Req.TopK]);
     Result := False;
   end;
 end;
@@ -600,7 +600,7 @@ begin
     end;
     'content_block_start':
     begin
-      { Новый блок контента: text, tool_use или thinking. }
+      { New content block: text, tool_use or thinking. }
       SetLength(FBlocks, Length(FBlocks) + 1);
       LastIdx := Length(FBlocks) - 1;
       FBlocks[LastIdx].BlockType := abtUnknown;
@@ -636,7 +636,7 @@ begin
                 FOnDelta(JStr(JDelta, 'text', ''), '');
             end;
           'input_json_delta':
-            { Аргументы tool_use приходят фрагментами JSON. }
+            { tool_use arguments arrive as JSON fragments. }
             if LastIdx >= 0 then
               FBlocks[LastIdx].ToolInput :=
                 FBlocks[LastIdx].ToolInput + JStr(JDelta, 'partial_json', '');
@@ -648,7 +648,7 @@ begin
       end;
     end;
     'content_block_stop':
-      ;   { блок завершён — данные уже накоплены }
+      ;   { block finished — the data is already collected }
     'message_delta':
     begin
       JDelta := D.FindPath('delta');
@@ -684,7 +684,7 @@ begin
       D.Free;
     end;
   except
-    { повреждённый чанк — пропускаем }
+    { damaged chunk — skipped }
   end;
   Result := not FDone;
 end;
@@ -789,11 +789,11 @@ begin
   Err := '';
   ErrJson := nil;
   Resp := Default(TAnthropicResponse);
-  { Middleware: валидация входных параметров до обращения к сети. }
+  { Middleware: validation of the input parameters before touching the network. }
   if not ValidateRequest(Req, Err, ErrJson) then
     Exit;
 
-  { Тело запроса строится из модели TAnthropicRequest (шаг 2). }
+  { The request body is built from the TAnthropicRequest model (step 2). }
   Body := BuildRequestJson(Req);
   try
     BodyStr := Body.AsJSON;
@@ -801,9 +801,9 @@ begin
     Body.Free;
   end;
 
-  { Эндпоинт Anthropic Messages API: POST <base>/v1/messages.
-    Anthropic использует x-api-key (не Authorization: Bearer) и
-    требует заголовок anthropic-version. }
+  { Anthropic Messages API endpoint: POST <base>/v1/messages.
+    Anthropic uses x-api-key (not Authorization: Bearer) and
+    requires the anthropic-version header. }
   Url := JoinUrl(FBaseUrl, '/v1/messages');
   Headers[0] := 'Content-Type: application/json; charset=utf-8';
   Headers[1] := 'Accept: application/json';
@@ -812,14 +812,14 @@ begin
   HR := HttpRequestEx('POST', Url, BodyStr, Headers,
     FRequestTimeout, FConnectTimeout);
 
-  { Не-2xx или сбой соединения: разбираем JSON-ошибку Anthropic и
-    возвращаем её (401 — неверный ключ, 429 — лимит, 500 — сервер). }
+  { Non-2xx or a connection failure: parse the Anthropic JSON error and
+    return it (401 — invalid key, 429 — rate limit, 500 — server). }
   if not HR.Ok then
   begin
     D := nil;
     if HR.StatusCode = 0 then
     begin
-      { Соединение не установлено: HTTP-ответа нет, статус 0. }
+      { Connection not established: there is no HTTP response, status 0. }
       AE.ErrorType  := 'connection_error';
       AE.Message    := Trim(HR.Error);
       AE.StatusCode := 0;
@@ -840,16 +840,16 @@ begin
 
   if not ParseJSON(HR.Body, D, Err) then
   begin
-    Err := 'не удалось разобрать ответ API: ' + Err;
+    Err := 'failed to parse the API response: ' + Err;
     Exit;
   end;
   try
     if not (D is TJSONObject) then
     begin
-      Err := 'ответ API не является JSON-объектом';
+      Err := 'the API response is not a JSON object';
       Exit;
     end;
-    { Anthropic возвращает ошибки как type "error" и объект error (type, message). }
+    { Anthropic returns errors as type "error" and an error object (type, message). }
     ErrD := D.FindPath('error');
     if (ErrD <> nil) and (not (ErrD is TJSONNull)) then
     begin
@@ -884,7 +884,7 @@ begin
   Err := '';
   ErrJson := nil;
   Resp := Default(TAnthropicResponse);
-  { Middleware: валидация входных параметров до обращения к сети. }
+  { Middleware: validation of the input parameters before touching the network. }
   if not ValidateRequest(Req, Err, ErrJson) then
     Exit;
 
@@ -906,7 +906,7 @@ begin
   if not HttpRequestStreamEx('POST', Url, BodyStr, Headers,
     FRequestTimeout, FConnectTimeout, @SSEChunk, Code, StatusText, Err) then
   begin
-    { Ошибка соединения или не-2xx статус: разбираем JSON-ошибку. }
+    { Connection error or non-2xx status: parse the JSON error. }
     if Code = 0 then
     begin
       AE.ErrorType  := 'connection_error';
@@ -916,7 +916,7 @@ begin
     end
     else
     begin
-      { Err содержит "HTTP <status> <text>\n<body>" — извлекаем JSON-тело. }
+      { Err contains "HTTP <status> <text>\n<body>" — extract the JSON body. }
       ErrBody := Err;
       P := Pos('{', ErrBody);
       if P > 0 then
@@ -933,15 +933,15 @@ begin
     Exit;
   end;
 
-  { Таймаут в середине потока: 2xx-статус получен, но Err заполнен. }
+  { Timeout in the middle of the stream: the 2xx status arrived, but Err is set. }
   if Err <> '' then
     Exit(False);
 
-  { Последняя строка может не иметь завершающего перевода строки. }
+  { The last line may lack the terminating newline. }
   FAcc.Flush;
   if not FAcc.Done then
   begin
-    Err := 'соединение с сервером разорвано до завершения ответа (не получен message_stop)';
+    Err := 'the server closed the connection before the response completed (no message_stop)';
     Exit(False);
   end;
   FAcc.Collect(Resp);

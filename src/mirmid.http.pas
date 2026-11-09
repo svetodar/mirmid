@@ -1,12 +1,12 @@
 unit mirmid.http;
-{ Минимальный HTTP-клиент: own transport (mirmid.tlsclient — plain TCP for
-  scheme http, TLS 1.2 client from library tls for https). Системный
-  OpenSSL и FPC-шные ssl-сокеты не используются. Умеет GET/POST с
-  JSON-телом and does not raise exception at HTTP 4xx/5xx: status and body
+{ Minimal HTTP client: own transport (mirmid.tlsclient — plain TCP for
+  scheme http, TLS 1.2 client from library tls for https). The system
+  OpenSSL and FPC ssl sockets are not used. Supports GET/POST with a
+  JSON body and does not raise exception at HTTP 4xx/5xx: status and body
   returned to caller.
 
   Streaming request (SSE) — body chunks delivered to OnChunk as they arrive;
-  Transfer-Encoding: chunked сняится in TBodyDecoder. }
+  Transfer-Encoding: chunked is stripped in TBodyDecoder. }
 
 {$mode objfpc}{$H+}
 
@@ -32,7 +32,7 @@ type
   { State decoder chunked-body. }
   TChunkState = (cstSize, cstData, cstCrlf, cstDone);
 
-  { Receiver error body (4xx/5xx): accumulates до STREAM_ERR_BODY_MAX. }
+  { Receiver error body (4xx/5xx): accumulates up to STREAM_ERR_BODY_MAX. }
   TErrBodySink = class
   private
     FBody: RawByteString;
@@ -50,11 +50,11 @@ type
     property Body: RawByteString read FBody;
   end;
 
-  { Decoder body HTTP: при Transfer-Encoding: chunked снимает кадрирование
-    (hex chunk size + CRLF) and отдаёт полезыя данные to OnChunk.
-    Without chunked данные передаются as есть. Состояние сохраняется между
-    вызоми Feed, так ка кадр may разрезаться сетевым чтение in любом
-    place. Открыт for тесты. }
+  { HTTP body decoder: with Transfer-Encoding: chunked it strips the framing
+    (hex chunk size + CRLF) and passes the payload to OnChunk. Without
+    chunked the data is passed as is. The state is kept between Feed calls,
+    because a frame may be split by a network read at any place.
+    Public for the tests. }
   TBodyDecoder = class
   private
     FChunked: Boolean;
@@ -65,44 +65,44 @@ type
   public
     constructor Create(AChunked: Boolean; const AOnChunk: THttpChunkHandler);
     function Feed(const Data: RawByteString): Boolean;
-    { Тело завершено: для chunked — принят нулевой чанк (или обработчик
-      остановил чтение). Позволяет вызывающему закончить чтение, не ожидая
-      закрытия соединения. }
+    { Body finished: for chunked — the zero chunk was received (or the
+      handler stopped reading). Lets the caller stop reading without waiting
+      for the connection to close. }
     function Done: Boolean;
   end;
 
-{ Есть ли in блоке response headers Transfer-Encoding: chunked. }
+{ Is there Transfer-Encoding: chunked in the response header block. }
 function HeaderHasChunked(const Hdr: RawByteString): Boolean;
 
-{ Content-Length из блока заголовков ответа; -1 — заголовок отсутствует
-  или не разобран (тогда тело заканчивается на закрытии соединения). }
+{ Content-Length from the response header block; -1 — the header is absent
+  or unparsable (then the body ends at connection close). }
 function HeaderContentLength(const Hdr: RawByteString): Int64;
 
 { Chunked chunk size from string like "1a3" (with ";ext" suffix). }
 function ParseChunkSize(const Line: RawByteString): Int64;
 
-{ Складывает base URL and path, no double slash. }
+{ Joins base URL and path, no double slash. }
 function JoinUrl(const Base, Path: string): string;
 
 
-{ HTTP-запрос. Body used only for POST; for GET pass ''. }
+{ HTTP request. Body used only for POST; for GET pass ''. }
 function HttpRequest(const Method, Url, ApiKey, Body: string;
   TimeoutMs, ConnectMs: Integer): THttpResult;
 
-{ HTTP-запрос with arbitrary headers. Headers — array строки
-  «Name: Value». Base headers (Content-Type, Accept) not added
-  automatically — caller passes them. }
+{ HTTP request with arbitrary headers. Headers — array of
+  "Name: Value" strings. Base headers (Content-Type, Accept) are not added
+  automatically — the caller passes them. }
 function HttpRequestEx(const Method, Url, Body: string;
   const Headers: array of string;
   TimeoutMs, ConnectMs: Integer): THttpResult;
-{ --- Repeats at network сбоях ----------------------------------------------
+{ --- Retries on network failures -------------------------------------------
 
-  Single transport error (DNS сбой, refusal or timeout at connect,
-  connection reset before response) should not ruin request: it repeats
-  до HttpRetryCount times with pauses 1/2/4 с. Repeats only transport
-  сбой — HTTP статусыя 4xx/5xx returned to caller without repeats.
-  Streaming request (SSE) repeats only before first body response:
-  repeat after delivered дель would duplicate text response. }
+  A single transport error (DNS failure, refusal or timeout at connect,
+  connection reset before the response) should not ruin the request: it is
+  repeated up to HttpRetryCount times with pauses 1/2/4 s. Only a transport
+  failure is repeated — HTTP 4xx/5xx statuses are returned to the caller
+  without retries. A streaming request (SSE) is repeated only before the
+  first body response: a repeat after delivered deltas would duplicate text. }
 
 const
   { Number repeats after first attempt (total HttpRetryCount + 1 attempts). }
@@ -115,22 +115,22 @@ var
   HttpRetryCount: Integer = HTTP_RETRY_COUNT;
   HttpRetryBaseDelayMs: Integer = HTTP_RETRY_BASE_DELAY_MS;
 
-{ Same by error text — for сбоя already converted to string. }
+{ Same by error text — for failures already converted to a string. }
 function IsRetryableNetErrorText(const S: string): Boolean;
 
 { Pause before repeat number ARetry (0 — before first repeat), ms. }
 function HttpRetryDelayMs(ARetry: Integer): Integer;
-{ Streaming HTTP-запрос: body delivered chunk-by-chunk to OnChunk as
-  they arrive (SSE). For статусыя 4xx/5xx чанки not passed — error and
-  body returned in Err. TimeoutMs — general timeout request, ConnectMs —
-  timeout connection. }
+{ Streaming HTTP request: the body is delivered chunk-by-chunk to OnChunk
+  as it arrives (SSE). For 4xx/5xx statuses chunks are not passed — the
+  error and the body are returned in Err. TimeoutMs — overall request
+  timeout, ConnectMs — connect timeout. }
 function HttpRequestStream(const Method, Url, ApiKey, Body: string;
   TimeoutMs, ConnectMs: Integer; const OnChunk: THttpChunkHandler;
   out StatusCode: Integer; out StatusText: string; out Err: string): Boolean;
-{ Streaming HTTP-запрос with arbitrary headers. Headers — array строки
-  «Name: Value». Headers Accept: text/event-stream and Connection: close
-  added automatically. For статусыя 4xx/5xx чанки not passed — error and
-  body returned in Err. }
+{ Streaming HTTP request with arbitrary headers. Headers — array of
+  "Name: Value" strings. Accept: text/event-stream and Connection: close
+  are added automatically. For 4xx/5xx statuses chunks are not passed — the
+  error and the body are returned in Err. }
 function HttpRequestStreamEx(const Method, Url, Body: string;
   const Headers: array of string;
   TimeoutMs, ConnectMs: Integer; const OnChunk: THttpChunkHandler;
@@ -142,8 +142,8 @@ uses
   mirmid.tlsclient;
 
 const
-  { Timeout one socket read at streaming mode: if model «думает» longer,
-    Read returns -1 and cycle continues until general timeout request. }
+  { Timeout of one socket read in streaming mode: if the model "thinks"
+    longer, Read returns -1 and the cycle continues until the request timeout. }
   STREAM_READ_TIMEOUT_MS = 3000000;
   { Limit accumulation error body (4xx/5xx). }
   STREAM_ERR_BODY_MAX = 100000;
@@ -291,7 +291,7 @@ begin
             Size := ParseChunkSize(FLine);
             FLine := '';
             if Size <= 0 then
-              { Нулевой чанк завершает тело: см. Done. }
+              { The zero chunk finishes the body: see Done. }
               FState := cstDone
             else
             begin
@@ -451,7 +451,7 @@ end;
 
 { --- Core HTTP exchange: connect, send request, read response -------------
 
-  Headers — array строки «Name: Value» (as is). At 2xx body passes to
+  Headers — array of "Name: Value" strings (as is). At 2xx the body passes to
   OnChunk, at 4xx/5xx — to OnErrChunk. Result True — headers received and
   status 2xx. At transport failure StatusCode = 0 and Err — reason.
   Socket IOTimeout capped at STREAM_READ_TIMEOUT_MS: general timeout request
@@ -469,7 +469,7 @@ end;
 
 { --- Core HTTP exchange: connect, send request, read response -------------
 
-  Headers — TStringList строки «Name: Value» (empty string — skip).
+  Headers — TStringList of "Name: Value" strings (empty string — skip).
   At 2xx body passes to OnChunk, at 4xx/5xx — to OnErrChunk.
   Result True — headers received and status 2xx. At transport failure
   StatusCode = 0 and Err — reason. Socket IOTimeout capped at
@@ -494,8 +494,8 @@ var
   FastFails: Integer;
   Decoder: TBodyDecoder;
   Chunked: Boolean;
-  ContentLen: Int64;   { Content-Length (-1 — не задан) }
-  BodyRead: Int64;     { прочитано байт тела }
+  ContentLen: Int64;   { Content-Length (-1 — not set) }
+  BodyRead: Int64;     { body bytes read }
 begin
   Result := False;
   StatusCode := 0;
@@ -587,10 +587,10 @@ begin
             end;
             HeadersDone := True;
             Is2xx := (StatusCode >= 200) and (StatusCode < 300);
-            { Transfer-Encoding: chunked — снимает кадрирование body. }
+            { Transfer-Encoding: chunked — strips the body framing. }
             Chunked := HeaderHasChunked(Hdr);
-            { Content-Length: тело заведомо завершено по счётчику байт —
-              ждать закрытия соединения не нужно. }
+            { Content-Length: the body is known to be complete by the byte
+              counter — there is no need to wait for the connection to close. }
             if Chunked then
               ContentLen := -1
             else
@@ -634,12 +634,12 @@ begin
             if not Decoder.Feed(Chunk) then
               Stopped := True;
           end;
-          { chunked-тело завершено нулевым чанком — не ждём закрытия
-            соединения (иначе клиент висит до общего таймаута запроса). }
+          { The chunked body is finished by the zero chunk — do not wait for
+            the connection to close (otherwise the client hangs until timeout). }
           if (not Stopped) and Decoder.Done then
             Stopped := True;
-          { Тело с Content-Length прочитано полностью (в т.ч. пустое) —
-            прекращаем чтение, не дожидаясь закрытия соединения. }
+          { The body with Content-Length is fully read (including an empty
+            one) — stop reading without waiting for the connection to close. }
           if (not Stopped) and (ContentLen >= 0) and
              (BodyRead >= ContentLen) then
             Stopped := True;
@@ -655,7 +655,7 @@ begin
           timeout pointless. }
         if NowMs >= Deadline then
         begin
-          Err := Format('превышен таймаут запроса (%d с)', [TimeoutMs div 1000]);
+          Err := Format('request timed out (%d s)', [TimeoutMs div 1000]);
           Break;
         end;
         if (LastFailMs > 0) and (NowMs - LastFailMs < 1000) then
@@ -665,14 +665,14 @@ begin
         LastFailMs := NowMs;
         if FastFails >= 3 then
         begin
-          Err := 'соединение разорвана сервером';
+          Err := 'connection closed by server';
           Break;
         end;
       end;
     end;
 
     if (not HeadersDone) and (Err = '') then
-      Err := 'не получен ответ сервера';
+      Err := 'no response from server';
     if HeadersDone and not Is2xx then
       Err := Format('HTTP %d %s', [StatusCode, StatusText]);
   finally
@@ -796,12 +796,18 @@ begin
   end;
 end;
 
-{ --- Public wrappers: repeats at transport сбой and redirects -------------
+{ --- Public wrappers: retries on transport failures and redirects ---------
 
-  Repeat only at transport сбой (no response, StatusCode = 0).
-  HTTP статусыя 4xx/5xx returned to caller without repeats. Redirect
-  (3xx with Location) followed non-streaming only, до MAX_REDIRECTS. }
+  Retry only on a transport failure (no response, StatusCode = 0).
+  HTTP 4xx/5xx statuses are returned to the caller without retries. A
+  redirect (3xx with Location) is followed for non-streaming requests only,
+  up to MAX_REDIRECTS. }
 
+{ Same by error text — for failures already converted to a string. The
+  keywords mirror the messages produced here and in mirmid.tlsclient:
+  "no response from server", "connection closed by server", "request timed
+  out", "could not connect to <host>:<port>" and the socket/TLS errors of
+  the transport. }
 function IsRetryableNetErrorText(const S: string): Boolean;
 var
   T: string;
@@ -810,15 +816,12 @@ begin
   Result := (Pos('esocketerror', T) > 0) or (Pos('sslsocketerror', T) > 0) or
     (Pos('socket error', T) > 0) or (Pos('socket write error', T) > 0) or
     (Pos('connection reset', T) > 0) or (Pos('connection refused', T) > 0) or
-    (Pos('connection closed', T) > 0) or (Pos('connect failed', T) > 0) or
-    (Pos('connect timeout', T) > 0) or (Pos('host not found', T) > 0) or
-    (Pos('unable to connect', T) > 0) or (Pos('name resolution', T) > 0) or
+    (Pos('connection closed', T) > 0) or (Pos('could not connect', T) > 0) or
+    (Pos('connect failed', T) > 0) or (Pos('connect timeout', T) > 0) or
+    (Pos('host not found', T) > 0) or (Pos('unable to connect', T) > 0) or
+    (Pos('name resolution', T) > 0) or (Pos('no response', T) > 0) or
     (Pos('timed out', T) > 0) or (Pos('timeout', T) > 0) or
-    (Pos('не получен ответ', T) > 0) or
-    (Pos('не удалось соединиться', T) > 0) or (Pos('соединени', T) > 0) or
-    (Pos('разорвана', T) > 0) or (Pos('разорван', T) > 0) or
-    (Pos('таймаут', T) > 0) or (Pos('tls:', T) > 0) or
-    (Pos('сбой', T) > 0);
+    (Pos('tls:', T) > 0);
 end;
 
 { Pause before repeat number ARetry (0 — before first repeat), ms. }
@@ -901,8 +904,8 @@ begin
   until False;
 end;
 
-{ Streaming request repeats only before first response
-  (StatusCode = 0): repeat after delivered дель would duplicate text. }
+{ Streaming request repeats only before the first response
+  (StatusCode = 0): a repeat after delivered deltas would duplicate text. }
 function HttpRequestStream(const Method, Url, ApiKey, Body: string;
   TimeoutMs, ConnectMs: Integer; const OnChunk: THttpChunkHandler;
   out StatusCode: Integer; out StatusText: string; out Err: string): Boolean;

@@ -1,5 +1,5 @@
 unit mirmid.json;
-{ Хелперы для fpjson и (де)сериализация сообщений диалога. }
+{ Helpers for fpjson and for (de)serialising dialogue messages. }
 
 {$mode objfpc}{$H+}
 
@@ -8,29 +8,29 @@ interface
 uses
   SysUtils, fpjson, mirmid.types;
 
-{ Разбор JSON-строки. }
+{ Parse a JSON string. }
 function ParseJSON(const S: string; out D: TJSONData; out Err: string): Boolean;
 
-(* Мягкое исправление частых ошибок моделей в JSON-аргументах инструментов:
-  вырезает полезный объект из markdown-заборов и пояснительного текста,
-  убирает висячие запятые, вставляет пропущенное двоеточие после ключа
-  (например, "path""docs/index.md"), берёт в кавычки ключи без кавычек
-  (path:"x"), заменяет одинарные кавычки на двойные, дописывает
-  недостающие закрывающие скобки. Если структура нераспознаваема (нет
-  начала объекта или массива), возвращает строку как есть. *)
+(* Lenient repair of the JSON mistakes models often make in tool arguments:
+  cuts the useful object out of markdown fences and explanatory text,
+  removes trailing commas, inserts a colon missing after a key
+  (for example "path""docs/index.md"), quotes keys that have no quotes
+  (path:"x"), turns single quotes into double quotes and appends the
+  missing closing brackets. If the structure is unrecognisable (no object
+  or array start), the string is returned unchanged. *)
 function RepairJSON(const S: string): string;
 
-{ Разбор с мягким исправлением: сначала строго, затем через RepairJSON.
-  Возвращает True, если разобралась хотя бы исправленная строка. }
+{ Parse with lenient repair: strict first, then through RepairJSON.
+  Returns True if at least the repaired string parsed. }
 function ParseJSONRepair(const S: string; out D: TJSONData; out Err: string): Boolean;
 
-{ Безопасное доставание значений по простому пути (FindPath). }
+{ Safe value lookup by a simple path (FindPath). }
 function JStr(D: TJSONData; const Path, Def: string): string;
 function JInt(D: TJSONData; const Path: string; Def: Integer): Integer;
 function JFloat(D: TJSONData; const Path: string; Def: Double): Double;
 function JBool(D: TJSONData; const Path: string; Def: Boolean): Boolean;
 
-{ Сообщение <-> JSON-объект. }
+{ Message <-> JSON object. }
 function MessageToJSON(const M: TMessage): TJSONObject;
 function JSONToMessage(O: TJSONObject): TMessage;
 function MessagesToJSONArray(const Msgs: TMessages): TJSONArray;
@@ -57,8 +57,9 @@ begin
   end;
 end;
 
-(* Возвращает подстроку от первого символа { или [ до парной закрывающей
-  скобки (с учётом строк и вложенности). Пусто, если начала структуры нет. *)
+(* Returns the substring from the first { or [ up to the matching closing
+  bracket (taking strings and nesting into account). Empty if there is no
+  structure start. *)
 function ExtractJSONBlob(const S: string): string;
 var
   Start, I, N, Depth: Integer;
@@ -109,7 +110,8 @@ begin
         end;
     end;
   end;
-  { Структура не закрыта — отдаём остаток, недостающие скобки допишем. }
+  { The structure is not closed — return the rest; the missing brackets are
+    appended afterwards. }
   Result := Copy(S, Start, N - Start + 1);
 end;
 
@@ -202,14 +204,14 @@ begin
       Continue;
     end;
 
-    { Пробелы вне строк незначимы — выбрасываем. }
+    { Whitespace outside strings is insignificant — drop it. }
     if C in [' ', #9, #10, #13] then
     begin
       Inc(I);
       Continue;
     end;
 
-    { Ключ был строкой, а двоеточие пропущено — вставляем. }
+    { The key was a string and the colon is missing — insert it. }
     if KeyClosed and (C <> ':') then
     begin
       if not (C in ['}', ']']) then
@@ -271,7 +273,7 @@ begin
         end;
       else
         begin
-          { Ключ без кавычек: path:"x" -> "path":"x". }
+          { Unquoted key: path:"x" -> "path":"x". }
           if AtKeyPos and IsIdentStart(C) then
           begin
             Ident := '';
@@ -294,7 +296,7 @@ begin
     Inc(I);
   end;
 
-  { Дописываем недостающие закрывающие скобки. }
+  { Append the missing closing brackets. }
   while Length(Stack) > 0 do
   begin
     if Stack[High(Stack)] = '{' then

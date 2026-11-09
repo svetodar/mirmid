@@ -1,15 +1,15 @@
 unit mirmid.mcp;
-{ Поддержка MCP (Model Context Protocol): подключение внешних серверов
-  инструментов. Реализован транспорт stdio — JSON-RPC 2.0 по одному объекту
-  в строке через stdin/stdout дочернего процесса.
+{ MCP (Model Context Protocol) support: connecting external tool servers.
+  The stdio transport is implemented -- JSON-RPC 2.0, one object per line,
+  through the stdin/stdout of the child process.
 
-  Серверы описываются в файле mcp.json (формат совместим с Claude Desktop):
-  объект mcpServers, где ключ — имя сервера, а значение — объект с полями
-  command, args, env, cwd, enabled, timeout.
+  Servers are described in the mcp.json file (a format compatible with Claude
+  Desktop): an object mcpServers where the key is the server name and the value
+  is an object with the fields command, args, env, cwd, enabled, timeout.
 
-  Инструменты сервера регистрируются в реестре под именем
-  mcp__<server>__<tool> (недопустимые для имён функции символы заменяются
-  подчёркиванием, длина ограничена 64 символами). }
+  The tools of a server are registered in the registry under the name
+  mcp__<server>__<tool> (characters that are invalid in a function name are
+  replaced with an underscore, the length is limited to 64 characters). }
 
 {$mode objfpc}{$H+}
 
@@ -19,37 +19,38 @@ uses
   SysUtils, Classes, process, fpjson, mirmid.tools, mirmid.types;
 
 const
-  { Префикс имён MCP-инструментов в реестре. }
+  { Prefix of the MCP tool names in the registry. }
   MCP_PREFIX = 'mcp__';
-  { Версия протокола MCP, которую предлагает клиент. }
+  { MCP protocol version the client offers. }
   MCP_PROTOCOL_VERSION = '2024-11-05';
-  { Предел длины одной строки протокола (защита от мусора в потоке). }
+  { Length limit of one protocol line (protection against garbage in the stream). }
   MAX_MCP_LINE = 16 * 1024 * 1024;
 
-{ Полное имя инструмента в реестре: mcp__<server>__<tool>. }
+{ Full tool name in the registry: mcp__<server>__<tool>. }
 function MCPFullToolName(const Server, Tool: string): string;
-{ Канонизирует компоненту имени (A-Za-z0-9_-), заменяя прочее на «_». }
+{ Canonicalises a name component (A-Za-z0-9_-), replacing the rest with "_". }
 function MCPSanitizeName(const S: string): string;
-{ Путь к mcp.json по умолчанию: $MIRMID_MCP_CONFIG, затем <WorkDir>/.mirmid/mcp.json.
-  Если файла нет — возвращается <WorkDir>/.mirmid/mcp.json. }
+{ Default path to mcp.json: $MIRMID_MCP_CONFIG, then <WorkDir>/.mirmid/mcp.json.
+  If the file is missing, <WorkDir>/.mirmid/mcp.json is returned. }
 function DefaultMcpConfigPath(const WorkDir: string): string;
 
 type
-  { Абстрактный транспорт MCP: обмен строками JSON-RPC. }
+  { Abstract MCP transport: exchange of JSON-RPC lines. }
   TMCPTransport = class
   public
     procedure Start; virtual; abstract;
     procedure Stop; virtual; abstract;
     function Running: Boolean; virtual; abstract;
-    { Отправляет один объект JSON (без завершающего перевода строки). }
+    { Sends one JSON object (without the trailing newline). }
     procedure Send(const Line: string); virtual; abstract;
-    { Читает одно сообщение (строку JSON) с таймаутом TimeoutMs.
-      False — таймаут/EOF/ошибка (Err заполнен). }
+    { Reads one message (a JSON line) with the TimeoutMs timeout.
+      False -- timeout/EOF/error (Err is filled). }
     function Receive(TimeoutMs: Integer; out Line: string; out Err: string): Boolean; virtual; abstract;
   end;
 
-  { Транспорт stdio: запускает процесс сервера и общается через его stdin/stdout.
-    stderr дочернего процесса вычитывается, чтобы сервер не блокировался. }
+  { stdio transport: starts the server process and talks through its
+    stdin/stdout. The stderr of the child process is drained so the server does
+    not block. }
   TStdioTransport = class(TMCPTransport)
   private
     FCommand: string;
@@ -69,11 +70,11 @@ type
     function Running: Boolean; override;
     procedure Send(const Line: string); override;
     function Receive(TimeoutMs: Integer; out Line: string; out Err: string): Boolean; override;
-    { Последние строки stderr сервера (для диагностики ошибок). }
+    { The last lines of the server stderr (for diagnosing errors). }
     property StderrLog: string read FStderrLog;
   end;
 
-  { Клиент одного MCP-сервера. Владеет транспортом. }
+  { Client of a single MCP server. Owns the transport. }
   TMCPClient = class
   private
     FName: string;
@@ -82,22 +83,23 @@ type
     FNextId: Integer;
     FServerInfo: string;
     FProtocolVersion: string;
-    { Запрос JSON-RPC. Забирает Params во владение (освобождает вместе с
-      отправляемым объектом). Res — копия ответа, освобождает вызывающий. }
+    { JSON-RPC request. Takes Params over (frees it together with the request
+      object). Res is a copy of the response, freed by the caller. }
     function Request(const Method: string; Params: TJSONObject;
       out Res: TJSONData; out Err: string): Boolean;
-    { Уведомление JSON-RPC (без id). Забирает Params во владение. }
+    { JSON-RPC notification (no id). Takes Params over. }
     function Notify(const Method: string; Params: TJSONObject; out Err: string): Boolean;
   public
     constructor Create(const AName: string; ATransport: TMCPTransport;
       TimeoutSec: Integer);
     destructor Destroy; override;
-    { Рукопожатие initialize + notifications/initialized. }
+    { Handshake: initialize + notifications/initialized. }
     function Initialize(out Err: string): Boolean;
-    { tools/list; Tools — новая копия массива описаний (освобождает вызывающий). }
+    { tools/list; Tools is a new copy of the description array (freed by the
+      caller). }
     function ListTools(out Tools: TJSONArray; out Err: string): Boolean;
-    { tools/call. IsError — это ошибка инструмента (isError=true), а не сбой
-      протокола: Err при этом пуст. }
+    { tools/call. IsError means a tool error (isError=true) rather than a
+      protocol failure: Err stays empty in that case. }
     function CallTool(const ToolName, ArgsJson: string;
       out Text: string; out IsError: Boolean; out Err: string): Boolean;
     property Name: string read FName;
@@ -107,7 +109,7 @@ type
 
   TMCPManager = class;
 
-  { Обработчик одного MCP-инструмента: держит ссылку на менеджер и индекс. }
+  { Handler of a single MCP tool: keeps a reference to the manager and the index. }
   TMCPHandler = class
   private
     FManager: TMCPManager;
@@ -117,9 +119,9 @@ type
     function Call(const Args: TJSONObject; const Ctx: TToolContext): TToolOutcome;
   end;
 
-  { Менеджер MCP-серверов: запускает их, регистрирует инструменты в реестре
-    и проксирует вызовы. Владеет клиентами и обработчиками; схемы инструментов
-    освобождает реестр. }
+  { MCP server manager: starts the servers, registers their tools in the
+    registry and proxies the calls. Owns the clients and the handlers; the tool
+    schemas are freed by the registry. }
   TMCPManager = class
   private
     FRegistry: TToolRegistry;
@@ -136,19 +138,19 @@ type
   public
     constructor Create(ARegistry: TToolRegistry; TimeoutSec: Integer);
     destructor Destroy; override;
-    { Запускает сервер, выполняет рукопожатие, получает список инструментов и
-      регистрирует их. Транспорт переходит во владение менеджера в любом
-      случае (при ошибке освобождается). }
+    { Starts the server, performs the handshake, fetches the tool list and
+      registers the tools. The transport is taken over by the manager in any
+      case (it is freed on error). }
     function AddServer(const Name: string; Transport: TMCPTransport;
       out Err: string): Boolean;
-    { Читает mcp.json и подключает все включённые серверы. Ошибки отдельных
-      серверов попадают в Warnings и не прерывают загрузку остальных. }
+    { Reads mcp.json and connects all enabled servers. Errors of individual
+      servers go to Warnings and do not interrupt loading the others. }
     procedure LoadFromFile(const FileName: string; var Warnings: TStringList);
     function CallTool(const FullName, ArgsJson: string;
       out Text: string; out IsError: Boolean; out Err: string): Boolean;
     function EntryFullName(Index: Integer): string;
     function ToolCount: Integer;
-    { Список инструментов, по одному в строке: «имя [сервер: оригинал]». }
+    { List of tools, one per line: "name [server: original]". }
     function ToolList: string;
     function ServerCount: Integer;
     function ServerList: string;
@@ -195,7 +197,7 @@ begin
   Result := IncludeTrailingPathDelimiter(WorkDir) + '.mirmid' + PathDelim + 'mcp.json';
 end;
 
-{ Добавляет строки окружения из текущего процесса с заменой значений из Extra. }
+{ Adds the environment lines of the current process, replacing values from Extra. }
 procedure FillEnvironment(Env: TProcessStrings; Extra: TStrings);
 var
   I, J: Integer;
@@ -206,7 +208,7 @@ begin
   for I := 0 to Extra.Count - 1 do
   begin
     Item := Extra[I];
-    Key := Copy(Item, 1, Pos('=', Item));   { вместе со знаком «=» }
+    Key := Copy(Item, 1, Pos('=', Item));   { together with the '=' sign }
     if Key = '' then
       Continue;
     for J := Env.Count - 1 downto 0 do
@@ -268,18 +270,18 @@ begin
   try
     FProcess.CloseInput;
   except
-    { процесс мог уже завершиться }
+    { the process may have exited already }
   end;
   try
     if FProcess.Running then
       FProcess.Terminate(0);
   except
-    { игнорируем ошибки завершения }
+    { ignore termination errors }
   end;
   try
     FProcess.WaitOnExit(1000);
   except
-    { игнорируем }
+    { ignore }
   end;
   FreeAndNil(FProcess);
   FBuf := '';
@@ -316,7 +318,7 @@ var
   S: RawByteString;
 begin
   if FProcess = nil then
-    raise Exception.Create('MCP-процесс не запущен');
+    raise Exception.Create('MCP process is not running');
   S := Line + #10;
   FProcess.Input.WriteBuffer(S[1], Length(S));
 end;
@@ -347,7 +349,7 @@ begin
 
     if FProcess = nil then
     begin
-      Err := 'MCP-процесс не запущен';
+      Err := 'MCP process is not running';
       Exit(False);
     end;
 
@@ -363,10 +365,10 @@ begin
         FBuf := FBuf + Chunk;
         if Length(FBuf) > MAX_MCP_LINE then
         begin
-          Err := 'превышен предельный размер сообщения MCP';
+          Err := 'MCP message exceeds the size limit';
           Exit(False);
         end;
-        Continue;   { сразу проверяем наличие полной строки }
+        Continue;   { check again for a complete line right away }
       end;
     end;
 
@@ -379,7 +381,7 @@ begin
         Exit(True);
       end;
       DrainStderr;
-      Err := 'MCP-сервер завершился';
+      Err := 'MCP server exited';
       if Trim(FStderrLog) <> '' then
         Err := Err + ': ' + Trim(FStderrLog);
       Exit(False);
@@ -388,7 +390,7 @@ begin
     Sleep(10);
   until GetTickCount64 >= Deadline;
 
-  Err := Format('таймаут ожидания ответа MCP (%d мс)', [TimeoutMs]);
+  Err := Format('MCP response timeout (%d ms)', [TimeoutMs]);
   Result := False;
 end;
 
@@ -438,7 +440,7 @@ begin
       Result := True;
     except
       on E: Exception do
-        Err := 'не удалось отправить сообщение MCP: ' + E.Message;
+        Err := 'failed to send the MCP message: ' + E.Message;
     end;
   finally
     O.Free;
@@ -477,7 +479,7 @@ begin
     except
       on E: Exception do
       begin
-        Err := 'не удалось отправить запрос MCP: ' + E.Message;
+        Err := 'failed to send the MCP request: ' + E.Message;
         Exit;
       end;
     end;
@@ -492,7 +494,7 @@ begin
     begin
       Err := RErr;
       if Trim(BadLine) <> '' then
-        Err := Err + sLineBreak + 'некорректная строка от сервера: ' +
+        Err := Err + sLineBreak + 'invalid line from the server: ' +
           Copy(BadLine, 1, 200);
       Exit(False);
     end;
@@ -507,7 +509,7 @@ begin
       Continue;
     end;
     try
-      { Уведомления (без id) и чужие ответы пропускаем. }
+      { Skip notifications (no id) and responses to other requests. }
       X := D.FindPath('id');
       if (X = nil) or not (X is TJSONNumber) then
         Continue;
@@ -520,7 +522,7 @@ begin
         EMsg := JStr(X, 'message', '');
         if EMsg = '' then
           EMsg := X.AsJSON;
-        Err := 'ошибка MCP ' + JStr(X, 'code', '') + ': ' + EMsg;
+        Err := 'MCP error ' + JStr(X, 'code', '') + ': ' + EMsg;
         Exit(False);
       end;
 
@@ -536,7 +538,7 @@ begin
     end;
   until GetTickCount64 >= Deadline;
 
-  Err := Format('таймаут ответа MCP-сервера (%.1f с)', [FTimeout]);
+  Err := Format('MCP server response timeout (%.1f s)', [FTimeout]);
   Result := False;
 end;
 
@@ -547,7 +549,7 @@ var
 begin
   Result := False;
   Err := '';
-  { Request забирает Params во владение (освобождает вместе с запросом). }
+  { Request takes Params over (frees it together with the request). }
   Params := TJSONObject.Create;
   Params.Add('protocolVersion', MCP_PROTOCOL_VERSION);
   Params.Add('capabilities', TJSONObject.Create);
@@ -565,7 +567,7 @@ begin
     Res.Free;
   end;
 
-  { Уведомление об успешной инициализации. }
+  { Notification about the successful initialisation. }
   if not Notify('notifications/initialized', nil, Err) then
     Exit;
   Result := True;
@@ -592,7 +594,7 @@ begin
   end;
 end;
 
-{ Собирает текст результата tools/call из массива content. }
+{ Collects the text of a tools/call result from the content array. }
 function ExtractToolText(Res: TJSONData; out Text: string): Boolean;
 var
   Arr, Item, SC: TJSONData;
@@ -648,7 +650,7 @@ begin
   IsError := False;
   Err := '';
 
-  { Request забирает Params (и вложенный ArgsD) во владение. }
+  { Request takes Params (and the nested ArgsD) over. }
   Params := TJSONObject.Create;
   Params.Add('name', ToolName);
   ArgsD := nil;
@@ -779,7 +781,7 @@ var
 begin
   Result := False;
   Err := '';
-  { Клиент забирает транспорт во владение — даже при ошибке. }
+  { The client takes the transport over -- even on error. }
   Client := TMCPClient.Create(Name, Transport, FTimeout);
   try
     try
@@ -787,7 +789,7 @@ begin
     except
       on E: Exception do
       begin
-        Err := 'не удалось запустить сервер: ' + E.Message;
+        Err := 'failed to start the server: ' + E.Message;
         Client.Free;
         Exit;
       end;
@@ -869,17 +871,17 @@ var
 begin
   if not FileExists(FileName) then
   begin
-    Warnings.Add('файл MCP-конфигурации не найден: ' + FileName);
+    Warnings.Add('MCP configuration file not found: ' + FileName);
     Exit;
   end;
   if not ReadTextFile(FileName, Text, Err) then
   begin
-    Warnings.Add('не удалось прочитать ' + FileName + ': ' + Err);
+    Warnings.Add('failed to read ' + FileName + ': ' + Err);
     Exit;
   end;
   if not ParseJSON(Text, D, Err) then
   begin
-    Warnings.Add('некорректный JSON в ' + FileName + ': ' + Err);
+    Warnings.Add('invalid JSON in ' + FileName + ': ' + Err);
     Exit;
   end;
   try
@@ -888,7 +890,7 @@ begin
       ServersD := D.FindPath('mcpServers');
     if not (ServersD is TJSONObject) then
     begin
-      Warnings.Add('в ' + FileName + ' нет объекта mcpServers');
+      Warnings.Add('no mcpServers object in ' + FileName);
       Exit;
     end;
     O := TJSONObject(ServersD);
@@ -899,7 +901,7 @@ begin
       Item := O.Items[I];
       if not (Item is TJSONObject) then
       begin
-        Warnings.Add('MCP-сервер ' + Name + ': описание не является объектом');
+        Warnings.Add('MCP server ' + Name + ': the description is not an object');
         Continue;
       end;
       if not JBool(Item, 'enabled', True) then
@@ -909,10 +911,10 @@ begin
       if Cmd = '' then
       begin
         if JStr(Item, 'url', '') <> '' then
-          Warnings.Add('MCP-сервер ' + Name +
-            ': HTTP-транспорт пока не поддерживается, нужен command')
+          Warnings.Add('MCP server ' + Name +
+            ': the HTTP transport is not supported yet, command is required')
         else
-          Warnings.Add('MCP-сервер ' + Name + ': не задан command');
+          Warnings.Add('MCP server ' + Name + ': command is not set');
         Continue;
       end;
 
@@ -936,20 +938,20 @@ begin
         Env.Free;
       end;
 
-      { Таймаут сервера: собственный или общий. }
+      { Server timeout: its own or the common one. }
       OneTimeout := FTimeout;
       X := Item.FindPath('timeout');
       if (X is TJSONNumber) and (X.AsInteger > 0) then
         OneTimeout := X.AsInteger;
 
-      { Собственный таймаут сервера действует и на рукопожатие,
-        и на последующие вызовы инструментов. }
+      { The server's own timeout applies both to the handshake and to the
+        following tool calls. }
       OldTimeout := FTimeout;
       if OneTimeout > 0 then
         FTimeout := OneTimeout;
       try
         if not AddServer(Name, Transport, Err) then
-          Warnings.Add('MCP-сервер ' + Name + ': ' + Err);
+          Warnings.Add('MCP server ' + Name + ': ' + Err);
       finally
         FTimeout := OldTimeout;
       end;
@@ -971,13 +973,13 @@ begin
   Idx := FindTool(FullName);
   if Idx < 0 then
   begin
-    Err := 'неизвестный MCP-инструмент: ' + FullName;
+    Err := 'unknown MCP tool: ' + FullName;
     Exit(False);
   end;
   Client := ClientByName(FServerOfTool[Idx]);
   if Client = nil then
   begin
-    Err := 'MCP-сервер недоступен: ' + FServerOfTool[Idx];
+    Err := 'MCP server is unavailable: ' + FServerOfTool[Idx];
     Exit(False);
   end;
   Result := Client.CallTool(FOrigNameOfTool[Idx], ArgsJson, Text, IsError, Err);

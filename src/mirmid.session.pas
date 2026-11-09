@@ -1,9 +1,9 @@
 unit mirmid.session;
-{ Сохранение и загрузка сессий диалога в <WorkDir>/.mirmid/sessions.
-  Схема 2: поле plan (JSON плана или null); обратная совместимость
-  со схемой 1 (без поля plan). Там же лежат вспомогательные файлы
-  сессий субагентов (<база>_sub_<n>.json), шагов плана
-  (<база>_step_<id>.json) и фазы анализа (<база>_analysis.json). }
+{ Saving and loading of dialog sessions in <WorkDir>/.mirmid/sessions.
+  Schema 2: the plan field (plan JSON or null); backward compatible
+  with schema 1 (no plan field). Auxiliary session files of subagents
+  (<base>_sub_<n>.json), plan steps (<base>_step_<id>.json) and the
+  analysis phase (<base>_analysis.json) live there as well. }
 
 {$mode objfpc}{$H+}
 
@@ -13,52 +13,53 @@ uses
   SysUtils, mirmid.types, mirmid.plan;
 
 function SessionDir(const WorkDir: string): string;
-{ Каталог журнала контекста: <WorkDir>/.mirmid/journal (вне sessions,
-  чтобы *.json сессий и ListSessions не затрагивались). }
+{ Context journal directory: <WorkDir>/.mirmid/journal (outside sessions,
+  so that *.json session files and ListSessions are not affected). }
 function JournalDir(const WorkDir: string): string;
-{ Файл журнала сессии <Id>: <Dir>/<Id>.jsonl (по одной JSON-записи в строке). }
+{ Journal file of session <Id>: <Dir>/<Id>.jsonl (one JSON record per line). }
 function JournalFile(const Dir, Id: string): string;
-{ Дописывает в журнал сессии запись о сохранении: время, operation=Flash,
-  размер контекста (ContextTokens) и размер части контекста этой записи
-  (PartTokens), в токенах. }
+{ Appends a save record to the session journal: time, operation=Flash,
+  context size (ContextTokens) and the size of the context part of this
+  record (PartTokens), in tokens. }
 function AppendJournalEntry(const Dir, Id: string;
   ContextTokens, PartTokens: Integer; out Err: string): Boolean;
 
 type
-  { Итог сохранения сессии вместе с журналом контекста. }
+  { Outcome of saving a session together with the context journal. }
   TPersistResult = (
-    prSkipped,        { сессии отключены (--no-session): ничего не записано }
-    prSessionFailed,  { файл сессии не сохранён (журнал не тронут) }
-    prJournalFailed,  { сессия сохранена, запись в журнал не удалась }
-    prOk);            { сессия сохранена, журнал дописан }
+    prSkipped,        { sessions disabled (--no-session): nothing written }
+    prSessionFailed,  { session file not saved (journal untouched) }
+    prJournalFailed,  { session saved, journal entry failed }
+    prOk);            { session saved, journal appended }
 
-{ Сохраняет сессию и сразу дописывает запись журнала контекста. В режиме
-  --no-session (NoSession=True) не создаёт ни файла сессии, ни файла журнала.
-  Err — причина сбоя для prSessionFailed/prJournalFailed. Исключение при
-  записи журнала перехватывается здесь, чтобы CLI не выдал его за сбой
-  сохранения сессии. }
+{ Saves the session and immediately appends a context journal record. In
+  --no-session mode (NoSession=True) it creates neither the session file nor
+  the journal file. Err — the failure reason for prSessionFailed /
+  prJournalFailed. An exception while writing the journal is caught here so
+  that the CLI does not report it as a session save failure. }
 function SaveSessionWithJournal(const WorkDir, Id, Model: string;
   const Msgs: TMessages; const Plan: TPlan; NoSession: Boolean;
   ContextTokens, PartTokens: Integer; out Err: string): TPersistResult;
-{ Идентификатор вида 20250101-120000-ab12cd. }
+{ Identifier of the form 20250101-120000-ab12cd. }
 function NewSessionId: string;
-{ Следующий номер файла сессии субагента с базой <Base>:
-  максимальный существующий номер среди файлов <Base>_sub_<n>.json + 1. }
+{ Next number of the subagent session file with base <Base>: the highest
+  existing number among the <Base>_sub_<n>.json files + 1. }
 function NextSubagentNum(const Dir, Base: string): Integer;
-{ Имя (без расширения) файла сессии субагента: <Base>_sub_<n>. }
+{ Name (without extension) of the subagent session file: <Base>_sub_<n>. }
 function SubagentSessionId(const Dir, Base: string): string;
-{ Имя (без расширения) файла сессии шага плана: <Base>_step_<StepId>
-  (так называется сессия первой попытки шага). }
+{ Name (without extension) of the plan step session file: <Base>_step_<StepId>
+  (this is the name of the session of the first step attempt). }
 function StepSessionId(const Base, StepId: string): string;
-{ Имя (без расширения) файла сессии попытки шага: первая попытка — как
-  StepSessionId (<Base>_step_<StepId>), повторные — с номером попытки
-  <Base>_step_<StepId>_try<N> (N — номер попытки, начиная с 2), чтобы сессии
-  попыток не затирали друг друга. TryNum <= 1 — первая попытка. }
+{ Name (without extension) of the file of a step attempt session: the first
+  attempt is like StepSessionId (<Base>_step_<StepId>), retries carry the
+  attempt number <Base>_step_<StepId>_try<N> (N — attempt number starting
+  from 2), so that attempt sessions do not overwrite each other.
+  TryNum <= 1 — the first attempt. }
 function StepSessionIdTry(const Base, StepId: string; TryNum: Integer): string;
-{ Имя (без расширения) файла сессии фазы анализа: <Base>_analysis. }
+{ Name (without extension) of the analysis phase session file: <Base>_analysis. }
 function AnalysisSessionId(const Base: string): string;
-{ Файл вспомогательной сессии (субагента, шага плана или анализа):
-  имя содержит '_sub_', '_step_' или '_analysis'. }
+{ Auxiliary session file (subagent, plan step or analysis): the name contains
+  '_sub_', '_step_' or '_analysis'. }
 function IsAuxSessionFile(const Name: string): Boolean;
 
 function SaveSession(const Dir, Id, Model: string; const Msgs: TMessages;
@@ -86,8 +87,8 @@ function JournalFile(const Dir, Id: string): string;
 begin
   Result := IncludeTrailingPathDelimiter(Dir) + Id + '.jsonl';
 end;
-{ Значения строк — через переменные: fpjson сам экранирует и кодирует
-  строки, а прямой литерал в аргументе Add рискует двойным перекодированием. }
+{ String values go through variables: fpjson escapes and encodes strings
+  itself, while a literal passed to Add risks double re-encoding. }
 function AppendJournalEntry(const Dir, Id: string;
   ContextTokens, PartTokens: Integer; out Err: string): Boolean;
 var
@@ -148,11 +149,11 @@ begin
   Result := Base + '_step_' + StepId;
 end;
 
-{ Сессия попытки шага: номер попытки в имени файла. Первая попытка — прежнее
-  имя (<Base>_step_<StepId>), чтобы одиночные шаги (PlanStepFixAttempts = 0)
-  сохранялись как раньше; повторные — с суффиксом _try<N> (2, 3, ...).
-  Суффикс идёт после '_step_', поэтому IsAuxSessionFile такие файлы тоже
-  считает вспомогательными. }
+{ Step attempt session: the attempt number is part of the file name. The first
+  attempt keeps the former name (<Base>_step_<StepId>), so that single-attempt
+  steps (PlanStepFixAttempts = 0) are saved as before; retries get the
+  _try<N> suffix (2, 3, ...). The suffix comes after '_step_', so
+  IsAuxSessionFile counts such files as auxiliary too. }
 function StepSessionIdTry(const Base, StepId: string; TryNum: Integer): string;
 begin
   Result := StepSessionId(Base, StepId);
@@ -188,7 +189,7 @@ begin
     O.Add('model', Model);
     O.Add('updated', FormatDateTime('yyyy-mm-dd"T"hh:nn:ss', Now));
     O.Add('messages', MessagesToJSONArray(Msgs));
-    { План (схема 2): объект, если есть, иначе null. }
+    { Plan (schema 2): an object when present, otherwise null. }
     if Plan <> nil then
     begin
       PlanO := Plan.ToJSON;
@@ -212,7 +213,7 @@ function SaveSessionWithJournal(const WorkDir, Id, Model: string;
   ContextTokens, PartTokens: Integer; out Err: string): TPersistResult;
 begin
   Err := '';
-  { --no-session: сессия не сохраняется, журнал ей не нужен. }
+  { --no-session: the session is not saved and needs no journal. }
   if NoSession then
     Exit(prSkipped);
   if not SaveSession(SessionDir(WorkDir), Id, Model, Msgs, Plan, Err) then
@@ -245,12 +246,12 @@ begin
   Result := False;
   if not ReadTextFile(SessionFile(Dir, Id), Text, Err) then
   begin
-    Err := 'не удалось прочитать сессию: ' + Err;
+    Err := 'failed to read session: ' + Err;
     Exit;
   end;
   if not ParseJSON(Text, D, Err) then
   begin
-    Err := 'некорректный JSON сессии: ' + Err;
+    Err := 'invalid session JSON: ' + Err;
     Exit;
   end;
   try
@@ -263,18 +264,18 @@ begin
     end;
     if not (ArrD is TJSONArray) then
     begin
-      Err := 'в сессии нет messages';
+      Err := 'session has no messages';
       Exit;
     end;
     JSONArrayToMessages(TJSONArray(ArrD), Msgs);
-    { План (схема 2): нет поля (схема 1) или null — плана нет;
-      план присутствует, но невалиден — ошибка загрузки. }
+    { Plan (schema 2): no field (schema 1) or null — no plan;
+      the plan is present but invalid — a load error. }
     if (PlanD <> nil) and not (PlanD is TJSONNull) then
     begin
       Plan := TPlan.FromJSON(PlanD, Err);
       if Plan = nil then
       begin
-        Err := 'некорректный план в сессии: ' + Err;
+        Err := 'invalid plan in session: ' + Err;
         Exit;
       end;
     end;

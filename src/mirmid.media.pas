@@ -1,10 +1,10 @@
 unit mirmid.media;
-{ Инструмент read_media_file: знакомит модель с медиафайлами (изображения,
-  звук, видео). Модель работает с текстом, поэтому инструмент возвращает
-  описание файла: вид, формат, MIME-тип, размер и — для изображений —
-  разрешение; по запросу содержимое кодируется в base64.
-  Вид определяется по сигнатуре (первым байтам) файла, при неудаче — по
-  расширению имени. }
+{ The read_media_file tool: introduces media files (images, audio, video) to
+  the model. The model works with text, so the tool returns a description of
+  the file: kind, format, MIME type, size and — for images — the resolution;
+  on request the content is encoded as base64.
+  The kind is detected from the signature (the first bytes) of the file and,
+  when that fails, from the file name extension. }
 
 {$mode objfpc}{$H+}
 
@@ -15,25 +15,25 @@ uses
 
 const
   MEDIA_TOOL_NAME = 'read_media_file';
-  { Предел размера base64-вывода по умолчанию: сколько байт исходного файла
-    кодировать (0 — файл целиком). }
+  { Default limit of the base64 output: how many bytes of the source file to
+    encode (0 — the whole file). }
   MAX_MEDIA_BASE64 = 262144;
-  { Сколько байт читать для определения формата (сигнатура и заголовки). }
+  { How many bytes to read for format detection (signature and headers). }
   MEDIA_HEAD_BYTES = 65536;
 
-{ Регистрирует инструмент read_media_file в реестре. }
+{ Registers the read_media_file tool in the registry. }
 procedure RegisterMediaTool(R: TToolRegistry);
 
-{ Вид медиа по расширению имени файла: 'image' | 'audio' | 'video' | ''.
-  Формат и MIME-тип возвращаются в Fmt и Mime. }
+{ Media kind by file name extension: 'image' | 'audio' | 'video' | ''.
+  The format and the MIME type are returned in Fmt and Mime. }
 function MediaKindByExt(const FileName: string; out Fmt, Mime: string): string;
 
-{ Вид медиа по сигнатуре (первым байтам файла): 'image' | 'audio' | 'video' | ''.
-  Формат и MIME-тип возвращаются в Fmt и Mime. }
+{ Media kind by signature (the first bytes of the file): 'image' | 'audio' |
+  'video' | ''. The format and the MIME type are returned in Fmt and Mime. }
 function MediaKindByMagic(const Head: string; out Fmt, Mime: string): string;
 
-{ Размеры изображения из заголовка файла (Fmt — значение, полученное от
-  MediaKindByMagic/MediaKindByExt). True, если размеры удалось разобрать. }
+{ Image dimensions from the file header (Fmt is the value returned by
+  MediaKindByMagic/MediaKindByExt). True when the dimensions could be parsed. }
 function ImageSizeFromHead(const Head, Fmt: string;
   out Width, Height: Integer): Boolean;
 
@@ -44,7 +44,8 @@ uses
 
 { ------------------------------------------------------------------ helpers }
 
-{ Совпадает ли фрагмент Sig с байтами Head, начиная со смещения Off (0-based). }
+{ Does the fragment Sig match the bytes of Head starting at offset Off
+  (0-based)? }
 function SigAt(const S: string; Off: Integer; const Sig: string): Boolean;
 var
   I: Integer;
@@ -58,7 +59,7 @@ begin
   Result := True;
 end;
 
-{ Байт по смещению Off (0-based); за пределами данных — 0. }
+{ Byte at offset Off (0-based); 0 outside the data. }
 function ByteAt(const S: string; Off: Integer): LongWord;
 begin
   if (Off < 0) or (Off >= Length(S)) then
@@ -94,7 +95,7 @@ begin
     (ByteAt(S, Off + 2) shl 8) or ByteAt(S, Off + 3);
 end;
 
-{ ------------------------------------------------------ вид медиа по имени }
+{ ------------------------------------------------------ kind by name }
 
 function MediaKindByExt(const FileName: string; out Fmt, Mime: string): string;
 var
@@ -140,7 +141,7 @@ begin
   end;
 end;
 
-{ Разбирает бренд контейнера ISO-BMFF (ftyp) в вид, формат и MIME. }
+{ Parses the ISO-BMFF container brand (ftyp) into kind, format and MIME. }
 procedure IsoBrand(const Head: string; out Kind, Fmt, Mime: string);
 var
   Brand: string;
@@ -181,7 +182,7 @@ begin
   end;
 end;
 
-{ -------------------------------------------------- вид медиа по сигнатуре }
+{ -------------------------------------------------- kind by signature }
 
 function MediaKindByMagic(const Head: string; out Fmt, Mime: string): string;
 begin
@@ -202,8 +203,8 @@ begin
   end
   else if SigAt(Head, 0, 'BM') and (LE32(Head, 14) > 0) then
   begin
-    { Слабая сигнатура: принимаем только при правдоподобном размере
-      заголовка DIB (12, 40, 52, 56, 108, 124). }
+    { Weak signature: accepted only with a plausible DIB header size
+      (12, 40, 52, 56, 108, 124). }
     case LE32(Head, 14) of
       12, 40, 52, 56, 64, 108, 124:
         begin Result := 'image'; Fmt := 'BMP'; Mime := 'image/bmp'; end;
@@ -223,7 +224,7 @@ begin
   end
   else if SigAt(Head, 0, #$1A#$45#$DF#$A3) then
   begin
-    { EBML: Matroska или WebM — различаем по DocType. }
+    { EBML: Matroska or WebM — distinguished by DocType. }
     if Pos('webm', LowerCase(Head)) > 0 then
     begin
       Result := 'video'; Fmt := 'WEBM'; Mime := 'video/webm';
@@ -256,7 +257,7 @@ begin
   end
   else if SigAt(Head, 0, #$30#$26#$B2#$75) then
   begin
-    { ASF: WMA (звук) или WMV (видео) — различаем по расширению позже. }
+    { ASF: WMA (audio) or WMV (video) — refined by the extension later. }
     Result := 'audio'; Fmt := 'ASF'; Mime := 'audio/x-ms-wma';
   end
   else if SigAt(Head, 0, 'FLV'#$01) then
@@ -281,7 +282,7 @@ begin
   end;
 end;
 
-{ ---------------------------------------------------- размеры изображения }
+{ ---------------------------------------------------- image dimensions }
 
 function JpegSize(const S: string; out W, H: Integer): Boolean;
 var
@@ -292,7 +293,7 @@ begin
   Result := False;
   W := 0;
   H := 0;
-  I := 2;                       { пропускаем SOI (FF D8) }
+  I := 2;                       { skip the SOI (FF D8) }
   while I + 1 <= Length(S) do
   begin
     if ByteAt(S, I) <> $FF then
@@ -301,22 +302,22 @@ begin
       Continue;
     end;
     Marker := ByteAt(S, I + 1);
-    if Marker = $FF then       { выравнивающие FF перед маркером }
+    if Marker = $FF then       { padding FF bytes before a marker }
     begin
       Inc(I);
       Continue;
     end;
     if (Marker = $D8) or (Marker = $01) or ((Marker >= $D0) and (Marker <= $D7)) then
     begin
-      Inc(I, 2);                { маркеры без полезной нагрузки }
+      Inc(I, 2);                { markers without payload }
       Continue;
     end;
     if (Marker = $D9) or (Marker = $DA) then
-      Exit;                     { конец файла или начало сжатых данных }
+      Exit;                     { end of file or start of compressed data }
     if (Marker >= $C0) and (Marker <= $CF) and (Marker <> $C4) and
       (Marker <> $C8) and (Marker <> $CC) then
     begin
-      H := BE16(S, I + 5);      { SOF: длина, точность, высота, ширина }
+      H := BE16(S, I + 5);      { SOF: length, precision, height, width }
       W := BE16(S, I + 7);
       Exit((W > 0) and (H > 0));
     end;
@@ -338,19 +339,19 @@ begin
   if not (SigAt(S, 0, 'RIFF') and SigAt(S, 8, 'WEBP')) then
     Exit;
   FourCC := Copy(S, 13, 4);
-  if FourCC = 'VP8X' then          { расширенный формат: размеры холста }
+  if FourCC = 'VP8X' then          { extended format: canvas dimensions }
   begin
     W := LE24(S, 24) + 1;
     H := LE24(S, 27) + 1;
   end
-  else if FourCC = 'VP8 ' then     { с потерями }
+  else if FourCC = 'VP8 ' then     { lossy }
   begin
     if not SigAt(S, 23, #$9D#$01#$2A) then
       Exit;
     W := LE16(S, 26) and $3FFF;
     H := LE16(S, 28) and $3FFF;
   end
-  else if FourCC = 'VP8L' then     { без потерь }
+  else if FourCC = 'VP8L' then     { lossless }
   begin
     if ByteAt(S, 20) <> $2F then
       Exit;
@@ -395,7 +396,7 @@ begin
     begin
       IW := LongInt(LE32(Head, 18));
       IH := LongInt(LE32(Head, 22));
-      if IH < 0 then                  { отрицательная высота — строки сверху вниз }
+      if IH < 0 then                  { negative height — top-down rows }
         IH := -IH;
       Width := IW;
       Height := IH;
@@ -413,8 +414,8 @@ begin
   end
   else if Fmt = 'ICO' then
   begin
-    { Запись каталога ICO: ширина и высота — байты 6 и 7 (0 означает 256).
-      Если файл короче 8 байт, данных о размере нет. }
+    { ICO directory entry: width and height are bytes 6 and 7 (0 means 256).
+      If the file is shorter than 8 bytes, there is no size data. }
     if Length(Head) < 8 then
       Exit(False);
     Width := ByteAt(Head, 6);
@@ -428,21 +429,9 @@ begin
   Result := (Width > 0) and (Height > 0);
 end;
 
-{ --------------------------------------------------------------- инструмент }
+{ --------------------------------------------------------------- the tool }
 
-function KindRu(const Kind: string): string;
-begin
-  if Kind = 'image' then
-    Result := 'изображение'
-  else if Kind = 'audio' then
-    Result := 'звук'
-  else if Kind = 'video' then
-    Result := 'видео'
-  else
-    Result := Kind;
-end;
-
-{ Читает не более Limit байт файла (Limit <= 0 — весь файл). }
+{ Reads at most Limit bytes of the file (Limit <= 0 — the whole file). }
 function ReadFilePart(const Path: string; Limit: Integer; out Data: string;
   out Err: string): Boolean;
 var
@@ -477,28 +466,28 @@ var
   Size: Int64;
   F: TFileStream;
 begin
-  { Гейт в обработчике: ключ read_media_file в секции [tools]. }
+  { Handler gate: the read_media_file key in the [tools] section. }
   if not ToolEnabled(Ctx.Cfg, MEDIA_TOOL_NAME) then
     Exit(ToolDisabled(MEDIA_TOOL_NAME));
   P := Trim(JStr(A, 'path', ''));
   if P = '' then
-    Exit(ErrResult('не задан path'));
+    Exit(ErrResult('path is not set'));
   P := ExpPath(P, Ctx.WorkDir);
   if IsMirmidPath(Ctx.WorkDir, P) then
-    Exit(ErrResult('доступ запрещён: ' + P +
-      ' находится в служебном каталоге .mirmid'));
+    Exit(ErrResult('access denied: ' + P +
+      ' is inside the .mirmid service directory'));
   if DirectoryExists(P) then
-    Exit(ErrResult('это каталог, а не файл: ' + P));
+    Exit(ErrResult('this is a directory, not a file: ' + P));
   if not FileExists(P) then
-    Exit(ErrResult('файл не найден: ' + P));
+    Exit(ErrResult('file not found: ' + P));
 
-  { Для определения формата достаточно заголовка: файл целиком не читаем
-    (медиафайлы бывают очень большими). }
+  { The header is enough for format detection: the whole file is not read
+    (media files can be very large). }
   try
     F := TFileStream.Create(P, fmOpenRead or fmShareDenyNone);
   except
     on E: Exception do
-      Exit(ErrResult('не удалось открыть файл: ' + P + ': ' + E.Message));
+      Exit(ErrResult('cannot open file: ' + P + ': ' + E.Message));
   end;
   try
     Size := F.Size;
@@ -512,8 +501,8 @@ begin
     F.Free;
   end;
 
-  { Сигнатура надёжна для изображений; у контейнеров звука и видео (MP4,
-    MKV, ASF) вид уточняем по расширению имени. }
+  { The signature is reliable for images; for audio and video containers
+    (MP4, MKV, ASF) the kind is refined by the file name extension. }
   Kind := MediaKindByMagic(Head, Fmt, Mime);
   EKind := MediaKindByExt(P, EFmt, EMime);
   if (Kind = '') or ((EKind <> '') and (Kind <> 'image')) then
@@ -523,16 +512,16 @@ begin
     Mime := EMime;
   end;
   if Kind = '' then
-    Exit(ErrResult('не медиафайл: ' + P +
-      ' (для текстовых форматов используйте read_text_file)'));
+    Exit(ErrResult('not a media file: ' + P +
+      ' (use read_text_file for text formats)'));
 
-  Info := 'файл: ' + P + sLineBreak +
-          'вид: ' + KindRu(Kind) + ' (' + Fmt + ')' + sLineBreak +
+  Info := 'file: ' + P + sLineBreak +
+          'kind: ' + Kind + ' (' + Fmt + ')' + sLineBreak +
           'MIME: ' + Mime + sLineBreak +
-          'размер: ' + IntToStr(Size) + ' байт';
+          'size: ' + IntToStr(Size) + ' bytes';
   if Kind = 'image' then
     if ImageSizeFromHead(Head, Fmt, W, H) then
-      Info := Info + sLineBreak + Format('разрешение: %dx%d', [W, H]);
+      Info := Info + sLineBreak + Format('resolution: %dx%d', [W, H]);
 
   if JBool(A, 'base64', False) then
   begin
@@ -541,10 +530,10 @@ begin
       Limit := 0;
     if (Limit > 0) and (Size > Limit) then
       Info := Info + sLineBreak +
-        Format('[… закодированы первые %d из %d байт: увеличьте max_bytes, ' +
-          'чтобы получить файл целиком]', [Limit, Size]);
+        Format('[... the first %d of %d bytes are encoded: increase max_bytes ' +
+          'to get the whole file]', [Limit, Size]);
     if not ReadFilePart(P, Limit, Data, Err) then
-      Exit(ErrResult('не удалось прочитать файл: ' + Err));
+      Exit(ErrResult('cannot read file: ' + Err));
     Info := Info + sLineBreak + 'base64:' + sLineBreak + EncodeStringBase64(Data);
   end;
 
@@ -554,14 +543,14 @@ end;
 procedure RegisterMediaTool(R: TToolRegistry);
 begin
   R.Add(MEDIA_TOOL_NAME,
-    'Читает медиафайл (изображение, звук, видео): вид, формат, MIME-тип, ' +
-    'размер и разрешение изображения; при base64=true возвращает содержимое ' +
-    'в base64.',
+    'Reads a media file (image, audio, video): kind, format, MIME type, ' +
+    'size and image resolution; with base64=true returns the content ' +
+    'in base64.',
     SchemaObject(
       TJSONObject.Create([
-        'path', PropStr('Путь к медиафайлу'),
-        'base64', PropBool('Вернуть содержимое файла в base64 (по умолчанию нет)'),
-        'max_bytes', PropInt('Предел base64 (в байтах исходного файла); 0 — файл целиком (по умолчанию 262144)')]),
+        'path', PropStr('Path to the media file'),
+        'base64', PropBool('Return the file content in base64 (default no)'),
+        'max_bytes', PropInt('base64 limit (in bytes of the source file); 0 — the whole file (default 262144)')]),
       ['path']),
     @ToolReadMedia);
 end;

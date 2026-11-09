@@ -1,10 +1,10 @@
 unit mirmid.screen;
-{ Инструменты screen_shoot и window_shoot: сохраняют снимок всего экрана
-  (всех мониторов) или активного окна в файл PNG или BMP.
-  На Windows снимок делается средствами GDI (без внешних программ),
-  на Unix — доступными утилитами (grim, scrot, ImageMagick import,
-  gnome-screenshot, spectacle). Инструменты включаются ключами screen_shoot и
-  window_shoot в секции [tools] (по умолчанию выключены). }
+{ Tools screen_shoot and window_shoot: save a snapshot of the whole screen
+  (all monitors) or of the active window to a PNG or BMP file.
+  On Windows the snapshot is taken with GDI (no external programs),
+  on Unix -- with available utilities (grim, scrot, ImageMagick import,
+  gnome-screenshot, spectacle). The tools are switched on by the screen_shoot and
+  window_shoot keys in the [tools] section (disabled by default). }
 
 {$mode objfpc}{$H+}
 
@@ -16,22 +16,21 @@ uses
 const
   SCREEN_TOOL_NAME = 'screen_shoot';
   WINDOW_TOOL_NAME = 'window_shoot';
-  { Таймаут внешних утилит снимка экрана на Unix, сек. }
+  { Timeout of the external screenshot utilities on Unix, sec. }
   SCREEN_SHOT_TIMEOUT = 30;
 
-{ Регистрирует инструменты screen_shoot и window_shoot в реестре. }
+{ Registers the screen_shoot and window_shoot tools in the registry. }
 procedure RegisterScreenTools(R: TToolRegistry);
 
-{ Записывает изображение из буфера BGRA (4 байта на пиксель, порядок строк —
-  сверху вниз) в файл. Формат — по расширению: .png (24 бита, RGBA→RGB)
-  или .bmp. }
+{ Writes the image from a BGRA buffer (4 bytes per pixel, rows top to bottom)
+  to a file. Format by extension: .png (24 bit, RGBA->RGB) or .bmp. }
 function SaveBgraImage(const Path: string; Width, Height: Integer;
   Bgra: PByte; out Err: string): Boolean;
 
-{ Снимок экрана (Window = False) или окна (Handle = 0 — активное окно) в буфер
-  BGRA; буфер выделяется через GetMem — освобождает FreeMem. На платформах без
-  GDI-захвата (Unix) возвращает False: там снимок делают внешние утилиты, сразу
-  записывая его в файл. }
+{ Snapshot of the screen (Window = False) or of a window (Handle = 0 -- active
+  window) into a BGRA buffer; the buffer is allocated with GetMem -- free it with
+  FreeMem. On platforms without GDI capture (Unix) returns False: there the
+  snapshot is taken by external utilities that write the file directly. }
 function CaptureToBuffer(Window: Boolean; Handle: QWord; out Buf: PByte;
   out Width, Height: Integer; out Err: string): Boolean;
 
@@ -42,7 +41,7 @@ uses
   mirmid.media, mirmid.types, mirmid.util, mirmid.json
   {$IFDEF WINDOWS}, Windows{$ENDIF};
 
-{ -------------------------------------------------- сохранение изображения }
+{ ------------------------------------------------ saving the image }
 
 function SaveBgraImage(const Path: string; Width, Height: Integer;
   Bgra: PByte; out Err: string): Boolean;
@@ -59,7 +58,7 @@ begin
   Result := False;
   if (Width <= 0) or (Height <= 0) or (Bgra = nil) then
   begin
-    Err := 'пустое изображение';
+    Err := 'empty image';
     Exit;
   end;
   Ext := LowerCase(ExtractFileExt(Path));
@@ -67,12 +66,12 @@ begin
     Ext := '.png';
   if (Ext <> '.png') and (Ext <> '.bmp') then
   begin
-    Err := 'поддерживаются файлы .png и .bmp, а не ' + Ext;
+    Err := 'only .png and .bmp files are supported, not ' + Ext;
     Exit;
   end;
   if not EnsureParentDir(Path) then
   begin
-    Err := 'не удалось создать каталог для ' + Path;
+    Err := 'failed to create the directory for ' + Path;
     Exit;
   end;
 
@@ -85,7 +84,7 @@ begin
       for Y := 0 to Height - 1 do
         for X := 0 to Width - 1 do
         begin
-          { FPC-изображения хранят цвет 16 битами на канал. }
+          { FPC images keep colour with 16 bits per channel. }
           C.Blue  := P^ * 257; Inc(P);
           C.Green := P^ * 257; Inc(P);
           C.Red   := P^ * 257; Inc(P);
@@ -95,8 +94,8 @@ begin
       if Ext = '.png' then
       begin
         Png := TFPWriterPNG.Create;
-        Png.UseAlpha := False;    { прозрачность снимку не нужна }
-        Png.WordSized := False;   { 8 бит на канал }
+        Png.UseAlpha := False;    { the snapshot needs no transparency }
+        Png.WordSized := False;   { 8 bits per channel }
         Img.SaveToFile(Path, Png);
       end
       else
@@ -136,8 +135,9 @@ begin
   end;
 end;
 
-{ Размеры готового снимка — из заголовка сохранённого файла (формат по
-  расширению). False — если формат не PNG/BMP или заголовок не прочитать. }
+{ Dimensions of the finished snapshot -- from the header of the saved file
+  (format by extension). False -- if the format is not PNG/BMP or the header
+  cannot be read. }
 function ShotDims(const Path: string; out W, H: Integer): Boolean;
 var
   Head, Fmt: string;
@@ -172,7 +172,7 @@ begin
   Result := ImageSizeFromHead(Head, Fmt, W, H);
 end;
 
-{ --------------------------------------------------- снимок: Windows (GDI) }
+{ ----------------------------------------------- snapshot: Windows (GDI) }
 
 {$IFDEF WINDOWS}
 
@@ -189,8 +189,8 @@ type
 const
   DWMWA_EXTENDED_FRAME_BOUNDS = 9;
 
-{ Границы окна без тени и невидимых рамок изменения размера (DWM).
-  False — вызывающий использует GetWindowRect. }
+{ Window bounds without the shadow and the invisible resize borders (DWM).
+  False -- the caller uses GetWindowRect. }
 function DwmFrameRect(Wnd: HWND; out R: TRect): Boolean;
 var
   H: HMODULE;
@@ -217,7 +217,7 @@ begin
   Result := (R.Right > R.Left) and (R.Bottom > R.Top);
 end;
 
-{ Дескриптор окна: десятичное число или 0x... в шестнадцатеричном виде. }
+{ Window handle: decimal number or 0x... in hexadecimal. }
 function ParseHandle(const S: string): QWord;
 var
   T: string;
@@ -235,8 +235,9 @@ begin
   Result := StrToQWordDef(T, 0);
 end;
 
-{ Процесс объявляется DPI-осведомлённым, иначе система отдаёт снимок в
-  масштабе экрана. Функция появилась в Vista — вызываем динамически. }
+{ The process declares itself DPI-aware, otherwise the system returns the
+  snapshot scaled to the screen. The function appeared in Vista -- call it
+  dynamically. }
 procedure EnsureDpiAware;
 var
   H: HMODULE;
@@ -253,11 +254,11 @@ begin
     try
       F();
     except
-      { нет функции или вызов запрещён — работаем как есть }
+      { no such function or the call is forbidden -- work as is }
     end;
 end;
 
-{ Копирует прямоугольник экрана в буфер BGRA. }
+{ Copies a rectangle of the screen into a BGRA buffer. }
 function CaptureRect(X, Y, Width, Height: Integer; out Buf: PByte): Boolean;
 var
   SrcDC, MemDC: HDC;
@@ -285,13 +286,13 @@ begin
     Old := SelectObject(MemDC, Bmp);
     if not BitBlt(MemDC, 0, 0, Width, Height, SrcDC, X, Y, SRCCOPY) then
       Exit;
-    { GetDIBits нельзя вызывать для битмапа, ещё выбранного в DC. }
+    { GetDIBits must not be called for a bitmap still selected into the DC. }
     SelectObject(MemDC, Old);
     Old := 0;
     FillChar(BI, SizeOf(BI), 0);
     BI.bmiHeader.biSize := SizeOf(TBitmapInfoHeader);
     BI.bmiHeader.biWidth := Width;
-    BI.bmiHeader.biHeight := -Height;      { строки сверху вниз }
+    BI.bmiHeader.biHeight := -Height;      { rows top to bottom }
     BI.bmiHeader.biPlanes := 1;
     BI.bmiHeader.biBitCount := 32;
     BI.bmiHeader.biCompression := 0;       { BI_RGB }
@@ -314,7 +315,7 @@ begin
   end;
 end;
 
-{ Снимок экрана или окна в буфер BGRA: реализация через GDI. }
+{ Snapshot of the screen or of a window into a BGRA buffer: GDI implementation. }
 function CaptureToBuffer(Window: Boolean; Handle: QWord; out Buf: PByte;
   out Width, Height: Integer; out Err: string): Boolean;
 var
@@ -336,18 +337,18 @@ begin
       Wnd := GetForegroundWindow;
     if Wnd = 0 then
     begin
-      Err := 'не удалось определить активное окно';
+      Err := 'failed to determine the active window';
       Exit;
     end;
     if IsIconic(Wnd) then
     begin
-      Err := 'окно свёрнуто — снимок невозможен';
+      Err := 'the window is minimized -- snapshot impossible';
       Exit;
     end;
     if not DwmFrameRect(Wnd, R) then
     if not GetWindowRect(Wnd, R) then
     begin
-      Err := 'не удалось определить размеры окна';
+      Err := 'failed to determine the window size';
       Exit;
     end;
     X := R.Left;
@@ -365,11 +366,11 @@ begin
 
   if (Width <= 0) or (Height <= 0) then
   begin
-    Err := 'пустая область снимка';
+    Err := 'empty snapshot area';
     Exit;
   end;
 
-  { Обрезаем область по виртуальному экрану. }
+  { Clip the area to the virtual screen. }
   VX := GetSystemMetrics(SM_XVIRTUALSCREEN);
   VY := GetSystemMetrics(SM_YVIRTUALSCREEN);
   VW := GetSystemMetrics(SM_CXVIRTUALSCREEN);
@@ -390,13 +391,13 @@ begin
     Height := VY + VH - Y;
   if (Width <= 0) or (Height <= 0) then
   begin
-    Err := 'окно вне экрана — снимок невозможен';
+    Err := 'the window is outside the screen -- snapshot impossible';
     Exit;
   end;
 
   if not CaptureRect(X, Y, Width, Height, Buf) then
   begin
-    Err := 'не удалось скопировать изображение экрана';
+    Err := 'failed to copy the screen image';
     Exit;
   end;
   Result := True;
@@ -404,7 +405,7 @@ end;
 
 {$ELSE}
 
-{ --------------------------------------------------- снимок: Unix (утилиты) }
+{ ----------------------------------------------- snapshot: Unix (utilities) }
 
 type
   TShotCmd = record
@@ -413,7 +414,7 @@ type
   end;
 
 const
-  { Команды снимка всего экрана, проверяются по порядку. }
+  { Commands that take a whole-screen snapshot, tried in order. }
   ScreenCmds: array[0..4] of TShotCmd = (
     (Tool: 'grim';             Args: ''),
     (Tool: 'scrot';            Args: '-o'),
@@ -421,16 +422,16 @@ const
     (Tool: 'gnome-screenshot'; Args: '-f'),
     (Tool: 'spectacle';        Args: '-b -n -o'));
 
-  { Команды снимка активного окна. }
+  { Commands that take a snapshot of the active window. }
   WindowCmds: array[0..2] of TShotCmd = (
     (Tool: 'scrot';            Args: '-u -o'),
     (Tool: 'gnome-screenshot'; Args: '-w -f'),
     (Tool: 'import';           Args: '-window "$(xdotool getactivewindow)"'));
 
-{ Заключает строку в апострофы для оболочки (bash). }
+{ Quotes a string for the shell (bash). }
 function ShellQuote(const S: string): string;
 const
-  Q = #39;   { апостроф }
+  Q = #39;   { apostrophe }
 begin
   Result := Q + StringReplace(S, Q, Q + '\' + Q + Q, [rfReplaceAll]) + Q;
 end;
@@ -457,7 +458,7 @@ begin
   begin
     if not ToolAvailable(Cmds[I].Tool) then
     begin
-      Err := 'утилита «' + Cmds[I].Tool + '» не найдена';
+      Err := 'utility "' + Cmds[I].Tool + '" not found';
       Continue;
     end;
     if FileExists(Path) then
@@ -468,7 +469,7 @@ begin
       Result := True;
       Exit;
     end;
-    Err := 'не удалось выполнить «' + Cmds[I].Tool + '»: ' +
+    Err := 'failed to run "' + Cmds[I].Tool + '": ' +
       Trim(OutText + ' ' + E);
   end;
 end;
@@ -481,7 +482,7 @@ begin
     Result := TryShots(ScreenCmds, Path, Err);
 end;
 
-{ На Unix снимок сразу пишут внешние утилиты, буфер не используется. }
+{ On Unix external utilities write the snapshot directly, no buffer is used. }
 function CaptureToBuffer(Window: Boolean; Handle: QWord; out Buf: PByte;
   out Width, Height: Integer; out Err: string): Boolean;
 begin
@@ -489,12 +490,12 @@ begin
   Buf := nil;
   Width := 0;
   Height := 0;
-  Err := 'захват экрана в буфер не поддерживается на этой платформе';
+  Err := 'capturing the screen into a buffer is not supported on this platform';
 end;
 
 {$ENDIF}
 
-{ --------------------------------------------------------------- инструмент }
+{ --------------------------------------------------------------- the tool }
 
 function DoShoot(const A: TJSONObject; const Ctx: TToolContext;
   Window: Boolean; const ToolName: string): TToolOutcome;
@@ -504,16 +505,16 @@ var
   Ext: string;
   Buf: PByte;
 begin
-  { Гейт в обработчике: у screen_shoot и window_shoot свои ключи [tools]. }
+  { Gate in the handler: screen_shoot and window_shoot have their own [tools] keys. }
   if not ToolEnabled(Ctx.Cfg, ToolName) then
     Exit(ToolDisabled(ToolName));
   P := Trim(JStr(A, 'path', ''));
   if P = '' then
-    Exit(ErrResult('не задан path'));
+    Exit(ErrResult('path is not set'));
   P := ExpPath(P, Ctx.WorkDir);
   if IsMirmidPath(Ctx.WorkDir, P) then
-    Exit(ErrResult('доступ запрещён: ' + P +
-      ' находится в служебном каталоге .mirmid'));
+    Exit(ErrResult('access denied: ' + P +
+      ' is inside the service directory .mirmid'));
   Ext := LowerCase(ExtractFileExt(P));
   if Ext = '' then
   begin
@@ -521,7 +522,7 @@ begin
     P := P + Ext;
   end;
   if (Ext <> '.png') and (Ext <> '.bmp') then
-    Exit(ErrResult('поддерживаются файлы .png и .bmp, а не ' + Ext));
+    Exit(ErrResult('only .png and .bmp files are supported, not ' + Ext));
 
   W := 0;
   H := 0;
@@ -537,10 +538,10 @@ begin
   end;
   {$ELSE}
   if not EnsureParentDir(P) then
-    Exit(ErrResult('не удалось создать каталог для ' + P));
+    Exit(ErrResult('failed to create the directory for ' + P));
   if not TakeShot(P, Window, Err) then
-    Exit(ErrResult('не удалось сделать снимок: ' + Err +
-      ' (нужна утилита grim, scrot, ImageMagick import, gnome-screenshot или spectacle)'));
+    Exit(ErrResult('failed to take the snapshot: ' + Err +
+      ' (one of grim, scrot, ImageMagick import, gnome-screenshot or spectacle is required)'));
   if not ShotDims(P, W, H) then
   begin
     W := 0;
@@ -549,13 +550,13 @@ begin
   {$ENDIF}
 
   Fmt := UpperCase(Copy(Ext, 2, MaxInt));
-  Info := Format('%s, %d байт', [Fmt, FileSizeOf(P)]);
+  Info := Format('%s, %d bytes', [Fmt, FileSizeOf(P)]);
   if (W > 0) and (H > 0) then
     Info := Format('%dx%d, ', [W, H]) + Info;
   if Window then
-    Result := OkResult('снимок активного окна сохранён: ' + P + ' (' + Info + ')')
+    Result := OkResult('active window snapshot saved: ' + P + ' (' + Info + ')')
   else
-    Result := OkResult('снимок экрана сохранён: ' + P + ' (' + Info + ')');
+    Result := OkResult('screen snapshot saved: ' + P + ' (' + Info + ')');
 end;
 
 function ToolScreenShoot(const A: TJSONObject; const Ctx: TToolContext): TToolOutcome;
@@ -571,21 +572,21 @@ end;
 procedure RegisterScreenTools(R: TToolRegistry);
 begin
   R.Add(SCREEN_TOOL_NAME,
-    'Сохраняет снимок всего экрана (всех мониторов) в файл .png или .bmp. ' +
-    'Нужен включённый инструмент (ключ screen_shoot в секции [tools]).',
+    'Saves a snapshot of the whole screen (all monitors) to a .png or .bmp file. ' +
+    'The tool must be enabled (screen_shoot key in the [tools] section).',
     SchemaObject(
       TJSONObject.Create([
-        'path', PropStr('Путь к файлу снимка (.png или .bmp; без расширения — .png)')]),
+        'path', PropStr('Path to the snapshot file (.png or .bmp; .png when no extension)')]),
       ['path']),
     @ToolScreenShoot);
 
   R.Add(WINDOW_TOOL_NAME,
-    'Сохраняет снимок активного окна в файл .png или .bmp. ' +
-    'Нужен включённый инструмент (ключ window_shoot в секции [tools]).',
+    'Saves a snapshot of the active window to a .png or .bmp file. ' +
+    'The tool must be enabled (window_shoot key in the [tools] section).',
     SchemaObject(
       TJSONObject.Create([
-        'path', PropStr('Путь к файлу снимка (.png или .bmp; без расширения — .png)'),
-        'hwnd', PropStr('Дескриптор окна (по умолчанию — активное окно)')]),
+        'path', PropStr('Path to the snapshot file (.png or .bmp; .png when no extension)'),
+        'hwnd', PropStr('Window handle (the active window by default)')]),
       ['path']),
     @ToolWindowShoot);
 end;

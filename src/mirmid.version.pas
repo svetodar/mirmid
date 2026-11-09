@@ -1,5 +1,5 @@
 unit mirmid.version;
-{ Центральное место с версией и именем программы. }
+{ Single place for the program name and version. }
 
 {$mode objfpc}{$H+}
 
@@ -9,7 +9,7 @@ const
   MIRMID_NAME    = 'mirmid';
   MIRMID_VERSION = '0.1.0';
 
-{ Строка вида «mirmid 0.1.0» для --version. }
+{ A string such as "mirmid 0.1.0" for --version. }
 function FullVersion: string;
 
 implementation

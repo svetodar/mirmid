@@ -1,19 +1,21 @@
 unit mirmid.tlsclient;
-{ HTTPS-клиент на верх библиотеки tls (deps/tls — pure Pascal TLS 1.2,
-  https://github.com/svetodar/tls) + TCP-сокета ssockets. Вместо системного
-  OpenSSL: юниты fphttpclient, opensslsockets, sslsockets не используются,
-  юнит mirmid.openssl удалён.
+{ HTTPS client on top of the tls library (deps/tls — pure Pascal TLS 1.2,
+  https://github.com/svetodar/tls) + TCP sockets from ssockets. Instead of the
+  system OpenSSL: the units fphttpclient, opensslsockets, sslsockets are not
+  used, the unit mirmid.openssl is gone.
 
-  Юнит даё одно абстращи для mirmid.http — «transport» one HTTP-connection:
-    plain TCP (scheme http) или TLS 1.2 (https). Semantics Read:
+  The unit gives mirmid.http one abstraction for the transport of a single
+  HTTP-connection:
+    plain TCP (scheme http) or TLS 1.2 (https). Semantics of Read:
     >0 — byte count; 0 — EOF (server closed connection); <0 — timeout/error.
-  HTTP-framing (status line, headers, chunked) — job of mirmid.http.
+  HTTP-framing (status line, headers, chunked) is the job of mirmid.http.
 
-  Грабли: юнит реализи interface ITLSTransport. В FPC reference к interface
-  counted (com3), поэтому field держав reference типом `ITLSTransport`,
-  не типом конкрет class — иначе refcount drop 0 после первой call и object
-  freed (access violation). Состоя «reason послед failure» passed through
-  unit variable TLSLastReadReason. }
+  Pitfall: the unit implements the interface ITLSTransport. In FPC an interface
+  reference is refcounted (com3), so a field must hold the reference with type
+  `ITLSTransport`, not the concrete class — otherwise the refcount drops to 0
+  after the first call and the object is freed (access violation). The state
+  "reason of the last failure" is passed through the unit variable
+  TLSLastReadReason. }
 
 {$mode objfpc}{$H+}
 
@@ -29,10 +31,11 @@ const
   MAX_TLS_RECORD_PLAIN = 1 shl 14;
 
 type
-  { Transport TLS over TCP-socket: реализо interface ITLSTransport
-    (Read/Write/BytesAvailable) поверх TInetSocket. Seбаб послед failure
-    (0 — ok, -1 — таймаут/ошибка socket, 1 — EOF) writes to TLSLastReadReason,
-    because object accessed only through interface reference. }
+  { TLS transport over a TCP socket: implements the interface ITLSTransport
+    (Read/Write/BytesAvailable) on top of TInetSocket. The reason of the last
+    failure (0 — ok, -1 — socket timeout/error, 1 — EOF) is written to
+    TLSLastReadReason, because the object is accessed only through the
+    interface reference. }
   TSocketTlsTransport = class(TInterfacedObject, ITLSTransport)
   private
     FSocket: TInetSocket;
@@ -65,11 +68,12 @@ type
   public
     constructor Create(ASecure: Boolean);
     destructor Destroy; override;
-    { Connect: TCP + handshake TLS 1.2 (for https). Источник доверия:
-      встроенный в exe снимок корней (tls.roots), а если его нет — системное
-      хранилище ОС (только Windows). Автопоиска PEM-бандла рядом с программой
-      нет, внешний бандл не подключается; если нет ни одного хранилища —
-      ошибка без тихого отката. Возвращает False + LastError. }
+    { Connect: TCP + handshake TLS 1.2 (for https). Trust source: the root
+      snapshot embedded into the exe (tls.roots), and if it is missing — the OS
+      store (Windows only). There is no auto-discovery of a PEM bundle next to
+      the program and no external bundle is plugged in; if neither store is
+      available this is an error, never a silent fallback. Returns False +
+      LastError. }
     function Connect(const AHost: string; APort: Integer;
       AConnectTimeoutMs, AIOTimeoutMs: Integer): Boolean;
     { Send request (headers + body): for TLS — fragmenting records. }
@@ -79,62 +83,64 @@ type
     property LastError: string read FErrText;
   end;
 
-  { Источник доверенных корневых сертификатов для проверки цепочки TLS. }
+  { Source of the trusted root certificates used to verify a TLS chain. }
   TTrustStoreSource = (
-    tssEmbedded,  { встроенный в exe снимок корней (tls.roots, RT_RCDATA) }
-    tssSystem,    { системное хранилище ОС (Windows CryptoAPI) }
-    tssMissing    { хранилища нет: снимок недоступен, системного стора нет }
+    tssEmbedded,  { root snapshot embedded into the exe (tls.roots, RT_RCDATA) }
+    tssSystem,    { OS store (Windows CryptoAPI) }
+    tssMissing    { no store: snapshot unavailable and no system store }
   );
 
-  { Диагностика встроенного снимка корней (tls.roots) для CLI: доступен ли
-    снимок, на какую дату он снят и не устарел ли. Available = False —
-    снимка нет (сборка без tlsroots.res или с -dTLS_NO_EMBEDDED_ROOTS, либо
-    ресурс повреждён); тогда SnapshotDate = 0, а причина лежит в ErrText.
-    Stale — только флаг, проверка цепочки с устаревшим снимком работает. }
+  { Diagnostics of the embedded root snapshot (tls.roots) for the CLI: is the
+    snapshot available, at which date it was taken and whether it is stale.
+    Available = False means there is no snapshot (built without tlsroots.res or
+    with -dTLS_NO_EMBEDDED_ROOTS, or the resource is damaged); then
+    SnapshotDate = 0 and the reason is kept in ErrText. Stale is only a flag:
+    chain verification still works with a stale snapshot. }
   TEmbeddedRootsInfo = record
     Available: Boolean;
-    SnapshotDate: TDateTime;  { дата снимка (UTC, без времени); 0 — нет снимка }
-    Stale: Boolean;           { возраст больше MaxAgeDays }
-    MaxAgeDays: LongInt;      { порог, с которым считался Stale }
-    ErrText: string;          { причина недоступности/сбоя; '' — всё хорошо }
+    SnapshotDate: TDateTime;  { snapshot date (UTC, date only); 0 — no snapshot }
+    Stale: Boolean;           { older than MaxAgeDays }
+    MaxAgeDays: LongInt;      { threshold used to compute Stale }
+    ErrText: string;          { reason of the failure; '' — all good }
   end;
 
 
 var
-  { Причина последнего сбоя TLS-transport: 0 — ok, -1 — таймаут/ошибка,
+  { Reason of the last TLS-transport failure: 0 — ok, -1 — timeout/error,
     1 — EOF. Set by TSocketTlsTransport.Read. }
   TLSLastReadReason: Integer = 0;
 
-{ Чистый выбор источника trust store: без обращения к файловой системе и
-  окружению — доступность хранилищ передаётся флагами. AEmbeddedAvailable —
-  доступен ли встроенный снимок корней (tls.roots); AAllowSystemStore —
-  доступно ли системное хранилище ОС (Windows). Порядок доверия: встроенный
-  снимок корней, затем системное хранилище ОС; если нет ни того, ни другого —
-  tssMissing (проверять цепочку нечем, это ошибка, решает вызывающий). }
+{ Pure selection of the trust store source: no file system and no environment
+  access — the availability of the stores is passed in as flags.
+  AEmbeddedAvailable — the embedded root snapshot (tls.roots) is available;
+  AAllowSystemStore — the OS store (Windows) is available. Trust order: the
+  embedded root snapshot first, then the OS store; if neither exists this is
+  tssMissing (nothing to verify the chain with — an error, the caller decides). }
 function SelectTrustStore(AEmbeddedAvailable,
   AAllowSystemStore: Boolean): TTrustStoreSource;
 const
-  { Порог устаревания встроенного снимка корней по умолчанию, дней. Дата
-    снимка фиксируется при `make roots`; корни живут годами, поэтому год без
-    обновления — повод предупредить, а не ошибка. }
+  { Default staleness threshold of the embedded root snapshot, in days. The
+    snapshot date is fixed by `make roots`; roots live for years, so a year
+    without an update is a reason to warn, not an error. }
   EMBEDDED_ROOTS_MAX_AGE_DAYS = 365;
 
-{ Диагностика встроенного снимка корней без исключений: читает ресурс через
-  tls.roots (лениво, один раз на процесс) и возвращает доступность, дату
-  снимка и флаг устаревания. Никогда не бросает: сбой чтения/разбора попадает
-  в ErrText, Available = False. Служит для предупреждений CLI при старте и
-  перед HTTPS; на выбор trust store не влияет (его делает SelectTrustStore).
+{ Diagnostics of the embedded root snapshot without exceptions: reads the
+  resource through tls.roots (lazily, once per process) and returns the
+  availability, the snapshot date and the staleness flag. Never raises: a read
+  or parse failure lands in ErrText with Available = False. Used for CLI
+  warnings at startup and before HTTPS; it does not influence the trust store
+  choice (SelectTrustStore does that).
 
-  AMaxAgeDays — порог устаревания в днях (по умолчанию
-  EMBEDDED_ROOTS_MAX_AGE_DAYS); отрицательное значение —
-  EArgumentOutOfRangeException (проверку делает tls.roots). }
+  AMaxAgeDays — staleness threshold in days (EMBEDDED_ROOTS_MAX_AGE_DAYS by
+  default); a negative value raises EArgumentOutOfRangeException (the check is
+  done by tls.roots). }
 function GetEmbeddedRootsInfo(
   AMaxAgeDays: LongInt = EMBEDDED_ROOTS_MAX_AGE_DAYS): TEmbeddedRootsInfo;
 
-{ Текст диагностики снимка для предупреждений CLI. Снимок есть:
-  «встроенный снимок корней от 2026-06-01 (144 дн., устарел: порог 365 дн.)»
-  либо без пометки об устаревании; снимка нет: «встроенный снимок корней
-  недоступен (<причина>)». }
+{ Diagnostic text of the snapshot for CLI warnings. Snapshot present: "embedded
+  root snapshot of 2026-06-01 (144 days, stale: threshold 365 days)" or without
+  the stale note; no snapshot: "embedded root snapshot unavailable (<reason>)".
+}
 function EmbeddedRootsInfoText(const AInfo: TEmbeddedRootsInfo): string;
 
 implementation
@@ -165,9 +171,9 @@ end;
 function SelectTrustStore(AEmbeddedAvailable,
   AAllowSystemStore: Boolean): TTrustStoreSource;
 begin
-  { Встроенный снимок корней не зависит от ОС и состояния системного
-    хранилища, поэтому он первый; системное хранилище ОС (только Windows) —
-    запасное. Нет ни того, ни другого — проверять цепочку нечем. }
+  { The embedded root snapshot does not depend on the OS or on the state of the
+    system store, so it comes first; the OS store (Windows only) is the
+    fallback. If neither exists there is nothing to verify the chain with. }
   if AEmbeddedAvailable then
     Result := tssEmbedded
   else if AAllowSystemStore then
@@ -176,18 +182,19 @@ begin
     Result := tssMissing;
 end;
 
-{ --- Доступность встроенного снимка корней --- }
+{ --- Availability of the embedded root snapshot --- }
 
 var
-  { Кэш «встроенный снимок корней доступен»: tls.roots читает и разбирает
-    ресурс лениво один раз на процесс, поэтому повторные HTTPS-соединения
-    проверку не повторяют. Снимка нет, когда exe собран без tlsroots.res или
-    с -dTLS_NO_EMBEDDED_ROOTS, либо ресурс повреждён (не сошлась SHA-256). }
+  { Cache of "the embedded root snapshot is available": tls.roots reads and
+    parses the resource lazily once per process, so repeated HTTPS connections
+    do not repeat the check. There is no snapshot when the exe was built
+    without tlsroots.res or with -dTLS_NO_EMBEDDED_ROOTS, or when the resource
+    is damaged (SHA-256 mismatch). }
   GEmbeddedRootsChecked: Boolean = False;
   GEmbeddedRootsUsable: Boolean = False;
   GEmbeddedRootsErr: string = '';
-  { Дата прочитанного снимка (0 — снимка нет). Кэшируется вместе с флагом
-    доступности: ресурс разбирается один раз на процесс. }
+  { Date of the snapshot that was read (0 — no snapshot). Cached together with
+    the availability flag: the resource is parsed once per process. }
   GEmbeddedRootsDateVal: TDateTime = 0;
 
 function EmbeddedRootsUsable: Boolean;
@@ -198,10 +205,11 @@ begin
     GEmbeddedRootsErr := '';
     GEmbeddedRootsDateVal := 0;
     try
-      { Стор возвращает и кэширует сам юнит tls.roots — освобождать нельзя. }
+      { The store is returned and cached by the tls.roots unit itself — it must
+        not be freed. }
       EmbeddedRoots;
-      { EmbeddedRootsDate берёт таблицу из того же кэша tls.roots, так что
-        повторного чтения ресурса нет. }
+      { EmbeddedRootsDate takes the table from the same tls.roots cache, so the
+        resource is not read a second time. }
       GEmbeddedRootsDateVal := EmbeddedRootsDate;
       GEmbeddedRootsUsable := True;
     except
@@ -217,12 +225,12 @@ begin
   Result := GEmbeddedRootsUsable;
 end;
 
-{ --- Диагностика встроенного снимка корней (для предупреждений CLI) --- }
+{ --- Embedded root snapshot diagnostics (for CLI warnings) --- }
 
 function GetEmbeddedRootsInfo(AMaxAgeDays: LongInt): TEmbeddedRootsInfo;
 begin
-  { Отрицательный порог — ошибка вызывающего; проверку делает tls.roots,
-    пробрасываем её исключение как есть (доступность снимка тут ни при чём). }
+  { A negative threshold is a caller error; the check is done by tls.roots, so
+    its exception is re-raised as is (snapshot availability is unrelated). }
   if AMaxAgeDays < 0 then
     raise EArgumentOutOfRangeException.Create('AMaxAgeDays');
 
@@ -239,14 +247,14 @@ begin
 
   Result.SnapshotDate := GEmbeddedRootsDateVal;
   try
-    { Порог и арифметику возраста держит tls.roots: не дублируем её здесь,
-      иначе два места разойдутся. }
+    { The threshold and the age arithmetic live in tls.roots: they are not
+      duplicated here, otherwise the two places would drift apart. }
     Result.Stale := EmbeddedRootsIsStale(Now, AMaxAgeDays);
   except
     on E: Exception do
     begin
-      { Снимок доступен, но возраст посчитать не удалось — это диагностика,
-        поэтому не роняем вызывающего, а показываем причину. }
+      { The snapshot is available but the age could not be computed; this is
+        diagnostics, so the caller is not crashed — the reason is shown. }
       Result.ErrText := E.Message;
       Result.Stale := False;
     end;
@@ -259,25 +267,25 @@ var
 begin
   if not AInfo.Available then
   begin
-    Result := 'встроенный снимок корней недоступен';
+    Result := 'embedded root snapshot unavailable';
     if AInfo.ErrText <> '' then
       Result := Result + ' (' + AInfo.ErrText + ')';
     Exit;
   end;
 
-  { Возраст считаем по календарным дням: дата снимка — UTC без времени, а
-    Now — локальное время; разница в часах на глаз не видна, а «144 дн.»
-    читается лучше, чем дробное число. }
+  { The age is counted in calendar days: the snapshot date is UTC without the
+    time of day, while Now is local time; a difference in hours is invisible to
+    the eye, and "144 days" reads better than a fractional number. }
   AgeDays := Trunc(Int(Now)) - Trunc(Int(AInfo.SnapshotDate));
   if AgeDays < 0 then
     AgeDays := 0;
-  Result := 'встроенный снимок корней от ' +
+  Result := 'embedded root snapshot of ' +
     FormatDateTime('yyyy-mm-dd', AInfo.SnapshotDate) +
-    Format(' (%d дн.', [AgeDays]);
+    Format(' (%d days', [AgeDays]);
   if AInfo.Stale then
-    Result := Result + Format(', устарел: порог %d дн.', [AInfo.MaxAgeDays])
+    Result := Result + Format(', stale: threshold %d days', [AInfo.MaxAgeDays])
   else if AInfo.MaxAgeDays > 0 then
-    Result := Result + Format(', порог %d дн.', [AInfo.MaxAgeDays]);
+    Result := Result + Format(', threshold %d days', [AInfo.MaxAgeDays]);
   Result := Result + ')';
   if AInfo.ErrText <> '' then
     Result := Result + ' (' + AInfo.ErrText + ')';
@@ -285,17 +293,17 @@ end;
 
 {$ifdef windows}
 var
-  { Ленивый кэш системного хранилища Windows: Root/CA перебираются через
-    crypt32 один раз при первом обращении и живут до finalization юнита,
-    поэтому каждое новое HTTPS-соединение не парсит сотни сертификатов
-    заново. Хранилище разделяемое: владелец — юнит, вызывающий не должен
-    освобождать возвращённый указатель. }
+  { Lazy cache of the Windows system store: Root/CA are enumerated through
+    crypt32 once on the first access and live until the finalization of the
+    unit, so every new HTTPS connection does not parse hundreds of certificates
+    again. The store is shared: the unit owns it, the caller must not free the
+    returned pointer. }
   GSystemTrustStore: TCertStore = nil;
 
-{ Вернуть системное хранилище доверия (только Windows), загрузив его при
-  первом обращении; повторный вызов возвращает тот же экземпляр. Ошибки
-  загрузки (TWinCertStoreError/EASN1Error) не кэшируются — следующий вызов
-  повторит попытку. Владелец результата — юнит (см. finalization). }
+{ Return the system trust store (Windows only), loading it on the first access;
+  a repeated call returns the same instance. Load errors
+  (TWinCertStoreError/EASN1Error) are not cached — the next call retries. The
+  unit owns the result (see finalization). }
 function GetSystemTrustStore: TCertStore;
 begin
   if GSystemTrustStore = nil then
@@ -353,8 +361,9 @@ destructor THttpTransport.Destroy;
 begin
   { Interface reference: assigning nil releases (refcount). }
   FTrans := nil;
-  { Handler освобождает сам TSocketStream (FreeAndNil в своём деструкторе),
-    поэтому при живом сокете здесь только забываем ссылку — иначе double free. }
+  { The handler frees the TSocketStream itself (FreeAndNil in its destructor),
+    so with a live socket the reference is only dropped here — otherwise it
+    would be a double free. }
   if FSocket <> nil then
   begin
     FHandler := nil;
@@ -363,7 +372,8 @@ begin
   end
   else
   begin
-    { Сокет не создался (исключение в TInetSocket.Create) — владелец мы. }
+    { The socket was not created (exception in TInetSocket.Create) — we own the
+      handler. }
     FHandler.Free;
     FHandler := nil;
   end;
@@ -510,9 +520,10 @@ end;
 { Handshake TLS 1.2: ClientHello -> ServerHello/Certificate/
   ServerKeyExchange/ServerHelloDone -> verify -> ClientKeyExchange ->
   CCS/Finished. Sequence matches test_tls12_e2e of library tls.
-  Источник доверия — встроенный снимок корней (tls.roots) либо, если его нет,
-  системное хранилище ОС (только Windows): оба — кэши уровня юнита, их не
-  освобождаем. Автопоиска бандла рядом с программой и внешнего бандла нет. }
+  Trust source: the embedded root snapshot (tls.roots) or, when it is missing,
+  the OS store (Windows only): both are unit-level caches, they are not freed
+  here. There is no auto-discovery of a bundle next to the program and no
+  external bundle. }
 function THttpTransport.DoHandshake(const AHost: string): Boolean;
 var
   ClientRandom, HelloBody, CKEBody, Premaster, SessionHash, Master: TBytes;
@@ -526,8 +537,8 @@ var
   HasCert, HasSKE: Boolean;
   Chain: TTLS12CertChain;
   Store: TCertStore;
-  EmbeddedErr: string;            { причина, по которой встроенный снимок не читается }
-  SysStoreErr: string;            { причина сбоя системного хранилища Windows (Windows) }
+  EmbeddedErr: string;            { reason why the embedded snapshot cannot be read }
+  SysStoreErr: string;            { reason of the Windows system store failure }
   VR: TVerifyResult;
   EKey: TTLS12ECDHEClientKey;
   DKey: TTLS12DHEClientKey;
@@ -571,10 +582,10 @@ begin
 
       { --- Verify certificate chain and host --- }
       Chain := ParseTLS12CertChain(CertMsg);
-      { Источник доверия — встроенный снимок корней tls.roots, а если его нет,
-        системное хранилище ОС (только Windows). Оба — ленивые кэши уровня
-        юнита, освобождать их нельзя. Тихих откатов нет: если недоступно и то,
-        и другое, это ошибка проверки цепочки. }
+      { Trust source: the embedded tls.roots snapshot or, when it is missing,
+        the OS store (Windows only). Both are lazy unit-level caches and must
+        not be freed. There are no silent fallbacks: if neither is available,
+        chain verification fails with an error. }
       EmbeddedErr := '';
       try
         Store := EmbeddedRoots;
@@ -596,14 +607,14 @@ begin
         end;
         if Store = nil then
           raise ETLS12Error.Create(
-            'хранилище доверия недоступно: встроенный снимок корней не ' +
-            'читается (' + EmbeddedErr + '), системное хранилище Windows — ' +
+            'trust store unavailable: the embedded root snapshot cannot be ' +
+            'read (' + EmbeddedErr + '), the Windows system store — ' +
             SysStoreErr);
         {$else}
         raise ETLS12Error.Create(
-          'хранилище доверия недоступно: встроенный снимок корней не ' +
-          'читается (' + EmbeddedErr + '); системное хранилище ОС доступно ' +
-          'только на Windows');
+          'trust store unavailable: the embedded root snapshot cannot be ' +
+          'read (' + EmbeddedErr + '); the OS store is available ' +
+          'only on Windows');
         {$endif}
       end;
       VR := Chain.Verify(Store);
@@ -697,7 +708,7 @@ begin
       on E: ETLS12Error do
         FErrText := 'TLS: ' + E.Message;
       on E: EASN1Error do
-        FErrText := 'хранилище доверия: ' + E.Message;
+        FErrText := 'trust store: ' + E.Message;
       on E: ESocketError do
         FErrText := 'socket: ' + E.Message;
       on E: Exception do
@@ -706,9 +717,9 @@ begin
   finally
     if Chain <> nil then Chain.Free;
     if Buffer <> nil then Buffer.Free;
-    { Встроенный снимок корней и системное хранилище — разделяемые кэши юнитов
-      tls.roots / mirmid.tlsclient: их освобождают finalization-секции, здесь
-      ничего не освобождаем. }
+    { The embedded root snapshot and the system store are shared caches of the
+      units tls.roots / mirmid.tlsclient: their finalization sections free them,
+      nothing is freed here. }
   end;
 end;
 
@@ -751,9 +762,9 @@ begin
   if not FTls then
     Exit(True);
 
-  { Выбор источника доверия — до handshake. Порядок: встроенный снимок корней
-    → системное хранилище ОС → ошибка. Автопоиска PEM-бандла рядом с exe нет,
-    внешний бандл не подключается: задать его нечем. }
+  { Trust source selection happens before the handshake. Order: embedded root
+    snapshot -> OS store -> error. There is no auto-discovery of a PEM bundle
+    next to the exe and no external bundle can be configured. }
   AllowSystem := False;
   {$ifdef windows}
   AllowSystem := True;
@@ -761,17 +772,17 @@ begin
   Store := SelectTrustStore(EmbeddedRootsUsable, AllowSystem);
   if Store = tssMissing then
   begin
-    { Нет встроенного снимка; на Windows системное хранилище подхватилось бы в
-      SelectTrustStore, так что сюда попадаем только на прочих платформах.
-      Причину недоступности снимка показываем как есть — иначе диагноз
-      «сборка без tlsroots.res» не виден. }
-    FErrText := 'хранилище доверия не настроено: встроенный снимок корней ' +
-      'недоступен';
+    { No embedded snapshot; on Windows the system store would have been picked
+      up by SelectTrustStore, so we only get here on other platforms. The reason
+      why the snapshot is unavailable is shown as is — otherwise the "built
+      without tlsroots.res" diagnosis stays invisible. }
+    FErrText := 'trust store is not configured: the embedded root snapshot ' +
+      'is unavailable';
     if GEmbeddedRootsErr <> '' then
       FErrText := FErrText + ' (' + GEmbeddedRootsErr + ')';
     {$ifndef windows}
     FErrText := FErrText +
-      '; системное хранилище ОС доступно только на Windows';
+      '; the OS store is available only on Windows';
     {$endif}
     Exit(False);
   end;
@@ -781,7 +792,7 @@ end;
 
 finalization
   {$ifdef windows}
-  { Освобождаем разделяемый кэш системного хранилища (см. GetSystemTrustStore). }
+  { Free the shared cache of the system store (see GetSystemTrustStore). }
   FreeAndNil(GSystemTrustStore);
   {$endif windows}
 end.

@@ -1,5 +1,5 @@
 unit mirmid.toolbuiltin;
-{ Встроенные инструменты харнесса. Регистрируются в реестре mirmid.tools. }
+{ Built-in harness tools. They are registered in the mirmid.tools registry. }
 
 {$mode objfpc}{$H+}
 
@@ -8,7 +8,7 @@ interface
 uses
   mirmid.tools;
 
-{ Добавляет все встроенные инструменты в реестр. }
+{ Adds all built-in tools to the registry. }
 procedure RegisterBuiltinTools(R: TToolRegistry);
 
 implementation
@@ -17,10 +17,10 @@ uses
   SysUtils, Classes, fpjson, md5, mirmid.types, mirmid.util, mirmid.json;
 
 const
-  { Имена инструментов, у которых гейт [tools] стоит в самом обработчике: те же
-    строки нужны при регистрации, поэтому держим их константами — опечатка в
-    гейте навсегда выключила бы инструмент (fail-closed), а дрейф между гейтом,
-    регистрацией и таблицей mirmid.tools заметить было бы нечем. }
+  { Tool names whose [tools] gate lives in the handler itself: the same strings
+    are needed at registration time, so they are kept as constants — a typo in
+    the gate would disable a tool forever (fail-closed), and a drift between the
+    gate, the registration and the mirmid.tools table would go unnoticed. }
   EDIT_TOOL_NAME = 'edit_text_file';
   COPY_TOOL_NAME = 'copy_file';
   SHELL_TOOL_NAME = 'shell';
@@ -42,7 +42,7 @@ begin
   Result := JBool(A, Name, Def);
 end;
 
-{ True, если аргумент передан и не равен null. }
+{ True if the argument is present and is not null. }
 function ArgPresent(const A: TJSONObject; const Name: string): Boolean;
 var
   D: TJSONData;
@@ -62,14 +62,15 @@ begin
   Result := ExpPath(S, Ctx.WorkDir);
 end;
 
-{ Отказ в доступе к каталогу .mirmid: там лежат конфигурация и сессии. }
+{ Denied access to the .mirmid directory: it holds the configuration and the
+  sessions. }
 function MirmidDirDenied(const Path: string): TToolOutcome;
 begin
-  Result := ErrResult('доступ запрещён: ' + Path +
-    ' находится в служебном каталоге .mirmid');
+  Result := ErrResult('access denied: ' + Path +
+    ' is inside the .mirmid service directory');
 end;
 
-{ True, если путь не указывает на .mirmid и не лежит внутри него. }
+{ True if the path does not point to .mirmid and is not inside it. }
 function AllowedPath(const Ctx: TToolContext; const P: string): Boolean;
 begin
   Result := not IsMirmidPath(Ctx.WorkDir, P);
@@ -93,7 +94,7 @@ begin
   if not ListDir(Dir, Recursive, L, Err) then
     Exit(ErrResult(Err));
   try
-    { Служебный каталог .mirmid не показываем в листинге. }
+    { The .mirmid service directory is not shown in the listing. }
     I := L.Count - 1;
     while I >= 0 do
     begin
@@ -102,7 +103,7 @@ begin
       Dec(I);
     end;
     if L.Count = 0 then
-      Result := OkResult('(каталог пуст)')
+      Result := OkResult('(directory is empty)')
     else begin
       I := L.Count;
       while L.Count > 100 do
@@ -111,7 +112,7 @@ begin
         L.Add('...')
       else
         L.Add('');
-      L.Add(Format('Всего %d файлов и папок', [I]));
+      L.Add(Format('Total: %d files and folders', [I]));
       Result := OkResult(L.Text);
     end;
   finally
@@ -127,21 +128,20 @@ var
 begin
   P := ResolvePath(Ctx, A, 'path');
   if P = '' then
-    Exit(ErrResult('не задан path'));
+    Exit(ErrResult('path is not set'));
   if not AllowedPath(Ctx, P) then
     Exit(MirmidDirDenied(P));
   if FileExists(P) then
-    Result := OkResult('файл существует: ' + P)
+    Result := OkResult('file exists: ' + P)
   else if DirectoryExists(P) then
-    Result := OkResult('каталог существует: ' + P)
+    Result := OkResult('directory exists: ' + P)
   else
-    Result := OkResult('не существует: ' + P);
+    Result := OkResult('does not exist: ' + P);
 end;
 
-{ --------------------------------------------------------- файл: хелперы }
+{ --------------------------------------------------------- files: helpers }
 
-{ Приводит к нижнему регистру только латиницу: многобайтовый UTF-8 (русские
-  буквы) не портится. }
+{ Lowercases ASCII letters only: multi-byte UTF-8 sequences stay intact. }
 function LowerASCII(const S: string): string;
 var
   I: Integer;
@@ -152,15 +152,16 @@ begin
       Result[I] := Chr(Ord(Result[I]) or $20);
 end;
 
-{ True, если символ — шестнадцатеричная цифра. }
+{ True if the character is a hexadecimal digit. }
 function IsHexChar(const C: Char): Boolean;
 begin
   Result := ((C >= '0') and (C <= '9')) or ((C >= 'a') and (C <= 'f')) or
             ((C >= 'A') and (C <= 'F'));
 end;
 
-{ Короткий хеш содержимого файла: первые 4 байта MD5, то есть 8 hex-символов.
-  Это же значение отдаёт read_text_file и проверяет edit_text_file. }
+{ Short content hash of a file: the first 4 bytes of MD5, that is 8 hex
+  characters. read_text_file returns the same value and edit_text_file checks
+  it. }
 function ShortHash(const Data: RawByteString): string;
 var
   D: TMD5Digest;
@@ -174,25 +175,19 @@ begin
     IntToHex(D[2], 2) + IntToHex(D[3], 2));
 end;
 
-{ Хеш из аргумента hash: принимается и сам короткий хеш, и строка-шапка
-  read_text_file целиком. Возвращает '' — если хеша в строке не нашлось. }
+{ Hash from the hash argument: both the short hash itself and the whole header
+  line of read_text_file are accepted. Returns '' if no hash was found. }
 function NormHash(const S: string): string;
 var
   T: string;
   P, I: Integer;
 begin
   T := Trim(S);
-  P := Pos('хеш', T);
+  P := Pos('hash', LowerASCII(T));
   if P > 0 then
-    I := P + Length('хеш')
+    I := P + Length('hash')
   else
-  begin
-    P := Pos('hash', LowerASCII(T));
-    if P > 0 then
-      I := P + Length('hash')
-    else
-      I := 1;
-  end;
+    I := 1;
   while (I <= Length(T)) and not IsHexChar(T[I]) do
     Inc(I);
   P := I;
@@ -203,8 +198,8 @@ begin
     Result := '';
 end;
 
-{ Разбивает текст на строки; переводы строк — любые (LF, CRLF, CR).
-  HadBreak — текст заканчивался переводом строки. }
+{ Splits the text into lines; line breaks may be any kind (LF, CRLF, CR).
+  HadBreak — the text ended with a line break. }
 procedure SplitLines(const Text: string; Lines: TStringList; out HadBreak: Boolean);
 var
   I, N: Integer;
@@ -235,7 +230,7 @@ begin
     Lines.Add(Cur);
 end;
 
-{ Приводит переводы строк текста к формату текущей ОС. }
+{ Converts the line breaks of the text to the format of the current OS. }
 function ToNativeEOL(const S: string): string;
 begin
   Result := StringReplace(S, #13#10, #10, [rfReplaceAll]);
@@ -243,12 +238,12 @@ begin
   Result := StringReplace(Result, #10, sLineBreak, [rfReplaceAll]);
 end;
 
-{ Заменяет строки диапазона, описанного offset/limit, на NewLines.
-  offset — 1-базированный номер первой строки диапазона; 0 — дописать в конец
-  файла; отрицательный — отсчёт от конца (-1 — последняя строка). limit —
-  сколько строк заменить, не отрицательное (0 — вставка без удаления);
-  диапазон за концом файла обрезается до конца. Число удалённых строк
-  возвращается в Removed. }
+{ Replaces the lines of the range described by offset/limit with NewLines.
+  offset — 1-based number of the first line of the range; 0 — append to the end
+  of the file; negative — counted from the end (-1 is the last line). limit —
+  how many lines to replace, not negative (0 — insert without deleting); a range
+  past the end of the file is clipped to the end. The number of removed lines is
+  returned in Removed. }
 function SpliceRange(Lines, NewLines: TStrings; Offset, Limit: Integer;
   out Removed: Integer; out Err: string): Boolean;
 var
@@ -259,7 +254,7 @@ begin
   N := Lines.Count;
   if Limit < 0 then
   begin
-    Err := 'limit не может быть отрицательным';
+    Err := 'limit must not be negative';
     Exit(False);
   end;
   if Offset = 0 then
@@ -270,8 +265,8 @@ begin
     First := N + Offset + 1;
   if (First < 1) or (First > N + 1) then
   begin
-    Err := Format('начало диапазона вне файла: offset=%d (всего строк %d; чтобы ' +
-      'дописать в конец, задайте offset = 0)', [Offset, N]);
+    Err := Format('range start is outside the file: offset=%d (total lines %d; ' +
+      'to append to the end pass offset = 0)', [Offset, N]);
     Exit(False);
   end;
   if Limit >= N + 1 - First then
@@ -303,13 +298,13 @@ var
 begin
   P := ResolvePath(Ctx, A, 'path');
   if P = '' then
-    Exit(ErrResult('не задан path'));
+    Exit(ErrResult('path is not set'));
   if not AllowedPath(Ctx, P) then
     Exit(MirmidDirDenied(P));
   if not FileExists(P) then
-    Exit(ErrResult('файл не найден: ' + P));
+    Exit(ErrResult('file not found: ' + P));
   if not ReadTextFile(P, Text, Err) then
-    Exit(ErrResult('не удалось прочитать файл: ' + Err));
+    Exit(ErrResult('cannot read file: ' + Err));
 
   Offset := ArgInt(A, 'offset', 1);
   Limit := ArgInt(A, 'limit', 400);
@@ -319,16 +314,16 @@ begin
   try
     SplitLines(Text, SL, HadBreak);
     Total := SL.Count;
-    { Шапка описывает файл целиком (размер и хеш всего содержимого): хеш
-      нужен инструменту edit_text_file. }
-    Head := Format('[mirmid] файл: %s | размер: %d байт | строк: %d | хеш: %s',
+    { The header describes the whole file (the size and the hash of the entire
+      content): edit_text_file needs this hash. }
+    Head := Format('[mirmid] file: %s | size: %d bytes | lines: %d | hash: %s',
       [P, Length(Text), Total, ShortHash(Text)]);
 
     if Offset < 1 then
       Offset := 1;
-    { Тело копим в TStringList и склеиваем через Text: склейка Body := Body +
-      на каждой строке даёт квадратичный объём копирования. SkipLastLineBreak —
-      чтобы ответ не получал перевод строки в конце. }
+    { The body is accumulated in a TStringList and joined through Text:
+      appending Body := Body + on every line gives quadratic copying volume.
+      SkipLastLineBreak keeps the answer from getting a trailing line break. }
     BodyLines := TStringList.Create;
     try
       BodyLines.LineBreak := sLineBreak;
@@ -358,7 +353,7 @@ end;
 
 { ------------------------------------------------ read_pascal_interface }
 
-{ True, если расширение (в нижнем регистре) — исходник Delphi/Pascal. }
+{ True if the extension (in lower case) is a Delphi/Pascal source one. }
 function IsPascalSourceExt(const Ext: string): Boolean;
 const
   Exts: array[0..4] of string =
@@ -372,9 +367,9 @@ begin
   Result := False;
 end;
 
-{ Символы, допустимые в идентификаторе Pascal. Байты >= $80 считаем частью
-  идентификатора (многобайтовый UTF-8): иначе хвост имени мог бы сойти за
-  отдельное слово. }
+{ Characters allowed in a Pascal identifier. Bytes >= $80 are treated as part of
+  an identifier (multi-byte UTF-8): otherwise the tail of a name could pass for
+  a separate word. }
 function IsPascalIdentChar(const C: Char): Boolean;
 begin
   Result := (C in ['A'..'Z', 'a'..'z', '0'..'9', '_']) or (Ord(C) >= $80);
@@ -385,9 +380,9 @@ begin
   Result := (C in ['A'..'Z', 'a'..'z', '_']) or (Ord(C) >= $80);
 end;
 
-{ Пропускает пробелы, комментарии ({...} в том числе директивы {$...},
-  (*...*) и //...) и строковые литералы. Возвращает False, если комментарий
-  или строка не закрыты до конца файла. }
+{ Skips spaces, comments ({...} including the {$...} directives, (*...*) and
+  //...) and string literals. Returns False if a comment or a string is not
+  closed before the end of the file. }
 function SkipPascalNoise(const Text: string; var P: Integer;
   out Err: string): Boolean;
 var
@@ -408,7 +403,7 @@ begin
             Inc(P);
           if P > N then
           begin
-            Err := 'незакрытый комментарий { ... }';
+            Err := 'unterminated comment { ... }';
             Exit(False);
           end;
           Inc(P);
@@ -422,7 +417,7 @@ begin
             Inc(P);
           if P >= N then
           begin
-            Err := 'незакрытый комментарий (* ... *)';
+            Err := 'unterminated comment (* ... *)';
             Exit(False);
           end;
           Inc(P, 2);
@@ -441,7 +436,7 @@ begin
 
       '''':
         begin
-          { Открывающая кавычка; внутри строки '' — экранированная кавычка. }
+          { Opening quote; inside a string '' is an escaped quote. }
           Inc(P);
           while True do
           begin
@@ -449,14 +444,14 @@ begin
               Inc(P);
             if P > N then
             begin
-              Err := 'незакрытая строковая константа';
+              Err := 'unterminated string constant';
               Exit(False);
             end;
             if (P < N) and (Text[P + 1] = '''') then
-              Inc(P, 2) { пара '' внутри строки — продолжаем }
+              Inc(P, 2) { a pair '' inside a string — keep going }
             else
             begin
-              Inc(P); { закрывающая кавычка }
+              Inc(P); { closing quote }
               Break;
             end;
           end;
@@ -466,9 +461,9 @@ begin
     end;
 end;
 
-{ Очередное слово Pascal вне комментариев и строк. Разделители (;, ., ( и
-  т. п.) пропускаются. Слово приводится к нижнему регистру ASCII; Escaped —
-  слово записано как &идентификатор, то есть ключевым словом не является. }
+{ The next Pascal word outside comments and strings. Separators (;, ., ( and so
+  on) are skipped. The word is lowercased in ASCII; Escaped — the word is
+  written as &identifier, so it is not a keyword. }
 function NextPascalWord(const Text: string; var P: Integer;
   out Word: string; out Escaped: Boolean; out Err: string): Boolean;
 var
@@ -497,13 +492,13 @@ begin
   while (P <= N) and IsPascalIdentChar(Text[P]) do
     Inc(P);
   if P = Start then
-    Exit; { одинокий & — не слово }
+    Exit; { a lone & is not a word }
   Word := LowerASCII(Copy(Text, Start, P - Start));
   Result := True;
 end;
 
-{ Первое значимое слово файла. В отличие от NextPascalWord разделители не
-  пропускаются: перед словом допустимы только пробелы и комментарии. }
+{ The first significant word of the file. Unlike NextPascalWord the separators
+  are not skipped: only spaces and comments are allowed before the word. }
 function FirstPascalWord(const Text: string; out Word: string;
   out WordEnd: Integer; out Err: string): Boolean;
 var
@@ -515,7 +510,7 @@ begin
   Err := '';
   N := Length(Text);
 
-  { UTF-8 BOM в начале файла — не часть текста. }
+  { A UTF-8 BOM at the start of the file is not part of the text. }
   P := 1;
   if (N >= 3) and (Text[1] = #$EF) and (Text[2] = #$BB) and (Text[3] = #$BF) then
     P := 4;
@@ -524,7 +519,7 @@ begin
     Exit;
   if (P > N) or not IsPascalIdentStart(Text[P]) then
   begin
-    Err := 'файл не начинается со слова unit или program';
+    Err := 'the file does not start with the word unit or program';
     Exit;
   end;
   Start := P;
@@ -535,10 +530,10 @@ begin
   Result := True;
 end;
 
-{ Ищет разделы interface и implementation начиная с позиции StartPos.
-  Возвращает позицию последнего включаемого символа — конца слова
-  implementation. Ошибка, если слово implementation встретилось раньше
-  interface или какой-то из разделов отсутствует. }
+{ Searches for the interface and implementation sections starting at StartPos.
+  Returns the position of the last included character — the end of the word
+  implementation. An error if the word implementation comes before interface or
+  if one of the sections is missing. }
 function PascalInterfaceEnd(const Text: string; StartPos: Integer;
   out EndPos: Integer; out Err: string): Boolean;
 var
@@ -561,11 +556,12 @@ begin
     begin
       if not SeenInterface then
       begin
-        Err := 'в модуле раздел implementation идёт раньше раздела interface';
+        Err := 'in the unit the implementation section comes before the interface section';
         Exit;
       end;
-      { Строго по конец слова: остаток строки (например, `uses Foo;` в
-        однострочном модуле) уже относится к телу реализации. }
+      { Strictly up to the end of the word: the rest of the line (for example
+        `uses Foo;` in a one-line unit) already belongs to the implementation
+        body. }
       EndPos := P - 1;
       Result := True;
       Exit;
@@ -574,9 +570,9 @@ begin
   if Err <> '' then
     Exit;
   if not SeenInterface then
-    Err := 'в модуле отсутствует раздел interface'
+    Err := 'the unit has no interface section'
   else
-    Err := 'в модуле отсутствует раздел implementation';
+    Err := 'the unit has no implementation section';
 end;
 
 function ToolReadPascalInterface(const A: TJSONObject;
@@ -587,20 +583,20 @@ var
 begin
   P := ResolvePath(Ctx, A, 'path');
   if P = '' then
-    Exit(ErrResult('не задан path'));
+    Exit(ErrResult('path is not set'));
   if not AllowedPath(Ctx, P) then
     Exit(MirmidDirDenied(P));
 
   Ext := LowerASCII(ExtractFileExt(P));
   if not IsPascalSourceExt(Ext) then
-    Exit(ErrResult(Format('неподдерживаемое расширение «%s»: ожидается одно из ' +
+    Exit(ErrResult(Format('unsupported extension "%s": expected one of ' +
       '.pas, .pp, .p, .dpr, .lpr', [Ext])));
   if not FileExists(P) then
-    Exit(ErrResult('файл не найден: ' + P));
+    Exit(ErrResult('file not found: ' + P));
   if not ReadTextFile(P, Text, Err) then
-    Exit(ErrResult('не удалось прочитать файл: ' + Err));
+    Exit(ErrResult('cannot read file: ' + Err));
 
-  { UTF-8 BOM — не часть исходника: не отдаём его обратно. }
+  { A UTF-8 BOM is not part of the source: do not return it. }
   TextStart := 1;
   if (Length(Text) >= 3) and (Text[1] = #$EF) and (Text[2] = #$BB) and
      (Text[3] = #$BF) then
@@ -609,12 +605,12 @@ begin
   if not FirstPascalWord(Text, Word, FirstEnd, Err) then
     Exit(ErrResult(Err));
 
-  { Программа возвращается целиком: тело — часть её интерфейса. }
+  { A program is returned as a whole: its body is part of its interface. }
   if Word = 'program' then
     Exit(OkResult(Copy(Text, TextStart, MaxInt)));
   if Word <> 'unit' then
-    Exit(ErrResult(Format('файл должен начинаться со слова unit или program ' +
-      '(найдено: «%s»)', [SanitizeUTF8(Word)])));
+    Exit(ErrResult(Format('the file must start with the word unit or program ' +
+      '(found: "%s")', [SanitizeUTF8(Word)])));
 
   if not PascalInterfaceEnd(Text, FirstEnd, EndPos, Err) then
     Exit(ErrResult(Err));
@@ -631,40 +627,41 @@ var
   HadBreak, AddHadBreak: Boolean;
   LimitGiven: Boolean;
 begin
-  { Гейт в обработчике: ключ edit_text_file в секции [tools]. }
+  { Gate in the handler: the edit_text_file key of the [tools] section. }
   if not ToolEnabled(Ctx.Cfg, EDIT_TOOL_NAME) then
     Exit(ToolDisabled(EDIT_TOOL_NAME));
   P := ResolvePath(Ctx, A, 'path');
   if P = '' then
-    Exit(ErrResult('не задан path'));
+    Exit(ErrResult('path is not set'));
   if not AllowedPath(Ctx, P) then
     Exit(MirmidDirDenied(P));
 
   Content := ArgStr(A, 'content', '');
   Offset := ArgInt(A, 'offset', 1);
-  { Без limit диапазон идёт до конца файла: вызов только с path, content и
-    hash заменяет содержимое целиком (как прежний write_text_file). }
+  { Without limit the range runs to the end of the file: a call with only path,
+    content and hash replaces the whole content (like the former
+    write_text_file). }
   Limit := ArgInt(A, 'limit', MaxInt);
   LimitGiven := ArgPresent(A, 'limit');
   Hash := ArgStr(A, 'hash', '');
-  { Старый контракт (old/new) больше не поддерживается: явная ошибка вместо
-    молчаливой перезаписи всего файла. }
+  { The old contract (old/new) is no longer supported: an explicit error
+    instead of silently overwriting the whole file. }
   if ArgPresent(A, 'old') or ArgPresent(A, 'new') then
-    Exit(ErrResult('старый контракт (old/new) больше не поддерживается: ' +
-      'используйте offset/limit'));
+    Exit(ErrResult('the old contract (old/new) is no longer supported: ' +
+      'use offset/limit'));
 
-  { Режим создания: файла ещё нет, offset обязан быть строго равен нулю. }
+  { Creation mode: the file does not exist yet, offset must be strictly zero. }
   if not FileExists(P) then
   begin
     if DirectoryExists(P) then
-      Exit(ErrResult('путь занят каталогом: ' + P));
+      Exit(ErrResult('the path is occupied by a directory: ' + P));
     if Offset <> 0 then
-      Exit(ErrResult(Format('файл не существует, а offset=%d: создание возможно ' +
-        'только с offset = 0', [Offset])));
+      Exit(ErrResult(Format('the file does not exist and offset=%d: creation is ' +
+        'possible only with offset = 0', [Offset])));
     Text := ToNativeEOL(Content);
     if not WriteTextFile(P, Text, Err) then
-      Exit(ErrResult('не удалось создать файл: ' + Err));
-    { Diff: от пустого файла к новому содержимому. }
+      Exit(ErrResult('cannot create file: ' + Err));
+    { Diff: from the empty file to the new content. }
     OldLines := TStringList.Create;
     Add := TStringList.Create;
     try
@@ -675,23 +672,24 @@ begin
       Add.Free;
     end;
     if Diff <> '' then
-      Exit(OkResult(Format('создан файл: %s | размер: %d байт | хеш: %s%s%s',
+      Exit(OkResult(Format('file created: %s | size: %d bytes | hash: %s%s%s',
         [P, Length(Text), ShortHash(Text), sLineBreak, Diff])))
     else
-      Exit(OkResult(Format('создан файл: %s | размер: %d байт | хеш: %s',
+      Exit(OkResult(Format('file created: %s | size: %d bytes | hash: %s',
         [P, Length(Text), ShortHash(Text)])));
   end;
 
   if not ReadTextFile(P, Text, Err) then
-    Exit(ErrResult('не удалось прочитать файл: ' + Err));
+    Exit(ErrResult('cannot read file: ' + Err));
 
   if NormHash(Hash) = '' then
-    Exit(ErrResult('не задан hash: файл уже существует — для правки передайте ' +
-      'хеш из read_text_file (8 символов), для создания нового файла укажите ' +
-      'несуществующий путь'));
+    Exit(ErrResult('hash is not set: the file already exists — pass the hash ' +
+      'from read_text_file (8 characters) to edit it, or pass a non-existent ' +
+      'path to create a new file'));
   if NormHash(Hash) <> ShortHash(Text) then
-    Exit(ErrResult(Format('хеш не совпадает (передан %s, сейчас %s): файл изменился — ' +
-      'перечитайте его инструментом read_text_file', [NormHash(Hash), ShortHash(Text)])));
+    Exit(ErrResult(Format('hash mismatch (passed %s, current %s): the file has ' +
+      'changed — re-read it with the read_text_file tool',
+      [NormHash(Hash), ShortHash(Text)])));
 
   SizeBefore := Length(Text);
   Lines := TStringList.Create;
@@ -702,30 +700,30 @@ begin
     TotalBefore := Lines.Count;
     SplitLines(ToNativeEOL(Content), Add, AddHadBreak);
 
-    { Сохраняем старые строки до splice для генерации diff. }
+    { Keep the old lines before the splice to generate the diff. }
     OldLines.Assign(Lines);
 
     if not SpliceRange(Lines, Add, Offset, Limit, Removed, Err) then
       Exit(ErrResult(Err));
 
-    { Подсказки про самые частые ошибки вызова (файл уже изменён, поэтому это
-      не отказ, а предупреждение в результате): дописывание полного текста
-      через offset=0 даёт дубли строк, а offset без limit срезает хвост файла. }
+    { Hints about the most common call mistakes (the file is already changed, so
+      this is a warning in the result rather than a refusal): appending the full
+      text with offset=0 duplicates lines, and offset without limit cuts off the
+      tail of the file. }
     Hint := '';
     if (Offset = 0) and (TotalBefore >= 3) and (Add.Count >= TotalBefore) then
-      Hint := sLineBreak + 'внимание: дописано строк больше, чем было в файле ' +
-        '(' + IntToStr(Add.Count) + ' против ' + IntToStr(TotalBefore) +
-        ') — строки могли продублироваться; замена файла целиком — это offset=1 ' +
-        'без limit, дописывание — короткий фрагмент с offset=0';
+      Hint := sLineBreak + 'warning: more lines were appended than the file had ' +
+        '(' + IntToStr(Add.Count) + ' against ' + IntToStr(TotalBefore) +
+        ') — lines may have been duplicated; replacing the whole file is offset=1 ' +
+        'without limit, appending is a short fragment with offset=0';
     if (Offset <> 0) and (Offset <> 1) and not LimitGiven and (Removed > 0) then
-      Hint := Hint + sLineBreak + 'внимание: limit не задан, поэтому заменены все ' +
-        'строки с ' + IntToStr(Offset) + '-й до конца файла (удалено ' +
-        IntToStr(Removed) + '); вставка перед строкой — это limit=0';
-    { Строки соединяются переводом строк текущей ОС; признак перевода строки в
-      конце файла сохраняется таким, каким он был. Склейка идёт через
-      TStringList.Text (один проход и одно выделение памяти), а не через
-      Text := Text + … в цикле: на файлах в тысячи строк то давало
-      квадратичное копирование. }
+      Hint := Hint + sLineBreak + 'warning: limit is not set, so every line from ' +
+        'line ' + IntToStr(Offset) + ' to the end of the file was replaced (' +
+        IntToStr(Removed) + ' removed); inserting before a line is limit=0';
+    { Lines are joined with the line break of the current OS; whether the file
+      ends with a line break stays as it was. Joining goes through
+      TStringList.Text (one pass, one allocation) instead of Text := Text + ...
+      in a loop: on files with thousands of lines that gave quadratic copying. }
     Lines.LineBreak := sLineBreak;
     Text := Lines.Text;
     if (Text <> '') and not HadBreak then
@@ -733,21 +731,21 @@ begin
     SizeAfter := Length(Text);
 
     if not WriteTextFile(P, Text, Err) then
-      Exit(ErrResult('не удалось записать файл: ' + Err));
+      Exit(ErrResult('cannot write file: ' + Err));
 
-    { Генерируем unified diff между старым и новым содержимым. }
+    { Generate a unified diff between the old and the new content. }
     Diff := MakeUnifiedDiff(OldLines, Lines, 'a/' + P, 'b/' + P);
 
     if Diff <> '' then
       Result := OkResult(Format(
-        'изменён файл: %s | удалено строк: %d, вставлено: %d | всего строк: %d -> %d | ' +
-        'размер: %d -> %d байт | хеш: %s%s%s%s',
+        'file changed: %s | lines removed: %d, inserted: %d | total lines: %d -> %d | ' +
+        'size: %d -> %d bytes | hash: %s%s%s%s',
         [P, Removed, Add.Count, TotalBefore, Lines.Count, SizeBefore, SizeAfter,
          ShortHash(Text), Hint, sLineBreak, Diff]))
     else
       Result := OkResult(Format(
-        'изменён файл: %s | удалено строк: %d, вставлено: %d | всего строк: %d -> %d | ' +
-        'размер: %d -> %d байт | хеш: %s%s',
+        'file changed: %s | lines removed: %d, inserted: %d | total lines: %d -> %d | ' +
+        'size: %d -> %d bytes | hash: %s%s',
         [P, Removed, Add.Count, TotalBefore, Lines.Count, SizeBefore, SizeAfter,
          ShortHash(Text), Hint]));
   finally
@@ -763,22 +761,22 @@ function ToolCopyFile(const A: TJSONObject; const Ctx: TToolContext): TToolOutco
 var
   Src, Dst, Data, Err: string;
 begin
-  { Гейт в обработчике: ключ copy_file в секции [tools]. }
+  { Gate in the handler: the copy_file key of the [tools] section. }
   if not ToolEnabled(Ctx.Cfg, COPY_TOOL_NAME) then
     Exit(ToolDisabled(COPY_TOOL_NAME));
   Src := ResolvePath(Ctx, A, 'source');
   Dst := ResolvePath(Ctx, A, 'destination');
   if (Src = '') or (Dst = '') then
-    Exit(ErrResult('нужны аргументы source и destination'));
+    Exit(ErrResult('the source and destination arguments are required'));
   if not AllowedPath(Ctx, Src) then
     Exit(MirmidDirDenied(Src));
   if not AllowedPath(Ctx, Dst) then
     Exit(MirmidDirDenied(Dst));
   if not ReadTextFile(Src, Data, Err) then
-    Exit(ErrResult('не удалось прочитать источник: ' + Err));
+    Exit(ErrResult('cannot read the source: ' + Err));
   if not WriteTextFile(Dst, Data, Err) then
-    Exit(ErrResult('не удалось записать назначение: ' + Err));
-  Result := OkResult(Format('скопировано %d байт: %s -> %s', [Length(Data), Src, Dst]));
+    Exit(ErrResult('cannot write the destination: ' + Err));
+  Result := OkResult(Format('copied %d bytes: %s -> %s', [Length(Data), Src, Dst]));
 end;
 
 { ------------------------------------------------------------------ shell }
@@ -788,22 +786,22 @@ var
   Cmd, OutText, Err: string;
   EC, OrigLen: Integer;
 begin
-  { Гейт в обработчике: ключ shell в секции [tools]. }
+  { Gate in the handler: the shell key of the [tools] section. }
   if not ToolEnabled(Ctx.Cfg, SHELL_TOOL_NAME) then
     Exit(ToolDisabled(SHELL_TOOL_NAME));
   Cmd := ArgStr(A, 'command', '');
   if Cmd = '' then
-    Exit(ErrResult('не задан command'));
+    Exit(ErrResult('command is not set'));
   if RunProcess(Cmd, Ctx.WorkDir, Ctx.ShellTimeout, OutText, EC, Err) then
   begin
     OrigLen := Length(OutText);
     if (Ctx.ShellOutputLimit > 0) and (OrigLen > Ctx.ShellOutputLimit) then
     begin
-      { Режем по границе символа UTF-8 — иначе в ответ модели уедет
-        «битая» последовательность (HTTP 400 ill-formed UTF-8 byte). }
+      { Cut on a UTF-8 character boundary — otherwise a broken sequence would
+        reach the model answer (HTTP 400 ill-formed UTF-8 byte). }
       OutText := TruncateUTF8(OutText, Ctx.ShellOutputLimit);
       OutText := OutText +
-        Format(sLineBreak + '[… обрезано: показано %d из %d байт]',
+        Format(sLineBreak + '[... truncated: %d of %d bytes shown]',
           [Length(OutText), OrigLen]);
     end;
     Result := OkResult(Format('exit=%d%s%s', [EC, sLineBreak, OutText]))
@@ -815,7 +813,7 @@ begin
     begin
       OutText := TruncateUTF8(OutText, Ctx.ShellOutputLimit);
       OutText := OutText +
-        Format(sLineBreak + '[… обрезано: показано %d из %d байт]',
+        Format(sLineBreak + '[... truncated: %d of %d bytes shown]',
           [Length(OutText), OrigLen]);
     end;
     Result := ErrResult(Err + sLineBreak + OutText);
@@ -824,8 +822,8 @@ end;
 
 { ------------------------------------------------------------------ grep }
 
-{ Ищет подстроку в строках; возвращает номера строк (1-базированные) в
-  TStringList (каждая строка — число). IgnoreCase — регистронезависимый поиск. }
+{ Searches for a substring in the lines; returns the line numbers (1-based) in
+  a TStringList (each line is a number). IgnoreCase — case-insensitive search. }
 function FindMatches(const Lines: TStrings; const Pattern: string;
   IgnoreCase: Boolean): TStringList;
 var
@@ -849,8 +847,8 @@ begin
   end;
 end;
 
-{ Форматирует одну строку результата grep: [путь:]номер: содержимое.
-  Prefix — префикс пути (пустой для одиночного файла). }
+{ Formats one grep result line: [path:]number: content. Prefix — the path
+  prefix (empty for a single file). }
 function GrepLine(const Prefix, Line: string; Num: Integer): string;
 begin
   if Prefix = '' then
@@ -859,9 +857,9 @@ begin
     Result := Format('%s:%d: %s', [Prefix, Num, Line]);
 end;
 
-{ Ищет pattern в одном файле. Prefix — префикс пути для вывода (пустой,
-  если ищем один файл). Context — строки контекста вокруг совпадения.
-  MaxResults — предел строк в выводе. }
+{ Searches for pattern in one file. Prefix — the path prefix for the output
+  (empty when searching a single file). Context — context lines around a match.
+  MaxResults — the limit of lines in the output. }
 function GrepOneFile(const FilePath, Pattern, Prefix: string;
   IgnoreCase, ShowPath: Boolean; Context, MaxResults: Integer;
   out Out: string; out Err: string): Integer;
@@ -880,7 +878,7 @@ begin
   Err := '';
   Total := 0;
 
-  { Быстрая проверка на бинарный файл: читаем первые 8K и ищем #0. }
+  { Quick binary file check: read the first 8K and look for #0. }
   try
     F := TFileStream.Create(FilePath, fmOpenRead or fmShareDenyNone);
     try
@@ -908,7 +906,7 @@ begin
       Break;
     end;
   if HasNull then
-    Exit(0); { бинарный файл — пропускаем }
+    Exit(0); { binary file — skip it }
 
   if not ReadTextFile(FilePath, Text, Err) then
     Exit(0);
@@ -921,17 +919,17 @@ begin
     if Matches.Count = 0 then
       Exit(0);
 
-    { Собираем результат с контекстом. PrevEnd — номер последней уже
-      выданной строки: он не даёт повторять строки и выходить за пределы
-      файла (иначе TStringList даёт «List index out of bounds»). }
+    { Collect the result with context. PrevEnd — the number of the last line
+      already emitted: it prevents repeating lines and going past the end of the
+      file (otherwise TStringList raises "List index out of bounds"). }
     PrevEnd := 0;
     for I := 0 to Matches.Count - 1 do
     begin
       if Total >= MaxResults then
         Break;
-      J := StrToInt(Matches[I]); { 1-базированный номер строки }
+      J := StrToInt(Matches[I]); { 1-based line number }
 
-      { Контекст до совпадения: строки J-Context .. J-1. }
+      { Context before the match: lines J-Context .. J-1. }
       K := J - Context;
       if K < 1 then
         K := 1;
@@ -951,8 +949,8 @@ begin
         Inc(Total);
       end;
 
-      { Само совпадение: печатаем, только если оно не попало в контекст
-        предыдущего совпадения. }
+      { The match itself: print it only if it was not covered by the context of
+        the previous match. }
       if (J > PrevEnd) and (Total < MaxResults) then
       begin
         Line := SL[J - 1];
@@ -967,8 +965,8 @@ begin
       if J > PrevEnd then
         PrevEnd := J;
 
-      { Контекст после совпадения: строки J+1 .. J+Context, не выходя за
-        конец файла и не повторяя уже выданные строки. }
+      { Context after the match: lines J+1 .. J+Context, not going past the end
+        of the file and not repeating already emitted lines. }
       K := J + Context;
       if K > SL.Count then
         K := SL.Count;
@@ -998,7 +996,7 @@ begin
   Result := Total;
 end;
 
-{ Обход каталога для grep. Recursive — заходить ли в подкаталоги. }
+{ Directory walk for grep. Recursive — whether to descend into subdirectories. }
 procedure GrepDirRec(const Dir, Pattern, Prefix: string;
   IgnoreCase, Recursive: Boolean; Context, MaxResults: Integer;
   out Out: string; out Total: Integer);
@@ -1017,7 +1015,7 @@ begin
       Full := IncludeTrailingPathDelimiter(Dir) + Name;
       if (SR.Attr and faDirectory) <> 0 then
       begin
-        { Пропускаем служебный каталог .mirmid. }
+        { Skip the .mirmid service directory. }
         if (Name = '.mirmid') then
           Continue;
         if Recursive then
@@ -1027,7 +1025,7 @@ begin
       begin
         if Total >= MaxResults then
           Break;
-        { Относительный путь от Prefix (если Prefix задан). }
+        { Relative path from Prefix (when Prefix is set). }
         if Prefix <> '' then
           Rel := Copy(Full, Length(Prefix) + 1, MaxInt)
         else
@@ -1057,7 +1055,7 @@ var
 begin
   Pattern := ArgStr(A, 'pattern', '');
   if Pattern = '' then
-    Exit(ErrResult('не задан pattern'));
+    Exit(ErrResult('pattern is not set'));
   P := ResolvePath(Ctx, A, 'path');
   if P = '' then
     P := Ctx.WorkDir;
@@ -1070,128 +1068,130 @@ begin
 
   if FileExists(P) then
   begin
-    { Один файл. }
+    { A single file. }
     Total := GrepOneFile(P, Pattern, '', IgnoreCase, False, Context,
       MaxResults, Out, Err);
     if Total = 0 then
-      Result := OkResult('совпадений не найдено')
+      Result := OkResult('no matches found')
     else
-      Result := OkResult(Format('найдено совпадений: %d%s%s', [Total, sLineBreak, Out]));
+      Result := OkResult(Format('matches found: %d%s%s', [Total, sLineBreak, Out]));
   end
   else if DirectoryExists(P) then
   begin
-    { Каталог. }
+    { A directory. }
     Total := 0;
     Out := '';
     GrepDirRec(P, Pattern, P, IgnoreCase, Recursive, Context, MaxResults, Out, Total);
     if Total = 0 then
-      Result := OkResult('совпадений не найдено')
+      Result := OkResult('no matches found')
     else
-      Result := OkResult(Format('найдено совпадений: %d%s%s', [Total, sLineBreak, Out]));
+      Result := OkResult(Format('matches found: %d%s%s', [Total, sLineBreak, Out]));
   end
   else
-    Result := ErrResult('путь не найден: ' + P);
+    Result := ErrResult('path not found: ' + P);
 end;
 { -------------------------------------------------------------- registration }
 
 procedure RegisterBuiltinTools(R: TToolRegistry);
 begin
   R.Add('file_list',
-    'Список файлов и подкаталогов. Каталоги помечены концевым «/».',
+    'Lists files and subdirectories. Directories end with "/".',
     SchemaObject(
       TJSONObject.Create([
-        'path', PropStr('Каталог (по умолчанию — рабочая папка)'),
-        'recursive', PropBool('Обходить ли подкаталоги (по умолчанию нет)')]),
+        'path', PropStr('Directory (the working folder by default)'),
+        'recursive', PropBool('Whether to walk subdirectories (off by default)')]),
       ['path']),
     @ToolFileList);
 
   R.Add('exist_file',
-    'Проверяет, существует ли файл или каталог по указанному пути.',
+    'Checks whether a file or a directory exists at the given path.',
     SchemaObject(
-      TJSONObject.Create(['path', PropStr('Путь для проверки')]),
+      TJSONObject.Create(['path', PropStr('Path to check')]),
       ['path']),
     @ToolExistFile);
 
   R.Add('read_text_file',
-    'Читает текстовый файл (UTF-8). Первая строка ответа — шапка ' +
-    '«[mirmid] файл: <путь> | размер: <N> байт | строк: <N> | хеш: <8 символов>»; ' +
-    'этот хеш нужен инструменту edit_text_file. Далее идёт содержимое; можно ' +
-    'задать диапазон строк и нумерацию строк (номера соответствуют строкам файла).',
+    'Reads a text file (UTF-8). The first line of the answer is a header ' +
+    '"[mirmid] file: <path> | size: <N> bytes | lines: <N> | hash: <8 characters>"; ' +
+    'edit_text_file needs this hash. The content follows; a line range and line ' +
+    'numbers can be requested (the numbers match the lines of the file).',
     SchemaObject(
       TJSONObject.Create([
-        'path', PropStr('Путь к файлу'),
-        'offset', PropInt('Начальная строка, 1-базированная (по умолчанию 1)'),
-        'limit', PropInt('Сколько строк прочитать, 0 — все (по умолчанию 400)'),
-        'numbered', PropBool('Добавлять номера строк (по умолчанию нет)')]),
+        'path', PropStr('Path to the file'),
+        'offset', PropInt('First line, 1-based (1 by default)'),
+        'limit', PropInt('How many lines to read, 0 — all (400 by default)'),
+        'numbered', PropBool('Whether to add line numbers (off by default)')]),
       ['path']),
     @ToolReadText);
   R.Add('read_pascal_interface',
-    'Читает интерфейсную часть исходника Delphi/Pascal. Для unit возвращает ' +
-    'текст до слова implementation включительно (секция implementation и тела ' +
-    'процедур не попадают в ответ), для program — файл целиком. Файл должен ' +
-    'начинаться со слова unit или program (вне комментариев и строк), а unit — ' +
-    'содержать разделы interface и implementation. Принимаются расширения ' +
-    '.pas, .pp, .p, .dpr, .lpr.',
+    'Reads the interface part of a Delphi/Pascal source. For a unit it returns ' +
+    'the text up to the word implementation inclusive (the implementation ' +
+    'section and procedure bodies are not in the answer), for a program the ' +
+    'whole file. The file must start with the word unit or program (outside ' +
+    'comments and strings), and a unit must contain the interface and ' +
+    'implementation sections. The extensions .pas, .pp, .p, .dpr, .lpr are ' +
+    'accepted.',
     SchemaObject(
-      TJSONObject.Create(['path', PropStr('Путь к исходнику Pascal/Delphi')]),
+      TJSONObject.Create(['path', PropStr('Path to the Pascal/Delphi source')]),
       ['path']),
     @ToolReadPascalInterface);
 
   R.Add(EDIT_TOOL_NAME,
-    'Создаёт файл или меняет в нём диапазон строк, описываемый offset/limit, ' +
-    'на content. offset — 1-базированный номер первой строки диапазона; 0 — ' +
-    'дописать в конец файла; отрицательный — отсчёт от конца (-1 — последняя ' +
-    'строка). limit — сколько строк заменить (не отрицательное; 0 — вставка ' +
-    'без удаления); диапазон за концом файла обрезается. Без offset/limit ' +
-    'заменяется весь файл. Для создания нового файла offset должен быть ' +
-    'строго равен 0. Для существующего файла обязателен hash из read_text_file: ' +
-    'если файл изменился, правка отклоняется. content = "" удаляет диапазон. ' +
-    'Переводы строк content приводятся к формату ОС. Важно: offset = 0 — это ' +
-    'дописывание в конец, а не замена файла (полный текст с offset = 0 даст ' +
-    'дубли строк); без limit диапазон идёт до конца файла, поэтому для вставки ' +
-    'перед строкой N указывайте limit = 0; content — только новые строки ' +
-    'диапазона, без соседних строк из вывода read_text_file.',
+    'Creates a file or replaces the line range described by offset/limit in it ' +
+    'with content. offset — 1-based number of the first line of the range; 0 — ' +
+    'append to the end of the file; negative — counted from the end (-1 is the ' +
+    'last line). limit — how many lines to replace (not negative; 0 — insert ' +
+    'without deleting); a range past the end of the file is clipped. Without ' +
+    'offset/limit the whole file is replaced. To create a new file offset must ' +
+    'be strictly 0. For an existing file the hash from read_text_file is ' +
+    'required: if the file has changed, the edit is rejected. content = "" ' +
+    'deletes the range. Line breaks in content are converted to the OS format. ' +
+    'Important: offset = 0 appends to the end rather than replacing the file ' +
+    '(the full text with offset = 0 duplicates lines); without limit the range ' +
+    'runs to the end of the file, so to insert before line N pass limit = 0; ' +
+    'content holds only the new lines of the range, without neighbouring lines ' +
+    'from the read_text_file output.',
     SchemaObject(
       TJSONObject.Create([
-        'path', PropStr('Путь к файлу'),
-        'content', PropStr('Новый текст диапазона (пустая строка — удалить диапазон)'),
-        'offset', PropInt('Первая строка диапазона, 1-базированная; 0 — дописать в конец (не замена файла); отрицательный — отсчёт от конца (-1 — последняя строка). По умолчанию 1. Для создания нового файла — строго 0'),
-        'limit', PropInt('Сколько строк заменить, не отрицательное (0 — вставка без удаления). По умолчанию — до конца файла'),
-        'hash', PropStr('Хеш из read_text_file (8 символов); обязателен для существующего файла')]),
+        'path', PropStr('Path to the file'),
+        'content', PropStr('New text of the range (an empty string deletes the range)'),
+        'offset', PropInt('First line of the range, 1-based; 0 — append to the end (not a file replacement); negative — counted from the end (-1 is the last line). 1 by default. To create a new file — strictly 0'),
+        'limit', PropInt('How many lines to replace, not negative (0 — insert without deleting). By default — to the end of the file'),
+        'hash', PropStr('Hash from read_text_file (8 characters); required for an existing file')]),
       ['path']),
     @ToolEditText);
 
   R.Add(COPY_TOOL_NAME,
-    'Копирует файл из source в destination.',
+    'Copies a file from source to destination.',
     SchemaObject(
       TJSONObject.Create([
-        'source', PropStr('Исходный файл'),
-        'destination', PropStr('Файл назначения')]),
+        'source', PropStr('Source file'),
+        'destination', PropStr('Destination file')]),
       ['source', 'destination']),
     @ToolCopyFile);
 
   R.Add(SHELL_TOOL_NAME,
-    'Выполняет команду в системной оболочке (bash на Unix, cmd.exe на Windows) ' +
-    'и возвращает stdout+stderr и код выхода.',
+    'Runs a command in the system shell (bash on Unix, cmd.exe on Windows) and ' +
+    'returns stdout+stderr and the exit code.',
     SchemaObject(
-      TJSONObject.Create(['command', PropStr('Команда оболочки')]),
+      TJSONObject.Create(['command', PropStr('Shell command')]),
       ['command']),
     @ToolShell);
 
   R.Add('grep',
-    'Ищет подстроку (pattern) в текстовых файлах. path — файл или каталог ' +
-    '(по умолчанию — рабочая папка). recursive — обходить подкаталоги. ' +
-    'ignore_case — регистронезависимый поиск. context — строки контекста ' +
-    'вокруг совпадения. max_results — предел строк в выводе (по умолчанию 200). ' +
-    'Бинарные файлы пропускаются.',
+    'Searches for a substring (pattern) in text files. path — a file or a ' +
+    'directory (the working folder by default). recursive — walk ' +
+    'subdirectories. ignore_case — case-insensitive search. context — context ' +
+    'lines around a match. max_results — limit of lines in the output (200 by ' +
+    'default). Binary files are skipped.',
     SchemaObject(
       TJSONObject.Create([
-        'pattern', PropStr('Подстрока для поиска (обязательно)'),
-        'path', PropStr('Файл или каталог (по умолчанию — рабочая папка)'),
-        'recursive', PropBool('Обходить ли подкаталоги (по умолчанию нет)'),
-        'ignore_case', PropBool('Регистронезависимый поиск (по умолчанию нет)'),
-        'context', PropInt('Строки контекста вокруг совпадения (по умолчанию 0)'),
-        'max_results', PropInt('Максимум строк в выводе (по умолчанию 200)')]),
+        'pattern', PropStr('Substring to search for (required)'),
+        'path', PropStr('File or directory (the working folder by default)'),
+        'recursive', PropBool('Whether to walk subdirectories (off by default)'),
+        'ignore_case', PropBool('Case-insensitive search (off by default)'),
+        'context', PropInt('Context lines around a match (0 by default)'),
+        'max_results', PropInt('Maximum lines in the output (200 by default)')]),
       ['pattern']),
     @ToolGrep);
 end;

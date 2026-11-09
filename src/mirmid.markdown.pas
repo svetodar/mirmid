@@ -1,6 +1,6 @@
 unit mirmid.markdown;
-{ Разбор разметки Markdown для вывода в терминал: цветной рендер основного
-  ответа (ANSI-коды) и чистый текст без разметки (для размышлений). }
+{ Markdown parsing for terminal output: a coloured render of the main answer
+  (ANSI codes) and plain text without markup (for the reasoning). }
 
 {$mode objfpc}{$H+}
 
@@ -9,40 +9,40 @@ interface
 uses
   SysUtils, Classes;
 
-{ Ядро рендера: при Colored=True — строка с ANSI-кодами, иначе чистый текст
-  без разметки. Не зависит от TTY/NO_COLOR (управляет вызывающий код). }
+{ Render core: with Colored=True it is a string with ANSI codes, otherwise
+  plain text without markup. Independent of TTY/NO_COLOR (the caller decides). }
 function RenderMarkdownCore(const Text: string; Colored: Boolean): string;
 
-{ Рендерит markdown-текст в строку с ANSI-кодами для терминала.
-  Вне терминала (или при заданной NO_COLOR) возвращает исходный текст как есть. }
+{ Renders markdown text into a string with ANSI codes for the terminal.
+  Outside a terminal (or with NO_COLOR set) it returns the source text as is. }
 function RenderMarkdown(const Text: string; FD: Integer = 1): string;
 
-{ Убирает разметку markdown, оставляя читаемый чистый текст. }
+{ Strips the markdown markup, leaving readable plain text. }
 function StripMarkdown(const Text: string): string;
 
-{ Разбивает текст на строки (LF, CR и CRLF). }
+{ Splits the text into lines (LF, CR and CRLF). }
 function SplitLines(const Text: string): TStringList;
 
-{ True, если строка похожа на строку таблицы: после обреза начинается с «|»
-  и содержит хотя бы ещё одну «|». }
+{ True if the line looks like a table line: after the trim it starts with "|"
+  and contains at least one more "|". }
 function IsTableLine(const S: string): Boolean;
 
-{ True, если строка может оказаться началом таблицы: после обреза начинается
-  с «|». Позволяет не показывать частичную строку таблицы построчно. }
+{ True if the line may turn out to be the start of a table: after the trim it
+  starts with "|". Lets a partial table line stay hidden row by row. }
 function IsTableStart(const S: string): Boolean;
 
-{ True, если строка — разделительная строка таблицы: ячейки состоят только
-  из «-», «:» и пробелов, и есть хотя бы один «-». }
+{ True if the line is a table separator line: the cells consist only of "-",
+  ":" and spaces, and there is at least one "-". }
 function IsTableSeparator(const S: string): Boolean;
 
-{ True, если разрыв после Prefix не рвёт инлайн-разметку: не внутри `кода`,
-  **жирного**, *курсива*, ~~зачёркнутого~~ и не внутри [ссылки]. Служит
-  фильтром точек переноса: перенос внутри разметки показал бы «**» как текст. }
+{ True if a break after Prefix does not tear the inline markup: not inside
+  `code`, **bold**, *italic*, ~~strikethrough~~ and not inside [a link]. It is
+  a filter for the wrap points: a wrap inside markup would show "**" as text. }
 function MarkdownBreakSafe(const Prefix: string): Boolean;
 
-{ Рендерит таблицу: выравнивает колонки по максимальной видимой ширине
-  ячеек (недостающие ячейки дополняются пустыми). Разделительные строки
-  рисуются дефисами шириной колонки. }
+{ Renders a table: aligns the columns by the maximum visible width of the
+  cells (missing cells are padded with empty ones). The separator lines are
+  drawn with dashes of the column width. }
 function RenderTable(const Lines: TStringList; Colored: Boolean): string;
 
 implementation
@@ -50,19 +50,19 @@ implementation
 uses
   mirmid.util;
 
-{ Forward: RenderTable (ниже) использует RenderStyled, определённый позже. }
+{ Forward: RenderTable (below) uses RenderStyled, which is defined later. }
 function RenderStyled(const S: string; const BaseExtra: string;
   Colored: Boolean): string; forward;
 
 const
-  { SGR-палитра для основного вывода (разные цвета под разные элементы). }
-  C_MD_HEADING = '1;96';      { жирный ярко-голубой — заголовки #..###### }
-  C_MD_CODE    = '38;5;209';  { оранжевый — `инлайн-код` }
-  C_MD_CODEBLK = '38;5;245';  { серый — ограждённые блоки ```...``` }
-  C_MD_LINK    = '4;36';      { подчёркнутый голубой — [текст](url) }
-  C_MD_QUOTE   = '2;93';      { приглушённый жёлтый — цитаты > }
-  C_MD_BULLET  = '38;5;46';   { зелёный — маркеры списков - * + N. }
-  C_MD_HRULE   = '90';        { серый — горизонтальная линия --- }
+  { SGR palette for the main output (different colours, one per element). }
+  C_MD_HEADING = '1;96';      { bold bright cyan — headings #..###### }
+  C_MD_CODE    = '38;5;209';  { orange — `inline code` }
+  C_MD_CODEBLK = '38;5;245';  { grey — fenced blocks ```...``` }
+  C_MD_LINK    = '4;36';      { underlined cyan — [text](url) }
+  C_MD_QUOTE   = '2;93';      { dimmed yellow — quotes > }
+  C_MD_BULLET  = '38;5;46';   { green — list markers - * + N. }
+  C_MD_HRULE   = '90';        { grey — horizontal rule --- }
 
 { --------------------------------------------------------------- helpers }
 
@@ -71,7 +71,7 @@ begin
   Result := (C = ' ') or (C = #9);
 end;
 
-{ Склеивает непустые SGR-части через ';'. }
+{ Joins the non-empty SGR parts with ';'. }
 function JoinSGR(const Parts: array of string): string;
 var
   I: Integer;
@@ -85,7 +85,7 @@ begin
         Result := Result + ';' + Parts[I];
 end;
 
-{ Текущий SGR-код из активных атрибутов и базового контекста строки. }
+{ Current SGR code from the active attributes and the base context of the line. }
 function SGRFor(Bold, Italic, Strike: Boolean; const Extra: string): string;
 var
   P: array[0..3] of string;
@@ -101,11 +101,11 @@ end;
 
 procedure EmitSGR(var Out: string; const Code: string);
 begin
-  { Цвет приглушается платформенной яркостью (COLOR_BRIGHTNESS). }
+  { The colour is dimmed by the platform brightness (COLOR_BRIGHTNESS). }
   Out := Out + #27 + '[' + DimSGR(Code) + 'm';
 end;
 
-{ Разбивает текст на строки (LF, CR и CRLF). }
+{ Splits the text into lines (LF, CR and CRLF). }
 function SplitLines(const Text: string): TStringList;
 var
   I, Start: Integer;
@@ -128,7 +128,7 @@ begin
   end;
 end;
 
-{ Позиция символа C в S начиная с From (0 — не найден). }
+{ Position of the character C in S starting from From (0 — not found). }
 function FindChar(C: Char; const S: string; From: Integer): Integer;
 var
   I: Integer;
@@ -139,7 +139,7 @@ begin
       Exit(I);
 end;
 
-{ True, если S — горизонтальная линия: три и более одинаковых -, * или _. }
+{ True if S is a horizontal rule: three or more identical -, * or _. }
 function IsHRule(const S: string): Boolean;
 var
   I: Integer;
@@ -155,8 +155,8 @@ end;
 
 { --------------------------------------------------------------- tables }
 
-{ Разбивает строку таблицы на ячейки: снимает крайние «|», обрезает
-  пробелы. «\|» считается литеральной пипой внутри ячейки. }
+{ Splits a table row into cells: strips the outer "|", trims the spaces.
+  "\|" is treated as a literal pipe inside a cell. }
 function SplitTableRow(const S: string): TStringList;
 var
   I, Start: Integer;
@@ -306,8 +306,8 @@ var
   Sep: Boolean;
   NCols: Integer;
 
-  { Строит строку границы: Left + ─*(w+2) + Mid + ─*(w+2) + ... + Right.
-    При Colored=True обёрнута в SGR-код C_MD_HRULE. }
+  { Builds a border line: Left + ─*(w+2) + Mid + ─*(w+2) + ... + Right.
+    With Colored=True it is wrapped in the SGR code C_MD_HRULE. }
   procedure BuildBorder(const Left, Mid, Right: string);
   var
     K, M: Integer;
@@ -354,8 +354,8 @@ begin
     end;
   end;
   NCols := Length(Widths);
-  { Ширина колонки — максимальная видимая ширина ячейки без разметки
-    (разделительные строки в расчёт не идут). }
+  { Column width — the maximum visible width of a cell without markup
+    (the separator lines are not taken into account). }
   for I := 0 to N - 1 do
     if not IsTableSeparator(Lines[I]) then
       for J := 0 to Rows[I].Count - 1 do
@@ -365,7 +365,7 @@ begin
           Widths[J] := W;
       end;
 
-  { Верхняя граница: ┌───┬───┐ }
+  { Top border: ┌───┬───┐ }
   R := '';
   BuildBorder('┌', '┬', '┐');
   Result := R;
@@ -376,12 +376,12 @@ begin
     R := '';
     if Sep then
     begin
-      { Разделитель: ├───┼───┤ }
+      { Separator: ├───┼───┤ }
       BuildBorder('├', '┼', '┤');
     end
     else
     begin
-      { Строка данных: │ cell │ cell │; вертикальные черты серые }
+      { Data row: │ cell │ cell │; the vertical bars are grey }
       if Colored then
       begin
         EmitSGR(R, C_MD_HRULE);
@@ -413,7 +413,7 @@ begin
     Result := Result + sLineBreak + R;
   end;
 
-  { Нижняя граница: └───┴───┘ }
+  { Bottom border: └───┴───┘ }
   R := '';
   BuildBorder('└', '┴', '┘');
   Result := Result + sLineBreak + R;
@@ -424,10 +424,10 @@ end;
 
 { --------------------------------------------------------------- inline }
 
-{ Сканирует строку по символам, снимая инлайн-разметку. При Colored=True
-  печатает SGR-коды при смене атрибутов. BaseExtra — базовый контекст строки
-  (цвет заголовка и т.п.). Начальный/конечный код не печатает — это делает
-  RenderStyled. }
+{ Scans the string character by character, stripping the inline markup. With
+  Colored=True it emits SGR codes when the attributes change. BaseExtra is the
+  base context of the line (the heading colour etc.). It does not emit the
+  initial/final code — RenderStyled does that. }
 function RenderInlineBody(const S: string; const BaseExtra: string;
   Colored: Boolean): string;
 var
@@ -442,7 +442,7 @@ var
       EmitSGR(Result, SGRFor(B, It, St, E));
   end;
 
-  { Маркер длиной M в позиции P может быть открывающим. }
+  { A marker of length M at position P can be an opening one. }
   function MarkerOpen(P, M: Integer): Boolean;
   begin
     if P > 1 then
@@ -456,7 +456,7 @@ var
     Result := not IsSpaceChar(S[P + M]);
   end;
 
-  { Маркер в позиции P может быть закрывающим. }
+  { A marker at position P can be a closing one. }
   function MarkerClose(P: Integer): Boolean;
   begin
     Result := (P > 1) and not IsSpaceChar(S[P - 1]);
@@ -474,7 +474,7 @@ begin
   begin
     if InCode then
     begin
-      { Внутри кодовой вставки разметку не разбираем. }
+      { Inside an inline code span the markup is not parsed. }
       if S[I] = '`' then
       begin
         InCode := False;
@@ -489,7 +489,7 @@ begin
     end
     else if (I < N) and (S[I] = '*') and (S[I + 1] = '*') then
     begin
-      { **жирный** }
+      { **bold** }
       if not Bold and MarkerOpen(I, 2) then
       begin
         Bold := True;
@@ -510,7 +510,7 @@ begin
     end
     else if S[I] = '*' then
     begin
-      { *курсив* }
+      { *italic* }
       if not Italic and MarkerOpen(I, 1) then
       begin
         Italic := True;
@@ -531,7 +531,7 @@ begin
     end
     else if S[I] = '_' then
     begin
-      { _курсив_ }
+      { _italic_ }
       if not Italic and MarkerOpen(I, 1) then
       begin
         Italic := True;
@@ -552,7 +552,7 @@ begin
     end
     else if (I < N) and (S[I] = '~') and (S[I + 1] = '~') then
     begin
-      { ~~зачёркнутый~~ }
+      { ~~strikethrough~~ }
       if not Strike and MarkerOpen(I, 2) then
       begin
         Strike := True;
@@ -573,7 +573,7 @@ begin
     end
     else if S[I] = '`' then
     begin
-      { `инлайн-код` }
+      { `inline code` }
       InCode := True;
       Extra := JoinSGR([BaseExtra, C_MD_CODE]);
       Emit(Bold, Italic, Strike, Extra);
@@ -581,7 +581,7 @@ begin
     end
     else if S[I] = '[' then
     begin
-      { [текст](url) — ссылка: подчёркнутый текст, URL не печатается. }
+      { [text](url) — a link: underlined text, the URL is not printed. }
       J := FindChar(']', S, I + 1);
       K := 0;
       if (J > 0) and (J < N) and (S[J + 1] = '(') then
@@ -609,8 +609,8 @@ begin
   end;
 end;
 
-{ Рендерит строку в базовом контексте BaseExtra: начальный код, содержимое,
-  сброс. Пустая строка — без кодов. }
+{ Renders a line in the BaseExtra base context: the initial code, the content,
+  the reset. An empty string — no codes. }
 function RenderStyled(const S: string; const BaseExtra: string;
   Colored: Boolean): string;
 begin
@@ -655,7 +655,7 @@ begin
       end;
       L := Lines[I];
       T := Trim(L);
-      { Ограждённый блок кода: ``` или ~~~. }
+      { Fenced code block: ``` or ~~~. }
       if (Pos('```', T) = 1) or (Pos('~~~', T) = 1) then
       begin
         InCodeBlock := not InCodeBlock;
@@ -666,7 +666,7 @@ begin
         AddLine(RenderStyled(L, C_MD_CODEBLK, Colored));
         Continue;
       end;
-      { Заголовок: 1–6 «#» в начале строки. }
+      { Heading: 1-6 "#" at the start of the line. }
       P := 1;
       Level := 0;
       while (P <= Length(L)) and (L[P] = '#') do
@@ -681,13 +681,13 @@ begin
         AddLine(RenderStyled(Rest, C_MD_HEADING, Colored));
         Continue;
       end;
-      { Горизонтальная линия. }
+      { Horizontal rule. }
       if IsHRule(T) then
       begin
         AddLine(RenderStyled(T, C_MD_HRULE, Colored));
         Continue;
       end;
-      { Цитата: одна или несколько «>» в начале строки. }
+      { Quote: one or more ">" at the start of the line. }
       P := 1;
       while (P <= Length(L)) and (L[P] = '>') do
         Inc(P);
@@ -699,10 +699,10 @@ begin
         AddLine(RenderStyled(Rest, C_MD_QUOTE, Colored));
         Continue;
       end;
-      { Таблица: последовательность строк, начинающихся с «|», где вторая
-        строка — разделитель (заголовок + «|---|»). Без разделителя это
-        обычный текст: иначе одиночная строка с «|» рисовалась бы целой
-        таблицей (в потоке — каждое новое поступление отдельным блоком). }
+      { Table: a sequence of lines starting with "|", where the second line is
+        the separator (header + "|---|"). Without a separator this is ordinary
+        text: otherwise a single line with "|" would be rendered as a whole
+        table (in a stream — every new arrival as a separate block). }
       if IsTableLine(L) and (I + 1 < Lines.Count) and
          IsTableSeparator(Lines[I + 1]) then
       begin
@@ -720,7 +720,7 @@ begin
         Skip := Q - I - 1;
         Continue;
       end;
-      { Элемент списка: «- », «* », «+ » или «N. ». }
+      { List item: "- ", "* ", "+ " or "N. ". }
       P := 1;
       while (P <= Length(L)) and (L[P] = ' ') do
         Inc(P);
@@ -751,7 +751,7 @@ begin
           Continue;
         end;
       end;
-      { Обычная строка. }
+      { An ordinary line. }
       AddLine(RenderStyled(L, '', Colored));
     end;
   finally

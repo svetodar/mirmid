@@ -1,6 +1,6 @@
 unit mirmid.agent;
-{ Цикл агента: запрос к модели, выполнение инструментов, повтор до финального
-  текстового ответа или исчерпания лимита шагов. }
+{ Agent loop: a request to the model, tool execution, repeat until the final
+  text answer or the step limit is exhausted. }
 
 {$mode objfpc}{$H+}
 
@@ -16,84 +16,86 @@ type
     FRegistry: TToolRegistry;
     FMsgs: TMessages;
     FOnEvent: TAgentEvent;
-    FOnSubAgentEvent: TAgentEvent; { события субагентов (и их вложенных) }
-    FOnModelCall: TModelCallEvent; { уведомление о каждом вызове модели
-                                     (журнал процесса модели) }
-    FSubAgentDepth: Integer;   { 0 — корневая сессия, >0 — субагент }
+    FOnSubAgentEvent: TAgentEvent; { events of subagents (and their nested ones) }
+    FOnModelCall: TModelCallEvent; { notification about every model call
+                                     (model process log) }
+    FSubAgentDepth: Integer;   { 0 — root session, >0 — subagent }
     FSessionBase: string;
-    FLoopGuard: TLoopGuard; { детектор повторяющихся вызовов инструментов }
-    { Поправка оценки контекста: последний usage.prompt_tokens минус оценка
-      ContextTokens того же запроса. Провайдер (в стриме — благодаря
-      stream_options.include_usage) сообщает точный размер запроса, поэтому
-      оценка сдвигается на фактическую разницу; 0 — usage ещё не приходил. }
+    FLoopGuard: TLoopGuard; { repeated tool call detector }
+    { Context estimate correction: the last usage.prompt_tokens minus the
+      ContextTokens estimate of the same request. The provider (in a stream —
+      thanks to stream_options.include_usage) reports the exact request size,
+      so the estimate is shifted by the actual difference; 0 — usage has not
+      arrived yet. }
     FContextFix: Integer;
     function BuildContext: TToolContext;
     procedure Fire(Kind: TAgentEventKind; const Text: string);
-    { Уведомляет обработчик OnModelCall о вызове модели, начатом в StartMs;
-      без обработчика — ничего не делает. }
+    { Notifies the OnModelCall handler about the model call started at StartMs;
+      without a handler it does nothing. }
     procedure NotifyModelCall(const Resp: TLLMResponse; StartMs: QWord;
       const ErrText: string);
     procedure Append(const M: TMessage);
     procedure LLMDelta(const ContentDelta, ReasoningDelta: string);
-    { Сообщает CLI новый размер контекста (aeContext) — базу строки статуса.
-      Считается по истории после добавления ответа модели и результатов
-      инструментов, поэтому база не отстаёт от реального контекста (в том
-      числе когда ответ был последним в ходе). Без обработчика не считает:
-      ContextTokens перебирает все сообщения и сериализует схемы. }
+    { Reports the new context size (aeContext) to the CLI — the base of the
+      status line. It is computed from the history after the model answer and
+      the tool results were added, so the base does not lag behind the real
+      context (including the case when the answer was the last one in the
+      turn). Without a handler it computes nothing: ContextTokens walks all
+      messages and serialises the schemas. }
     procedure EmitContext;
   public
     constructor Create(const ACfg: TMirmidConfig; ARegistry: TToolRegistry);
-    { Очищает диалог и добавляет системное сообщение. }
+    { Clears the dialog and adds the system message. }
     procedure Reset;
     procedure AddUser(const Text: string);
-    { Один ход пользователя: при необходимости выполняет инструменты. }
+    { One user turn: runs tools when needed. }
     function RunTurn(out FinalText: string; out Err: string): Boolean;
     property Messages: TMessages read FMsgs write FMsgs;
-    { Текущая конфигурация агента. Запись позволяет менять модель, системную
-      подсказку и режим рассуждений прямо во время сессии (REPL). }
+    { Current agent configuration. Writing allows changing the model, the
+      system prompt and the reasoning mode right during the session (REPL). }
     property Config: TMirmidConfig read FCfg write FCfg;
-    { Глубина вложенности субагентов: 0 — корневая сессия, >0 — субагент.
-      Задаётся перед запуском субагента инструментом subagent. }
+    { Subagent nesting depth: 0 — root session, >0 — subagent.
+      Set before the subagent is started by the subagent tool. }
     property SubAgentDepth: Integer read FSubAgentDepth write FSubAgentDepth;
-    { База имён файлов вспомогательных сессий (субагенты, шаги плана);
-      пусто — они не сохраняются. }
+    { Base name of the auxiliary session files (subagents, plan steps);
+      empty — they are not saved. }
     property SessionBase: string read FSessionBase write FSessionBase;
     property OnEvent: TAgentEvent read FOnEvent write FOnEvent;
     property OnSubAgentEvent: TAgentEvent read FOnSubAgentEvent write FOnSubAgentEvent;
-    { Уведомление о каждом вызове модели (запрос → ответ, длительность,
-      ошибка). Используется журналом процесса модели и тестами; на ход не
-      влияет. }
+    { Notification about every model call (request → answer, duration,
+      error). Used by the model process log and the tests; it does not affect
+      the turn. }
     property OnModelCall: TModelCallEvent read FOnModelCall write FOnModelCall;
-    { Оценка текущего размера контекста (токены) по истории сообщений и
-      схемам инструментов: вес текста (ASCII — 4 байта на токен, кириллица —
-      2 символа на токен, CJK/эмодзи — символ на токен) плюс обёртки
-      сообщений, вызовов инструментов и схем. }
+    { Estimate of the current context size (tokens) from the message history
+      and the tool schemas: text weight (ASCII — 4 bytes per token, Cyrillic —
+      2 characters per token, CJK/emoji — one character per token) plus the
+      wrappers of messages, tool calls and schemas. }
     function ContextTokens: Integer;
   end;
 
 const
-  { Обёртка одного сообщения в Chat Completions (<|im_start|>role, ключи
-    JSON, служебные переводы строк) сверх самого текста. }
+  { Wrapper of one message in Chat Completions (<|im_start|>role, JSON keys,
+    service newlines) on top of the text itself. }
   TokensPerMessage = 4;
-  { Служебная часть результата инструмента (роль tool, tool_call_id, name). }
+  { Service part of a tool result (role tool, tool_call_id, name). }
   TokensPerToolResult = 4;
-  { JSON-обёртка вызова инструмента (id, type, function, ключи, кавычки)
-    сверх имени и аргументов. }
+  { JSON wrapper of a tool call (id, type, function, keys, quotes) on top of
+    the name and the arguments. }
   TokensPerToolCall = 12;
-  { Обёртка схемы инструмента в запросе (type/function) сверх её JSON. }
+  { Wrapper of a tool schema in the request (type/function) on top of its JSON. }
   TokensPerToolSchema = 5;
 
-{ Число Unicode-символов в UTF-8-строке. }
+{ Number of Unicode characters in a UTF-8 string. }
 function CountUTF8Chars(const S: string): Integer;
 
-{ Вес текста в четвертях токена: ASCII — 1 (4 байта на токен),
-  двухбайтовый UTF-8 (кириллица, греческий) — 2 (2 символа на токен),
-  трёх- и четырёхбайтовый (CJK, эмодзи) — 4 (символ на токен). }
+{ Text weight in quarter tokens: ASCII — 1 (4 bytes per token), two-byte
+  UTF-8 (Cyrillic, Greek) — 2 (2 characters per token), three- and four-byte
+  (CJK, emoji) — 4 (one character per token). }
 function TextQuarterTokens(const S: string): Int64;
 
-{ Оценка токенов одного сообщения вместе с обёрткой: роль, содержимое,
-  reasoning, имя/id инструмента, аргументы и id вызовов инструментов плюс
-  TokensPerMessage (для результата инструмента — ещё TokensPerToolResult). }
+{ Token estimate of one message together with the wrapper: role, content,
+  reasoning, tool name/id, arguments and tool call ids plus TokensPerMessage
+  (for a tool result — also TokensPerToolResult). }
 function MessageTokens(const M: TMessage): Integer;
 
 implementation
@@ -118,20 +120,20 @@ var
   SP, AgentsMd: string;
 begin
   SetLength(FMsgs, 0);
-  FContextFix := 0; { новая сессия — прежний usage к ней не относится }
+  FContextFix := 0; { a new session — the previous usage does not apply to it }
   if FCfg.SystemPrompt <> '' then
   begin
     SP := FCfg.SystemPrompt;
-    { Добавляем сведения об окружении: ОС, дата, время. }
+    { Add environment information: OS, date, time. }
     if EnvironmentInfo <> '' then
       SP := SP + #10#10 + EnvironmentInfo;
-    { Инструкции проекта из AGENTS.md — только для основной (корневой)
-      сессии: субагенты работают со своей системной подсказкой. }
+    { Project instructions from AGENTS.md — for the main (root) session only:
+      subagents work with their own system prompt. }
     if FSubAgentDepth = 0 then
     begin
       AgentsMd := ReadAgentsMd(FCfg.WorkDir);
       if AgentsMd <> '' then
-        SP := SP + #10#10 + 'Инструкции проекта (AGENTS.md):' + #10 + AgentsMd;
+        SP := SP + #10#10 + 'Project instructions (AGENTS.md):' + #10 + AgentsMd;
     end;
     Append(MakeMessage(mrSystem, SP));
   end;
@@ -156,7 +158,7 @@ var
 begin
   if not Assigned(FOnEvent) then
     Exit;
-  { Оценка истории плюс поправка по фактическому usage.prompt_tokens. }
+  { History estimate plus the correction from the real usage.prompt_tokens. }
   N := ContextTokens + FContextFix;
   if N < 0 then
     N := 0;
@@ -169,9 +171,9 @@ begin
     FOnEvent(Kind, Text);
 end;
 
-{ Уведомление о вызове модели: снимок запроса (FMsgs на момент вызова) и
-  ответ. Обработчик пишет журнал процесса модели; StartMs — момент начала
-  вызова (TicksMs), длительность считается здесь. }
+{ Model call notification: a snapshot of the request (FMsgs at the moment of
+  the call) and the answer. The handler writes the model process log; StartMs
+  is the start time of the call (TicksMs), the duration is computed here. }
 procedure TAgent.NotifyModelCall(const Resp: TLLMResponse; StartMs: QWord;
   const ErrText: string);
 begin
@@ -180,7 +182,7 @@ begin
   FOnModelCall(FMsgs, Resp, Int64(TicksMs - StartMs), ErrText);
 end;
 
-{ Дельта стрима модели → события для UI. }
+{ Model stream delta → events for the UI. }
 procedure TAgent.LLMDelta(const ContentDelta, ReasoningDelta: string);
 begin
   if ReasoningDelta <> '' then
@@ -196,23 +198,23 @@ begin
   Result := 0;
   N := Length(S);
   for I := 1 to N do
-    if (Byte(S[I]) and $C0) <> $80 then   { начало символа, не продолжение }
+    if (Byte(S[I]) and $C0) <> $80 then   { character start, not a continuation }
       Inc(Result);
 end;
 
-{ Вес текста в четвертях токена. Оценка «4 байта на токен» верна для ASCII,
-  а кириллица в UTF-8 занимает два байта на символ и у BPE-токенизаторов
-  укладывается примерно в 2 символа на токен — поэтому вес считается по
-  длине ведущего байта, а не по числу символов. Веса: ASCII — 1, двухбайтовый
-  UTF-8 (кириллица, греческий, латиница с диакритикой) — 2, трёх- и
-  четырёхбайтовый (CJK, эмодзи) — 4 (символ на токен). }
+{ Text weight in quarter tokens. The "4 bytes per token" estimate holds for
+  ASCII, while Cyrillic occupies two bytes per character in UTF-8 and BPE
+  tokenizers fit roughly 2 characters per token — therefore the weight is
+  computed from the length of the leading byte, not from the character count.
+  Weights: ASCII — 1, two-byte UTF-8 (Cyrillic, Greek, Latin with diacritics)
+  — 2, three- and four-byte (CJK, emoji) — 4 (one character per token). }
 function TextQuarterTokens(const S: string): Int64;
 var
   I, N, W: Integer;
   B: Byte;
 begin
   Result := 0;
-  N := Length(S);  { Length строки — байты UTF-8 }
+  N := Length(S);  { Length of the string — UTF-8 bytes }
   I := 1;
   while I <= N do
   begin
@@ -230,16 +232,16 @@ begin
     else if W = 2 then
       Inc(Result, 2)
     else
-      Inc(Result, 4);  { CJK и эмодзи — примерно символ на токен }
-    { Обрезанный многобайтовый хвост не должен съедать соседние символы. }
+      Inc(Result, 4);  { CJK and emoji — about one character per token }
+    { A truncated multibyte tail must not swallow the neighbouring characters. }
     if I + W > N + 1 then
       Break;
     Inc(I, W);
   end;
 end;
 
-{ Оценка токенов одного сообщения: вес роли, текста, reasoning, имени/id
-  инструмента и вызовов инструментов плюс обёртка сообщения. }
+{ Token estimate of one message: weight of the role, text, reasoning, tool
+  name/id and tool calls plus the message wrapper. }
 function MessageTokens(const M: TMessage): Integer;
 var
   I: Integer;
@@ -255,10 +257,9 @@ begin
     Inc(Result, TokensPerToolResult);
 end;
 
-{ Оценка текущего размера контекста (токены): история сообщений плюс схемы
-  инструментов. Текст взвешивается TextQuarterTokens, к каждому сообщению
-  добавляется обёртка Chat Completions, к каждому вызову/схеме инструмента —
-  обёртка JSON. }
+{ Estimate of the current context size (tokens): the message history plus the
+  tool schemas. The text is weighted by TextQuarterTokens, every message gets
+  the Chat Completions wrapper, every tool call/schema gets the JSON wrapper. }
 function TAgent.ContextTokens: Integer;
 var
   I: Integer;
@@ -282,7 +283,7 @@ begin
   Result := Integer(Q);
 end;
 
-{ Текст команды из JSON-аргументов shell-инструмента (пусто, если не разобрать). }
+{ Command text from the JSON arguments of the shell tool (empty if unparsable). }
 function ShellCommandFromArgs(const ArgsJson: string): string;
 var
   D: TJSONData;
@@ -303,8 +304,8 @@ begin
   Result := MakeToolContext(FCfg);
   Result.SubAgentDepth := FSubAgentDepth;
   Result.SessionBase := FSessionBase;
-  { Реестр доступен инструментам: subagent переиспользует его, чтобы не
-    запускать одни и те же MCP-серверы повторно. }
+  { The registry is available to the tools: subagent reuses it in order not to
+    start the same MCP servers again. }
   Result.Registry := FRegistry;
   Result.OnSubAgentEvent := FOnSubAgentEvent;
 end;
@@ -320,49 +321,49 @@ var
   ShowText: string;
   LoopAction: TLoopAction;
   LoopText: string;
-  StartMs: QWord; { момент начала вызова модели (для elapsed_ms журнала) }
+  StartMs: QWord; { model call start time (for the elapsed_ms log field) }
 begin
   FinalText := '';
   Err := '';
   Result := False;
-  FLoopGuard.Reset; { новый ход — сброс счётчиков повторов }
+  FLoopGuard.Reset; { a new turn — reset the repeat counters }
   Ctx := BuildContext;
   LLM := TLLMClient.Create(FCfg);
   try
     Step := 0;
-    { MaxSteps = 0 — без ограничений. }
+    { MaxSteps = 0 — no limit. }
     while (FCfg.MaxSteps <= 0) or (Step < FCfg.MaxSteps) do
     begin
       Inc(Step);
       if FCfg.MaxSteps > 0 then
-        Fire(aeStep, Format('шаг %d/%d', [Step, FCfg.MaxSteps]))
+        Fire(aeStep, Format('step %d/%d', [Step, FCfg.MaxSteps]))
       else
-        Fire(aeStep, Format('шаг %d', [Step]));
+        Fire(aeStep, Format('step %d', [Step]));
 
-      { Размер запрашиваемого контекста — база строки статуса CLI: к ней
-        прибавляются токены ответа по мере стрима. У субагента это его
-        собственная история и системная подсказка (событие приходит в общий
-        обработчик родителя). Базой первого шага служит история на входе в
-        ход; в следующих итерациях её уже обновили после ответа и добавления
-        результатов инструментов, поэтому повторный пересчёт истории (со
-        схемами инструментов) был бы лишним. }
+      { Size of the requested context — the base of the CLI status line: the
+        answer tokens are added to it as the stream goes. For a subagent this
+        is its own history and system prompt (the event arrives in the common
+        handler of the parent). The history at the entry to the turn serves as
+        the base of the first step; in the following iterations it has already
+        been updated after the answer and the added tool results, so a repeated
+        recomputation of the history (with tool schemas) would be superfluous. }
       if Step = 1 then
         EmitContext;
 
-      { Вызов модели: засекаем начало, чтобы журнал (OnModelCall) получил
-        длительность — одинаково для стрима и обычного запроса. }
+      { Model call: remember the start so that the log (OnModelCall) gets the
+        duration — the same for a stream and a plain request. }
       StartMs := TicksMs;
       if FCfg.Stream then
       begin
-        { Потоковый вывод: дельты текста и размышлений уходят в UI по мере
-          поступления, итог — в Resp. }
+        { Streaming output: text and reasoning deltas go to the UI as they
+          arrive, the result goes to Resp. }
         Fire(aeStreamStart, '');
         if not LLM.ChatStream(FMsgs, FRegistry, @LLMDelta, Resp, Err) then
         begin
-          { Стрим закрываем до ошибки: UI должен получить пару start/end. }
+          { Close the stream before the error: the UI must get a start/end pair. }
           Fire(aeStreamEnd, '');
-          { Неудачный вызов тоже попадает в журнал: причина отказа —
-            в поле error записи. }
+          { A failed call also goes to the log: the reason of the failure is in
+            the error field of the record. }
           NotifyModelCall(Resp, StartMs, Err);
           Fire(aeError, Err);
           Exit(False);
@@ -383,20 +384,20 @@ begin
           Fire(aeReasoning, Resp.Reasoning);
       end;
 
-      { Фактический размер запроса (usage.prompt_tokens) относится к истории
-        ДО добавления ответа, поэтому поправка оценки снимается здесь, пока
-        ответ ещё не в FMsgs. Дальше EmitContext прибавляет её к оценке — и
-        строка статуса показывает не только примерный, но и сверенный с
-        провайдером размер контекста. }
+      { The actual request size (usage.prompt_tokens) refers to the history
+        BEFORE the answer was added, so the estimate correction is taken here
+        while the answer is not yet in FMsgs. Later EmitContext adds it to the
+        estimate — and the status line shows the context size not only roughly
+        estimated but also verified against the provider. }
       if Resp.PromptTokens > 0 then
         FContextFix := Resp.PromptTokens - ContextTokens;
 
-      { Стрим с stream_options.include_usage отдаёт usage отдельным чанком;
-        у некоторых провайдеров при этом нет total_tokens, поэтому событие
-        показываем при любом непустом поле. }
+      { A stream with stream_options.include_usage delivers usage in a separate
+        chunk; some providers have no total_tokens in this case, so the event
+        is shown for any non-empty field. }
       if (Resp.PromptTokens > 0) or (Resp.CompletionTokens > 0) or
         (Resp.TotalTokens > 0) then
-        Fire(aeUsage, Format('токены: prompt=%d, completion=%d, total=%d',
+        Fire(aeUsage, Format('tokens: prompt=%d, completion=%d, total=%d',
           [Resp.PromptTokens, Resp.CompletionTokens, Resp.TotalTokens]));
 
       AM := MakeMessage(mrAssistant, Resp.Content);
@@ -404,10 +405,10 @@ begin
       AM.ToolCalls := Resp.ToolCalls;
       Append(AM);
 
-      { Ответ уже в истории: база сразу пересчитывается по ней, чтобы строка
-        статуса не зависела от грубой оценки по дельтам стрима и включала
-        ответ даже тогда, когда он последний в ходе (следующего aeContext
-        перед новым запросом не будет). }
+      { The answer is now in the history: the base is recomputed from it right
+        away so that the status line does not depend on the rough estimate from
+        the stream deltas and includes the answer even when it is the last one
+        in the turn (there will be no next aeContext before a new request). }
       EmitContext;
 
       if Length(Resp.ToolCalls) = 0 then
@@ -421,7 +422,7 @@ begin
       begin
         if (Resp.ToolCalls[I].Name = 'shell') then
         begin
-          { Для shell показываем только текст команды, без JSON. }
+          { For shell show only the command text, without JSON. }
           ShowText := ShellCommandFromArgs(Resp.ToolCalls[I].Arguments);
           if ShowText <> '' then
             Fire(aeShellCommand, ShowText)
@@ -447,12 +448,12 @@ begin
           TM.Content := 'ERROR: ' + Outcome.Text;
         Append(TM);
 
-        { Loop-guard: проверка повторяющихся вызовов инструментов. }
+        { Loop-guard: check of repeated tool calls. }
         LoopAction := FLoopGuard.Feed(Resp.ToolCalls[I].Name,
           Resp.ToolCalls[I].Arguments, TM.Content, LoopText);
         if LoopAction = laWarn then
         begin
-          { Синтетическое user-сообщение: модель должна сменить подход. }
+          { Synthetic user message: the model has to change its approach. }
           Append(MakeMessage(mrUser, LoopText));
           Fire(aeLoopWarning, LoopText);
         end;
@@ -461,20 +462,20 @@ begin
 
         if LoopAction = laStop then
         begin
-          { Цикл: останавливаем ход с ошибкой. }
+          { Loop: stop the turn with an error. }
           Err := LoopText;
           Fire(aeError, LoopText);
           Exit(False);
         end;
       end;
 
-      { Результаты инструментов (и, возможно, синтетическое сообщение
-        loop-guard) добавлены в историю: следующий запрос идёт уже с ними,
-        поэтому база строки статуса пересчитывается — иначе счётчики шага
-        отставали бы на весь объём вывода инструментов. }
+      { The tool results (and possibly the synthetic loop-guard message) are
+        added to the history: the next request already goes with them, so the
+        status line base is recomputed — otherwise the step counters would lag
+        by the whole volume of the tool output. }
       EmitContext;
     end;
-    Err := Format('достигнут предел шагов (%d): модель не завершила ответ', [FCfg.MaxSteps]);
+    Err := Format('step limit reached (%d): the model did not finish the answer', [FCfg.MaxSteps]);
     Fire(aeError, Err);
     Result := False;
   finally

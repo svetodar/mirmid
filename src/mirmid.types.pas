@@ -1,6 +1,7 @@
 unit mirmid.types;
-{ Общие типы харнесса: сообщения диалога и настройки запуска.
-  Юнит намеренно не зависит от fpjson/сети, чтобы его могли использовать все. }
+{ Shared harness types: dialogue messages and run settings.
+  The unit deliberately does not depend on fpjson or networking so that every
+  other unit can use it. }
 
 {$mode objfpc}{$H+}
 
@@ -10,49 +11,49 @@ uses
   SysUtils;
 
 type
-  { Роль сообщения в диалоге. }
+  { Message role in the dialogue. }
   TMessageRole = (mrSystem, mrUser, mrAssistant, mrTool);
 
-  { Один вызов инструмента, запрошенный моделью. Arguments — сырая JSON-строка. }
+  { One tool call requested by the model. Arguments is the raw JSON string. }
   TToolCall = record
     Id: string;
     Name: string;
     Arguments: string;
   end;
 
-  { Сообщение в формате OpenAI Chat Completions. }
+  { Message in the OpenAI Chat Completions format. }
   TMessage = record
     Role: TMessageRole;
     Content: string;
-    Reasoning: string;          { reasoning_content у reasoning-моделей }
+    Reasoning: string;          { reasoning_content of reasoning models }
     ToolCalls: array of TToolCall;
-    ToolCallId: string;         { только для mrTool }
-    Name: string;               { имя инструмента для mrTool }
+    ToolCallId: string;         { mrTool only }
+    Name: string;               { tool name for mrTool }
   end;
 
   TMessages = array of TMessage;
 
-  { Вид события агента (для обработчиков UI).
-    aeContext — перед каждым запросом к модели: Text — оценка размера
-    контекста запроса в токенах (у субагента — по его собственной истории
-    и системной подсказке).
-    aeSubSessionStart/aeSubSessionEnd — вход/выход под-сессии планировщика
-    (предварительный анализ, шаг плана): Text — метка под-сессии
-    («анализ», «шаг s1»). В отличие от пары aeToolCall/aeToolResult с
-    инструментом subagent, вложенность и счётчики статуса определяются
-    этой меткой, а не именем инструмента. }
+  { Agent event kind (for UI handlers).
+    aeContext - before every model request: Text is the estimated size of the
+    request context in tokens (for a subagent - over its own history and
+    system prompt).
+    aeSubSessionStart/aeSubSessionEnd - entering/leaving a planner sub-session
+    (preliminary analysis, plan step): Text is the sub-session label
+    ("analysis", "step s1"). Unlike the aeToolCall/aeToolResult pair of the
+    subagent tool, nesting and status counters are driven by this label, not
+    by the tool name. }
   TAgentEventKind = (aeStep, aeAssistant, aeReasoning, aeToolCall, aeShellCommand,
     aeToolResult, aeError, aeUsage, aeStreamStart, aeStreamText,
     aeStreamReasoning, aeStreamEnd, aePlan, aeStepStart, aeStepEnd, aeReport,
     aeAnalysis, aeLoopWarning, aeContext, aeSubSessionStart, aeSubSessionEnd);
-  { Обработчик событий агента. }
+  { Agent event handler. }
   TAgentEvent = procedure(Kind: TAgentEventKind; const Text: string) of object;
 
-  { Переключатель одного встроенного инструмента из секции [tools] INI:
-    имя ключа и его значение. Набор инструментов и значения по умолчанию
-    задаёт таблица в mirmid.tools; здесь хранится только то, что прочитано
-    из конфигурации. Пустой массив — ни один ключ не задан, все инструменты
-    работают со значениями по умолчанию. }
+  { Switch of one built-in tool from the [tools] INI section: the key name and
+    its value. The tool set and the default values come from the table in
+    mirmid.tools; only what was read from the configuration is stored here.
+    An empty array means no key was set and every tool works with its default
+    value. }
   TToolSwitch = record
     Name: string;
     Enabled: Boolean;
@@ -60,99 +61,100 @@ type
 
   TToolSwitches = array of TToolSwitch;
 
-  { Настройки одного запуска харнесса. }
+  { Settings of one harness run. }
   TMirmidConfig = record
-    BaseUrl: string;            { базовый URL OpenAI-совместимого API, без слэша }
-    ApiKey: string;             { эффективный ключ (ссылки «&ИМЯ» уже развёрнуты) }
-    ApiKeyRaw: string;          { исходное значение api_key до разрешения («&ИМЯ» остаётся);
-                                  пусто — не задано }
+    BaseUrl: string;            { base URL of the OpenAI-compatible API, no trailing slash }
+    ApiKey: string;             { effective key ("&NAME" references already expanded) }
+    ApiKeyRaw: string;          { raw api_key value before resolution ("&NAME" kept);
+                                  empty - not set }
     Model: string;
     SystemPrompt: string;
     Temperature: Double;
     MaxTokens: Integer;
-    MaxSteps: Integer;          { предел итераций «модель→инструменты» за один ход; 0 — без ограничений }
-    PlanMode: Boolean;          { режим планирования: план → шаги → отчёт }
-    PlanStepMaxSteps: Integer;  { бюджет шага: предел итераций «модель→инструменты» на один шаг; 0 — без ограничений }
-    PlanStepFixAttempts: Integer; { сколько раз повторять шаг плана при нештатном
-                                    результате (ошибка/пустой ответ) с передачей
-                                    причины сбоя в промпт; 0 — не повторять }
-    PlanMaxStep: Integer;       { максимум шагов в самом плане; 0 — без ограничений }
-    RequestTimeout: Integer;    { мс; общий таймаут HTTP-запроса }
-    ConnectTimeout: Integer;    { мс }
-    Tools: TToolSwitches;       { переключатели встроенных инструментов из
-                                  секции [tools]; пусто — значения по умолчанию
-                                  (таблица в mirmid.tools) }
-    ShellTimeout: Integer;      { сек; 0 — без ограничения }
-    ShellOutputLimit: Integer;  { байт; максимум вывода shell-инструмента; 0 — без ограничения }
-    WorkDir: string;            { рабочая папка инструментов }
+    MaxSteps: Integer;          { limit of "model->tools" iterations per turn; 0 - unlimited }
+    PlanMode: Boolean;          { planning mode: plan -> steps -> report }
+    PlanStepMaxSteps: Integer;  { step budget: limit of "model->tools" iterations per step; 0 - unlimited }
+    PlanStepFixAttempts: Integer; { how many times to repeat a plan step after an
+                                    abnormal result (error/empty answer) passing the
+                                    failure cause into the prompt; 0 - do not repeat }
+    PlanMaxStep: Integer;       { maximum number of steps in the plan itself; 0 - unlimited }
+    RequestTimeout: Integer;    { ms; overall HTTP request timeout }
+    ConnectTimeout: Integer;    { ms }
+    Tools: TToolSwitches;       { built-in tool switches from the
+                                  [tools] section; empty - default values
+                                  (table in mirmid.tools) }
+    ShellTimeout: Integer;      { sec; 0 - no limit }
+    ShellOutputLimit: Integer;  { bytes; maximum output of the shell tool; 0 - no limit }
+    WorkDir: string;            { working directory of the tools }
     Verbose: Boolean;
-    Stream: Boolean;            { потоковый вывод (SSE) ответа модели }
-    ContextWindow: Integer;     { максимальный размер контекста модели в токенах (из настроек) }
-    HostContextWindow: Integer; { контекст, сообщённый хостом (LLM-сервером); 0 — не задан }
+    Stream: Boolean;            { streamed (SSE) output of the model answer }
+    ContextWindow: Integer;     { maximum model context size in tokens (from settings) }
+    HostContextWindow: Integer; { context reported by the host (LLM server); 0 - not set }
     Reasoning: string;          { reasoning_effort: none|minimal|low|medium|high;
-                                  пустая строка — параметр не отправляется }
-    McpEnabled: Boolean;        { подключать ли MCP-серверы из mcp.json }
-    McpConfig: string;          { путь к mcp.json; пусто — искать по умолчанию }
-    McpTimeout: Integer;        { сек; таймаут ответа MCP-сервера }
-    ToolOutputLines: Integer;   { строк; максимум строк вывода инструмента на экране;
-                                  при превышении середина сокращается строкой «…»
-                                  с отступом от начала строки; 0 — без ограничения }
-    { Суммаризация сессии. }
-    SummarizeThresholdPercent: Integer;  { % заполнения контекста для авто-суммаризации (0 — выкл) }
-    SummarizeThresholdTokens: Integer;   { абсолютный порог в токенах (0 — использовать процент) }
-    SummarizeMinSavingPercent: Integer;  { мин. % уменьшения контекста для эффективной суммаризации }
-    SummarizeMinSavingTokens: Integer;   { мин. абсолютное уменьшение в токенах (0 — использовать процент) }
-    { Защита от зацикливания (Loop-guard). }
-    LoopWarn: Integer;                  { порог повторений одного вызова инструмента для предупреждения; 0 — выкл }
-    LoopStop: Integer;                  { порог повторений одного вызова инструмента для остановки; 0 — выкл }
+                                  empty string - the parameter is not sent }
+    McpEnabled: Boolean;        { whether to connect MCP servers from mcp.json }
+    McpConfig: string;          { path to mcp.json; empty - use the default lookup }
+    McpTimeout: Integer;        { sec; MCP server answer timeout }
+    ToolOutputLines: Integer;   { lines; maximum number of tool output lines on screen;
+                                  above the limit the middle is cut with a "..." line
+                                  indented from the start of the line; 0 - no limit }
+    { Session summarisation. }
+    SummarizeThresholdPercent: Integer;  { % of context fill for auto-summarisation (0 - off) }
+    SummarizeThresholdTokens: Integer;   { absolute threshold in tokens (0 - use the percentage) }
+    SummarizeMinSavingPercent: Integer;  { min. % of context reduction for effective summarisation }
+    SummarizeMinSavingTokens: Integer;   { min. absolute reduction in tokens (0 - use the percentage) }
+    { Loop-guard. }
+    LoopWarn: Integer;                  { repetition threshold of one tool call for a warning; 0 - off }
+    LoopStop: Integer;                  { repetition threshold of one tool call for a stop; 0 - off }
   end;
 
 const
-  { Максимальный размер контекста модели в токенах, если не задан явно. }
+  { Maximum model context size in tokens when it is not set explicitly. }
   DEFAULT_CONTEXT_WINDOW = 128000;
 
-  { Таймаут ответа MCP-сервера по умолчанию, секунды. }
+  { Default MCP server answer timeout, seconds. }
   DEFAULT_MCP_TIMEOUT = 60;
 
-  { Сколько строк вывода инструмента показывать, если не задано явно.
-    При превышении середина вывода сокращается строкой с троеточием. }
+  { How many tool output lines to show when it is not set explicitly.
+    Above the limit the middle of the output is cut with an ellipsis line. }
   DEFAULT_TOOL_OUTPUT_LINES = 9;
 
   DEFAULT_SYSTEM_PROMPT =
-    'Ты — mirmid, аккуратный ИИ-агент на локальной машине пользователя. ' +
-    'Отвечай по-русски, кратко и по делу. ' +
-    'Для работы с файлами и командами используй предоставленные инструменты. ' +
-    'Сначала читай, потом меняй. Не выдумывай содержимое файлов.';
+    'You are mirmid, a careful AI agent on the user''s local machine. ' +
+    'Reply in the same language the user writes in, briefly and to the point. ' +
+    'Use the provided tools to work with files and commands. ' +
+    'Read first, then change. Do not invent file contents.';
 
-  { Системная подсказка субагента: отдельная сессия выполняет задание родителя
-    и возвращает только результат работы. }
+  { Subagent system prompt: a separate session performs the task of the parent
+    and returns only the result of the work. }
   SUBAGENT_SYSTEM_PROMPT =
-    'Ты — субагент: отдельная агентская сессия, запущенная родительским ' +
-    'агентом для выполнения конкретного задания. Выполняй задание с помощью ' +
-    'доступных инструментов и в финальном ответе верни только результат работы: ' +
-    'кратко, по делу, без описания процесса. Отвечай по-русски.';
+    'You are a subagent: a separate agent session started by the parent ' +
+    'agent to perform one specific task. Perform the task with the ' +
+    'available tools and return only the result of the work in the final answer: ' +
+    'briefly, to the point, without describing the process. Reply in the ' +
+    'same language as the task.';
 
-{ Значения по умолчанию. }
+{ Default values. }
 function DefaultConfig: TMirmidConfig;
-{ Канонизирует режим рассуждений: none|minimal|low|medium|high.
-  Синонимы: on/true/yes → medium, off/false/no → none. Пустая строка и
-  нераспознанные значения дают '' (режим не задан). }
+{ Canonicalises the reasoning mode: none|minimal|low|medium|high.
+  Synonyms: on/true/yes -> medium, off/false/no -> none. An empty string and
+  unrecognised values give '' (mode not set). }
 function NormalizeReasoning(const S: string): string;
-{ Имя роли в нотации OpenAI. }
+{ Role name in OpenAI notation. }
 function RoleName(R: TMessageRole): string;
-{ Конструктор сообщения с ролью и содержимым. }
+{ Message constructor with a role and content. }
 function MakeMessage(R: TMessageRole; const AContent: string): TMessage;
-{ Эффективный размер контекста: минимум из значения в настройках и значения,
-  переданного хостом (LLM-сервером). Если хост не сообщил значение (0) —
-  используется только значение из настроек. }
+{ Effective context size: the minimum of the value from the settings and the
+  value reported by the host (LLM server). If the host reported nothing (0),
+  only the value from the settings is used. }
 function EffectiveContextWindow(const Cfg: TMirmidConfig): Integer;
-{ Порог авто-суммаризации в токенах: если задано абсолютное значение
-  (SummarizeThresholdTokens > 0) — оно, иначе процент от эффективного
-  контекста. 0 — авто-суммаризация выключена. }
+{ Auto-summarisation threshold in tokens: if an absolute value is set
+  (SummarizeThresholdTokens > 0) it is used, otherwise the percentage of the
+  effective context. 0 - auto-summarisation is disabled. }
 function SummarizeThreshold(const Cfg: TMirmidConfig): Integer;
-{ Минимальное уменьшение контекста (в токенах) для эффективной суммаризации:
-  если задано абсолютное значение (SummarizeMinSavingTokens > 0) — оно,
-  иначе процент от эффективного контекста. }
+{ Minimum context reduction (in tokens) for an effective summarisation:
+  if an absolute value is set (SummarizeMinSavingTokens > 0) it is used,
+  otherwise the percentage of the effective context. }
 function SummarizeMinSaving(const Cfg: TMirmidConfig): Integer;
 
 implementation
@@ -170,12 +172,12 @@ begin
   Result.PlanMode        := False;
   Result.PlanStepMaxSteps := 0;
   Result.PlanMaxStep := 0;
-  Result.PlanStepFixAttempts := 1;  { один повтор шага при сбое }
+  Result.PlanStepFixAttempts := 1;  { repeat a step once after a failure }
   Result.RequestTimeout := 1800000;
   Result.ConnectTimeout := 10000;
-  { Переключателей [tools] по умолчанию нет: значения берутся из таблицы
-    mirmid.tools (ToolEnabledByDefault), так что DefaultConfig не зависит от
-    юнита реестра инструментов. }
+  { No [tools] switches by default: the values come from the
+    mirmid.tools table (ToolEnabledByDefault), so DefaultConfig does not depend
+    on the tool registry unit. }
   SetLength(Result.Tools, 0);
   Result.ShellTimeout   := 60;
   Result.ShellOutputLimit := 65536;
@@ -264,8 +266,8 @@ begin
 end;
 
 initialization
-  { Гарантируем UTF-8 как системную кодовую страницу: иначе кириллица теряется
-    при конверсиях из UTF8String/TJSONStringType. }
+  { Force UTF-8 as the system code page: otherwise non-ASCII text is lost in
+    conversions from UTF8String/TJSONStringType. }
   DefaultSystemCodePage := CP_UTF8;
 
 end.

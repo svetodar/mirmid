@@ -1,18 +1,18 @@
 unit mirmid.loopguard;
-{ Loop-guard: детектор повторяющихся вызовов инструментов (основной механизм
-  защиты от зацикливания). Чистый юнит без сети/LLM — легко тестируется.
+{ Loop guard: detector of repeated tool calls (the main anti-loop mechanism).
+  Pure unit, no network/LLM — easy to test.
 
-  TLoopGuard хранит сигнатуру последнего вызова (имя + нормализованные
-  JSON-аргументы) и счётчики подряд идущих повторов. Feed(name, args, result)
-  возвращает действие (laNone/laWarn/laStop) и текст сообщения.
+  TLoopGuard stores the signature of the last call (name + normalised JSON
+  arguments) and the counters of consecutive repeats. Feed(name, args, result)
+  returns an action (laNone/laWarn/laStop) and a message text.
 
-  Два вида сигнала:
-  - сильный: одинаковый вызов с одинаковым результатом — явный цикл
-    (пороги из конфига loop_warn/loop_stop, по умолчанию 3/5; 0 — выкл);
-  - слабый: одинаковый вызов с разным результатом — поллинг процесса
-    (фиксированные пороги LOOP_WEAK_WARN/LOOP_WEAK_STOP = 5/8, выше, чтобы
-    не ловить легитимный поллинг). Слабый сигнал активен только тогда, когда
-    включено соответствующее действие (warn/stop). }
+  Two kinds of signal:
+  - strong: the same call with the same result — an obvious loop
+    (thresholds from the config loop_warn/loop_stop, 3/5 by default; 0 — off);
+  - weak: the same call with a different result — process polling
+    (fixed thresholds LOOP_WEAK_WARN/LOOP_WEAK_STOP = 5/8, higher so that
+    legitimate polling is not caught). The weak signal is active only when
+    the corresponding action (warn/stop) is enabled. }
 
 {$mode objfpc}{$H+}
 
@@ -22,50 +22,50 @@ uses
   SysUtils, Classes, fpjson, mirmid.json, mirmid.util;
 
 type
-  { Результат проверки одного вызова инструмента. }
+  { Result of checking a single tool call. }
   TLoopAction = (laNone, laWarn, laStop);
 
-  { Детектор повторяющихся вызовов инструментов.
-    AStrongWarn/AStrongStop — пороги сильного сигнала (из конфига
-    loop_warn/loop_stop; 0 — выкл соответствующее действие). Слабый сигнал
-    (поллинг) использует фиксированные пороги LOOP_WEAK_WARN/LOOP_WEAK_STOP
-    и активен, только если включено соответствующее действие. }
+  { Detector of repeated tool calls.
+    AStrongWarn/AStrongStop — thresholds of the strong signal (from the config
+    loop_warn/loop_stop; 0 — the corresponding action is off). The weak signal
+    (polling) uses fixed thresholds LOOP_WEAK_WARN/LOOP_WEAK_STOP and is
+    active only when the corresponding action is enabled. }
   TLoopGuard = class
   private
     FLastSig: string;
     FLastResult: string;
-    FRepeat: Integer;      { подряд вызовов с одинаковой сигнатурой }
-    FSameResult: Integer;  { подряд вызовов с одинаковой сигнатурой и результатом }
+    FRepeat: Integer;      { consecutive calls with the same signature }
+    FSameResult: Integer;  { consecutive calls with the same signature and result }
     FStrongWarn: Integer;
     FStrongStop: Integer;
     function Enabled: Boolean;
   public
     constructor Create(AStrongWarn, AStrongStop: Integer);
-    { Сброс состояния (начало нового хода/сессии). }
+    { Reset the state (start of a new turn/session). }
     procedure Reset;
-    { Проверить вызов инструмента: имя, JSON-аргументы, результат.
-      Возвращает действие; AText — текст сообщения (пусто при laNone). }
+    { Check a tool call: name, JSON arguments, result.
+      Returns the action; AText — message text (empty for laNone). }
     function Feed(const AName, AArgs, AResult: string; out AText: string): TLoopAction;
-    { Текущие счётчики (для тестов и отладки). }
+    { Current counters (for tests and debugging). }
     property RepeatCount: Integer read FRepeat;
     property SameResultCount: Integer read FSameResult;
   end;
 
-{ Пороги слабого сигнала (одинаковый вызов с разным результатом, поллинг). }
+{ Weak-signal thresholds (same call with a different result, polling). }
 const
   LOOP_WEAK_WARN = 5;
   LOOP_WEAK_STOP = 8;
 
-{ Сигнатура вызова: имя + «#0» + нормализованные JSON-аргументы
-  (ключи объектов отсортированы, без лишних пробелов). Пустые или
-  нераспознаваемые аргументы — как есть (после Trim). }
+{ Call signature: name + '#0' + normalised JSON arguments
+  (object keys sorted, no extra whitespace). Empty or unrecognised
+  arguments — as is (after Trim). }
 function CallSignature(const AName, AArgs: string): string;
-{ Канонический JSON: ключи объектов отсортированы, без лишних пробелов. }
+{ Canonical JSON: object keys sorted, no extra whitespace. }
 function CanonicalJSON(D: TJSONData): string;
 
 implementation
 
-{ Экранирование строки для вставки в JSON. }
+{ String escaping for embedding into JSON. }
 function JSONEscape(const S: string): string;
 var
   I: Integer;
@@ -92,7 +92,7 @@ begin
   end;
 end;
 
-{ Канонический JSON: ключи объектов отсортированы, без лишних пробелов. }
+{ Canonical JSON: object keys sorted, no extra whitespace. }
 function CanonicalJSON(D: TJSONData): string;
 var
   O: TJSONObject;
@@ -147,11 +147,11 @@ begin
       Keys.Free;
     end;
   end;
-  { Неизвестный тип — как есть. }
+  { Unknown type — as is. }
   Result := D.AsJSON;
 end;
 
-{ Сигнатура вызова: имя + «#0» + нормализованные JSON-аргументы. }
+{ Call signature: name + '#0' + normalised JSON arguments. }
 function CallSignature(const AName, AArgs: string): string;
 var
   D: TJSONData;
@@ -173,17 +173,17 @@ begin
     Result := AName + #0 + T;
 end;
 
-{ Текст предупреждения (синтетическое user-сообщение). }
+{ Warning text (synthetic user message). }
 function WarnText(const AName: string; N: Integer): string;
 begin
-  Result := Format('Ты %d раз подряд вызвал %s с одинаковыми аргументами. ' +
-    'Перестань повторяться: смени подход или заверши', [N, AName]);
+  Result := Format('You called %s %d times in a row with the same arguments. ' +
+    'Stop repeating yourself: change your approach or finish', [AName, N]);
 end;
 
-{ Текст остановки (aeError). }
+{ Stop text (aeError). }
 function StopText(const AName: string; N: Integer): string;
 begin
-  Result := Format('обнаружен цикл: %d одинаковых вызовов %s', [N, AName]);
+  Result := Format('loop detected: %d identical calls of %s', [N, AName]);
 end;
 
 constructor TLoopGuard.Create(AStrongWarn, AStrongStop: Integer);
@@ -237,7 +237,7 @@ begin
   FLastSig := Sig;
   FLastResult := AResult;
 
-  { Сильный сигнал: одинаковый вызов с одинаковым результатом. }
+  { Strong signal: the same call with the same result. }
   if (FStrongStop > 0) and (FSameResult >= FStrongStop) then
   begin
     AText := StopText(AName, FSameResult);
@@ -248,9 +248,9 @@ begin
     AText := WarnText(AName, FSameResult);
     Exit(laWarn);
   end;
-  { Слабый сигнал: одинаковый вызов с разным результатом (поллинг).
-    Срабатывает только когда результат изменился — при одинаковом
-    результате это сильный цикл, его ловит сильный сигнал. }
+  { Weak signal: the same call with a different result (polling).
+    It fires only when the result has changed — with an identical
+    result this is a strong loop, caught by the strong signal. }
   if ResultChanged then
   begin
     if (FStrongStop > 0) and (FRepeat >= LOOP_WEAK_STOP) then

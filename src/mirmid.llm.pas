@@ -1,5 +1,5 @@
 unit mirmid.llm;
-{ Клиент OpenAI-совместимого Chat Completions API. }
+{ Client of the OpenAI-compatible Chat Completions API. }
 
 {$mode objfpc}{$H+}
 
@@ -14,26 +14,26 @@ type
     Reasoning: string;
     ToolCalls: array of TToolCall;
     FinishReason: string;
-    { Точный размер запроса в токенах из usage ответа (0 — провайдер usage не
-      прислал). Для стрима приходит отдельным чанком только при
+    { Exact request size in tokens from the response usage (0 — the provider
+      did not send usage). In a stream it arrives as a separate chunk only with
       stream_options.include_usage. }
     PromptTokens: Integer;
     CompletionTokens: Integer;
     TotalTokens: Integer;
   end;
 
-  { Дельта стрима модели: часть текста ответа и/или размышлений. }
+  { Model stream delta: a piece of the answer text and/or of the reasoning. }
   TLLMDeltaHandler = procedure(const ContentDelta, ReasoningDelta: string) of object;
 
-  { Уведомление о выполненном вызове модели (журнал процесса модели): снимок
-    запроса, ответ, длительность вызова в мс и текст ошибки (пусто — вызов
-    удался). При ошибке Resp может быть частичным (оборванный стрим) или
-    пустым. Обработчик не влияет на ход: он только записывает данные. }
+  { Notification about a completed model call (the model process journal):
+    request snapshot, response, call duration in ms and the error text (empty —
+    the call succeeded). On error Resp may be partial (interrupted stream) or
+    empty. The handler does not affect the flow: it only records data. }
   TModelCallEvent = procedure(const Msgs: TMessages; const Resp: TLLMResponse;
     ElapsedMs: Int64; const ErrText: string) of object;
 
-  { Аккумулятор одного потока ответа модели (SSE). Собирает content,
-    reasoning_content, tool_calls (по index из дельт), finish_reason и usage. }
+  { Accumulator of one model response stream (SSE). Collects content,
+    reasoning_content, tool_calls (by index from the deltas), finish_reason and usage. }
   TSSEAccumulator = class
   private
     FContent, FReasoning: string;
@@ -41,88 +41,88 @@ type
     FFinishReason: string;
     FPromptTokens, FCompletionTokens, FTotalTokens: Integer;
     FDone: Boolean;
-    FLineBuf: RawByteString;   { хвост строки, ещё не завершённый #10 }
+    FLineBuf: RawByteString;   { tail of a line not yet terminated by #10 }
     FOnDelta: TLLMDeltaHandler;
     procedure AccumulateDelta(const D: TJSONData);
     procedure AccumulateUsage(const D: TJSONData);
   public
     constructor Create;
     destructor Destroy; override;
-    { Сбрасывает состояние и буфер для разбора нового потока. }
+    { Resets the state and the buffer for parsing a new stream. }
     procedure Reset;
-    { Поток завершён (получен [DONE]). }
+    { The stream is done ([DONE] received). }
     property Done: Boolean read FDone;
-    { Вызывается на каждой дельте с непустым content и/или reasoning. }
+    { Called for every delta with a non-empty content and/or reasoning. }
     property OnDelta: TLLMDeltaHandler read FOnDelta write FOnDelta;
-    { Принимает произвольный фрагмент SSE-потока. Сетевой чанк может
-      разрезать JSON-строку в любом месте, поэтому незавершённый хвост
-      (без #10) буферизуется до следующего вызова или Flush. Возврат
-      False — поток завершён ([DONE]). }
+    { Accepts an arbitrary fragment of the SSE stream. A network chunk may cut
+      a JSON line anywhere, so the incomplete tail (without #10) is buffered
+      until the next call or Flush. Returns False when the stream is done
+      ([DONE]). }
     function FeedChunk(const Chunk: RawByteString): Boolean;
-    { Отправляет на разбор остаток буфера (последняя строка без #10). }
+    { Sends the rest of the buffer (the last line without #10) to the parser. }
     function Flush: Boolean;
-    { Разбирает одну SSE-строку (с префиксом "data:"). Возврат False —
-      поток завершён ([DONE]). Повреждённые чанки пропускаются. }
+    { Parses one SSE line (with the "data:" prefix). Returns False when the
+      stream is done ([DONE]). Damaged chunks are skipped. }
     function FeedLine(const Line: string): Boolean;
-    { Записывает накопленное в Resp. }
+    { Writes the accumulated data into Resp. }
     procedure Collect(out Resp: TLLMResponse);
   end;
 
-  { Одна запись списка моделей: id и необязательные детали, которые
-    сообщает провайдер (LM Studio — нативный /api/v0/models, DeepSeek —
-    поля в стандартном /models). }
+  { One entry of the model list: id and the optional details the provider
+    reports (LM Studio — the native /api/v0/models, DeepSeek — fields in the
+    standard /models). }
   TModelInfo = record
     Id: string;
-    ContextLength: Integer;       { 0 — не сообщён }
-    LoadedContextLength: Integer; { 0 — не сообщён }
-    Kind: string;                 { тип модели (type) }
-    State: string;                { состояние загрузки }
-    Details: Boolean;             { провайдер сообщил что-то сверх id }
+    ContextLength: Integer;       { 0 — not reported }
+    LoadedContextLength: Integer; { 0 — not reported }
+    Kind: string;                 { model type (type) }
+    State: string;                { load state }
+    Details: Boolean;             { the provider reported something beyond the id }
   end;
 
-  { Список моделей. }
+  { Model list. }
   TModelList = array of TModelInfo;
 
   TLLMClient = class
   private
     FCfg: TMirmidConfig;
-    FAcc: TSSEAccumulator;   { аккумулятор SSE-потока (живёт вместе с клиентом) }
+    FAcc: TSSEAccumulator;   { SSE stream accumulator (lives with the client) }
   public
     constructor Create(const ACfg: TMirmidConfig);
     destructor Destroy; override;
-    { Один запрос к модели. При успехе Result=True и заполнен Resp. }
+    { One request to the model. On success Result=True and Resp is filled. }
     function Chat(const Msgs: TMessages; Registry: TToolRegistry;
       out Resp: TLLMResponse; out Err: string): Boolean;
-    { Запрос в потоковом режиме (SSE): дельты передаются в OnDelta по мере
-      поступления, итог — в Resp. }
+    { Request in the streaming mode (SSE): the deltas are passed to OnDelta as
+      they arrive, the result goes into Resp. }
     function ChatStream(const Msgs: TMessages; Registry: TToolRegistry;
       const OnDelta: TLLMDeltaHandler; out Resp: TLLMResponse; out Err: string): Boolean;
-    { Список моделей: если провайдер сообщает детали (контекст, тип,
-      состояние) — таблица, иначе только идентификаторы. }
+    { Model list: when the provider reports details (context, type, state) —
+      a table, otherwise only the identifiers. }
     function ListModels(out Text: string; out Err: string): Boolean;
-    { Список моделей как TModelList (без форматирования). }
+    { Model list as TModelList (without formatting). }
     function FetchModelList(out Models: TModelList; out Err: string): Boolean;
-    { Принять фрагмент SSE-потока (сетевой чанк) в аккумулятор. Сетевой
-      чанк может разрезать JSON-строку в любом месте: незавершённый хвост
-      буферизуется до следующего вызова или Flush. Возврат False — получен
-      [DONE]. Это обработчик HttpRequestStream; доступен и для тестов. }
+    { Accept a fragment of the SSE stream (a network chunk) into the
+      accumulator. A network chunk may cut a JSON line anywhere: the incomplete
+      tail is buffered until the next call or Flush. Returns False once [DONE]
+      arrived. This is the HttpRequestStream handler; also available to tests. }
     function SSEChunk(const Chunk: RawByteString): Boolean;
-    { Аккумулятор текущего потока: OnDelta, Flush, Collect. Состояние
-      сбрасывается в начале ChatStream. Открыт для тестов буферизации. }
+    { Accumulator of the current stream: OnDelta, Flush, Collect. The state is
+      reset at the start of ChatStream. Open for buffering tests. }
     property Accumulator: TSSEAccumulator read FAcc;
   end;
 
-{ URL нативного списка моделей LM Studio (/api/v0/models на том же хосте). }
+{ URL of the native LM Studio model list (/api/v0/models on the same host). }
 function NativeModelsUrl(const BaseUrl: string): string;
 
-{ Разбирает одну запись списка моделей — нативного или стандартного. }
+{ Parses one model list entry — native or standard. }
 function ParseModelInfo(Item: TJSONData): TModelInfo;
 
-{ Эффективный контекст: минимум из сообщённых провайдером значений.
-  0 — провайдер не сообщил ни одного значения. }
+{ Effective context: the minimum of the values reported by the provider.
+  0 — the provider reported none of them. }
 function EffectiveContext(const M: TModelInfo): Integer;
 
-{ Человекочитаемая таблица моделей с выровненными колонками. }
+{ Human-readable model table with aligned columns. }
 function FormatModelsTable(const Models: TModelList): string;
 
 implementation
@@ -196,7 +196,7 @@ var
   TC: TToolCall;
 begin
   Content := JStr(D, 'choices[0].delta.content', '');
-  { У разных провайдеров поле называется reasoning_content или reasoning. }
+  { Providers name the field differently: reasoning_content or reasoning. }
   Reasoning := JStr(D, 'choices[0].delta.reasoning_content', '');
   if Reasoning = '' then
     Reasoning := JStr(D, 'choices[0].delta.reasoning', '');
@@ -209,8 +209,8 @@ begin
   if Finish <> '' then
     FFinishReason := Finish;
 
-  { tool_calls собираются по index: id/name приходят один раз,
-    arguments склеиваются из дельт. }
+  { tool_calls are collected by index: id/name arrive once, the arguments are
+    concatenated from the deltas. }
   Arr := nil;
   Item := D.FindPath('choices[0].delta.tool_calls');
   if (Item <> nil) and (Item is TJSONArray) then
@@ -240,9 +240,9 @@ begin
       FOnDelta(Content, Reasoning);
 end;
 
-{ Принимает произвольный фрагмент SSE-потока и разбирает все завершённые
-  строки. JSON-строка может прийти по частям: хвост без #10 остаётся в
-  буфере до следующего вызова или Flush. }
+{ Accepts an arbitrary fragment of the SSE stream and parses all complete
+  lines. A JSON line may arrive in parts: the tail without #10 stays in the
+  buffer until the next call or Flush. }
 function TSSEAccumulator.FeedChunk(const Chunk: RawByteString): Boolean;
 var
   P: Integer;
@@ -256,12 +256,12 @@ begin
     L := Copy(FLineBuf, 1, P - 1);
     Delete(FLineBuf, 1, P);
     if not FeedLine(L) then
-      Exit(False);   { [DONE] — чтение можно останавливать }
+      Exit(False);   { [DONE] — reading may stop }
   end;
 end;
 
-{ Отправляет на разбор остаток буфера: последняя строка потока может не
-  иметь завершающего #10. Возврат False — поток завершён ([DONE]). }
+{ Sends the rest of the buffer to the parser: the last line of the stream may
+  lack the terminating #10. Returns False when the stream is done ([DONE]). }
 function TSSEAccumulator.Flush: Boolean;
 begin
   Result := True;
@@ -285,7 +285,7 @@ begin
     Delete(L, Length(L), 1);
   if Trim(L) = '' then
     Exit(True);
-  { Комменты и пустые события SSE не содержат данных. }
+  { SSE comments and empty events carry no data. }
   if Pos('data:', L) <> 1 then
     Exit(True);
   Payload := Trim(Copy(L, 6, MaxInt));
@@ -296,7 +296,7 @@ begin
     Exit;
   end;
   if not ParseJSON(Payload, D, Err) then
-    Exit(True);   { повреждённый чанк пропускаем }
+    Exit(True);   { damaged chunk — skipped }
   try
     if D is TJSONObject then
     begin
@@ -321,8 +321,8 @@ end;
 
 function TLLMClient.SSEChunk(const Chunk: RawByteString): Boolean;
 begin
-  { Буферизацией неполных строк занимается аккумулятор: сетевой чанк может
-    разрезать JSON-строку в произвольном месте (см. FeedChunk). }
+  { Partial lines are buffered by the accumulator: a network chunk may cut a
+    JSON line at any position (see FeedChunk). }
   Result := FAcc.FeedChunk(Chunk);
 end;
 
@@ -348,7 +348,7 @@ begin
 
   if FCfg.Model = '' then
   begin
-    Err := 'не задана модель (--model или model= в mirmid.ini)';
+    Err := 'model is not set (--model or model= in mirmid.ini)';
     Exit;
   end;
 
@@ -358,15 +358,15 @@ begin
     O.Add('temperature', FCfg.Temperature);
     O.Add('max_tokens', FCfg.MaxTokens);
     O.Add('stream', True);
-    { Просим прислать usage и для потока: без include_usage провайдер не
-      присылает prompt_tokens, и точный размер запроса остаётся неизвестным
-      (CLI показывает лишь оценку ContextTokens). Приходит отдельным чанком
-      перед [DONE] — его разбирает TSSEAccumulator.AccumulateUsage. }
+    { Ask for usage in a stream too: without include_usage the provider does
+      not send prompt_tokens and the exact request size stays unknown (the CLI
+      shows only an estimate, ContextTokens). It arrives as a separate chunk
+      before [DONE] — parsed by TSSEAccumulator.AccumulateUsage. }
     SO := TJSONObject.Create;
     SO.Add('include_usage', True);
     O.Add('stream_options', SO);
-    { Режим рассуждений задаётся только явно: без него провайдер использует
-      своё значение по умолчанию. }
+    { The reasoning mode is set only explicitly: without it the provider uses
+      its own default. }
     if FCfg.Reasoning <> '' then
       O.Add('reasoning_effort', FCfg.Reasoning);
     O.Add('messages', MessagesToJSONArray(Msgs));
@@ -382,23 +382,23 @@ begin
     O.Free;
   end;
 
-  { Аккумулятор живёт вместе с клиентом: сбрасываем его перед новым потоком. }
+  { The accumulator lives with the client: reset it before a new stream. }
   FAcc.Reset;
   FAcc.OnDelta := OnDelta;
   Url := JoinUrl(FCfg.BaseUrl, '/chat/completions');
   if not HttpRequestStream('POST', Url, FCfg.ApiKey, Body,
     FCfg.RequestTimeout, FCfg.ConnectTimeout, @SSEChunk, Code, StatusText, Err) then
     Exit(False);
-  { Таймаут в середине потока: 2xx-статус уже получен (Result=True),
-    но Err заполнен — считаем запрос неудавшимся. }
+  { Timeout in the middle of the stream: the 2xx status already arrived
+    (Result=True) but Err is set — the request is treated as failed. }
   if Err <> '' then
     Exit(False);
-  { Последняя строка может не иметь завершающего перевода строки. }
+  { The last line may lack the terminating newline. }
   FAcc.Flush;
   if not FAcc.Done then
   begin
-    { Сервер закрыл соединение, не прислав [DONE]: ответ оборван. }
-    Err := 'соединение с сервером разорвано до завершения ответа (не получен [DONE])';
+    { The server closed the connection without sending [DONE]: the answer is cut. }
+    Err := 'the server closed the connection before the response completed (no [DONE])';
     Exit(False);
   end;
   FAcc.Collect(Resp);
@@ -427,7 +427,7 @@ begin
 
   if FCfg.Model = '' then
   begin
-    Err := 'не задана модель (--model или model= в mirmid.ini)';
+    Err := 'model is not set (--model or model= in mirmid.ini)';
     Exit;
   end;
 
@@ -437,8 +437,8 @@ begin
     O.Add('temperature', FCfg.Temperature);
     O.Add('max_tokens', FCfg.MaxTokens);
     O.Add('stream', False);
-    { Режим рассуждений задаётся только явно: без него провайдер использует
-      своё значение по умолчанию. }
+    { The reasoning mode is set only explicitly: without it the provider uses
+      its own default. }
     if FCfg.Reasoning <> '' then
       O.Add('reasoning_effort', FCfg.Reasoning);
     O.Add('messages', MessagesToJSONArray(Msgs));
@@ -466,13 +466,13 @@ begin
 
   if not ParseJSON(HR.Body, D, Err) then
   begin
-    Err := 'не удалось разобрать ответ API: ' + Err;
+    Err := 'failed to parse the API response: ' + Err;
     Exit;
   end;
   try
     if not (D is TJSONObject) then
     begin
-      Err := 'ответ API не является JSON-объектом';
+      Err := 'the API response is not a JSON object';
       Exit;
     end;
     ErrD := D.FindPath('error');
@@ -484,12 +484,12 @@ begin
     MsgD := D.FindPath('choices[0].message');
     if MsgD = nil then
     begin
-      Err := 'в ответе нет choices[0].message';
+      Err := 'the response has no choices[0].message';
       Exit;
     end;
     if not (MsgD is TJSONObject) then
     begin
-      Err := 'choices[0].message не является объектом';
+      Err := 'choices[0].message is not an object';
       Exit;
     end;
 
@@ -507,7 +507,7 @@ begin
   end;
 end;
 
-{ --------------------------------------------------------------- модели }
+{ --------------------------------------------------------------- models }
 
 function NativeModelsUrl(const BaseUrl: string): string;
 var
@@ -516,15 +516,15 @@ begin
   B := Trim(BaseUrl);
   while (B <> '') and (B[Length(B)] = '/') do
     Delete(B, Length(B), 1);
-  { Базовый URL в настройках оканчивается на /v1; нативный API живёт
-    на том же хосте без этого суффикса. }
+  { The base URL from the settings ends with /v1; the native API lives on the
+    same host without that suffix. }
   if (Length(B) >= Length('/v1')) and
      (Copy(B, Length(B) - Length('/v1') + 1, Length('/v1')) = '/v1') then
     B := Copy(B, 1, Length(B) - Length('/v1'));
   Result := B + '/api/v0/models';
 end;
 
-{ Первое из путей, присутствующее и приводимое к int; 0 — ни одного. }
+{ The first of the paths that exists and converts to int; 0 — none. }
 function FirstIntOf(D: TJSONData; const Paths: array of string): Integer;
 var
   I: Integer;
@@ -561,7 +561,7 @@ begin
   Result.Details := False;
   if (Item = nil) or not (Item is TJSONObject) then
     Exit;
-  { Имена полей у провайдеров разные: LM Studio отдаёт type /
+  { Providers use different field names: LM Studio returns type /
     max_context_length / state, DeepSeek — context_window. }
   Result.Id := JStr(Item, 'id', '');
   Result.ContextLength := FirstIntOf(Item,
@@ -576,8 +576,8 @@ end;
 
 function EffectiveContext(const M: TModelInfo): Integer;
 begin
-  { Провайдер отдаёт теоретический максимум модели и/или контекст, с
-    которым модель загружена; реально доступен меньший из них. }
+  { The provider reports the theoretical maximum of the model and/or the context
+    the model is loaded with; the smaller of the two is really available. }
   Result := 0;
   if M.ContextLength > 0 then
     Result := M.ContextLength;
@@ -654,7 +654,7 @@ function CompareModelIds(const A, B: TModelInfo): Integer;
 var
   LA, LB: string;
 begin
-  { Сортировка без учёта регистра. }
+  { Case-insensitive sorting. }
   LA := LowerCase(A.Id);
   LB := LowerCase(B.Id);
   if LA < LB then
@@ -687,7 +687,7 @@ begin
   end;
 end;
 
-{ GET списка моделей: разбор поля data, отбрасывание записей без id. }
+{ GET of the model list: parse the data field, drop entries without an id. }
 function FetchModels(const Url, ApiKey: string; TimeoutMs, ConnectMs: Integer;
   out Models: TModelList; out Err: string): Boolean;
 var
@@ -715,7 +715,7 @@ begin
       DataD := D.FindPath('data');
     if not (DataD is TJSONArray) then
     begin
-      Err := 'в ответе нет списка data';
+      Err := 'the response has no data list';
       Exit;
     end;
     Arr := TJSONArray(DataD);
@@ -758,9 +758,9 @@ begin
   Result := False;
   Text := '';
   Err := '';
-  { Сначала пробуем расширенный эндпоинт провайдера (LM Studio
-    /api/v0/models: контекст, тип, состояние); если его нет —
-    стандартный /models. Ошибки первого запроса не фатальны. }
+  { First try the extended provider endpoint (LM Studio /api/v0/models:
+    context, type, state); if it is missing — the standard /models. Errors of
+    the first request are not fatal. }
   if not FetchModels(NativeModelsUrl(FCfg.BaseUrl), FCfg.ApiKey,
       60000, FCfg.ConnectTimeout, Models, Err) then
     if not FetchModels(JoinUrl(FCfg.BaseUrl, '/models'), FCfg.ApiKey,
@@ -772,8 +772,8 @@ begin
     Exit;
   end;
   SortModels(Models);
-  { Расширенные поля есть только у части провайдеров: если их нет
-    ни у одной модели, печатаем привычные id, а не пустую таблицу. }
+  { The extended fields exist only with some providers: if no model has them,
+    print the usual ids instead of an empty table. }
   HasDetails := False;
   for I := Low(Models) to High(Models) do
     if Models[I].Details then

@@ -1,6 +1,6 @@
 program mirmid;
-{ mirmid — харнесс ИИ-агента на Free Pascal / Lazarus.
-  Точка входа: вся логика находится в модулях каталога src/. }
+{ mirmid — an AI-agent harness written in Free Pascal / Lazarus.
+  Entry point: all the logic lives in the units of the src/ directory. }
 
 {$mode objfpc}{$H+}
 
@@ -9,8 +9,9 @@ uses
 
 begin
   DefaultSystemCodePage := CP_UTF8;
-  { Включаем обработку ANSI-последовательностей в консоли Windows до первого
-    вывода: если консоль их не поддерживает, цвета и перерисовка отключатся. }
+  { Enable ANSI escape sequence handling in the Windows console before the
+    first output: if the console does not support them, colours and redraw
+    are disabled. }
   InitConsoleAnsi;
   ExitCode := mirmid.cli.Main;
 end.

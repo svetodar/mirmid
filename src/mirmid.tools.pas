@@ -1,6 +1,6 @@
 unit mirmid.tools;
-{ Реестр инструментов агента и вспомогательные конструкторы JSON-схем.
-  Сами инструменты регистрируются в mirmid.toolbuiltin. }
+{ Agent tool registry and helpers that build JSON schemas.
+  The tools themselves are registered in mirmid.toolbuiltin. }
 
 {$mode objfpc}{$H+}
 
@@ -12,18 +12,18 @@ uses
 type
   TToolRegistry = class;
 
-  { Контекст выполнения: рабочая папка и настройки сессии. }
+  { Execution context: the working folder and the session settings. }
   TToolContext = record
     WorkDir: string;
     ShellTimeout: Integer;
-    ShellOutputLimit: Integer;  { байт; максимум вывода shell; 0 — без ограничения }
-    Cfg: TMirmidConfig;          { конфигурация родительской сессии;
-                                   переключатели инструментов — в Cfg.Tools }
-    SubAgentDepth: Integer;     { глубина вложенности субагентов, 0 — корневая сессия }
-    Registry: TToolRegistry;    { реестр текущей сессии (может быть nil) }
-    SessionBase: string;        { база имён файлов вспомогательных сессий
-                                  (субагенты, шаги плана); пусто — не сохраняются }
-    OnSubAgentEvent: TAgentEvent; { обработчик событий субагентов (может быть nil) }
+    ShellOutputLimit: Integer;  { bytes; maximum shell output; 0 — no limit }
+    Cfg: TMirmidConfig;          { configuration of the parent session;
+                                   the tool switches live in Cfg.Tools }
+    SubAgentDepth: Integer;     { subagent nesting depth, 0 — root session }
+    Registry: TToolRegistry;    { registry of the current session (may be nil) }
+    SessionBase: string;        { base name of the auxiliary session files
+                                  (subagents, plan steps); empty — not saved }
+    OnSubAgentEvent: TAgentEvent; { subagent event handler (may be nil) }
   end;
 
   TToolOutcome = record
@@ -34,20 +34,20 @@ type
   TToolHandler = function(const Args: TJSONObject;
     const Ctx: TToolContext): TToolOutcome;
 
-  { Обработчик-метод: позволяет держать состояние (например, MCP-клиент). }
+  { Method handler: keeps state (the MCP client, for example). }
   TToolMethod = function(const Args: TJSONObject;
     const Ctx: TToolContext): TToolOutcome of object;
 
-  { Описание встроенного инструмента для секции [tools] INI: имя ключа,
-    значение по умолчанию и одна строка комментария для образца конфигурации
-    (mirmid --init). }
+  { Description of a built-in tool for the [tools] section of the INI file: the
+    key name, the default value and one comment line for the sample
+    configuration (mirmid --init). }
   TToolSwitchDef = record
     Name: string;
     Default: Boolean;
     Note: string;
   end;
 
-  { Реестр инструментов. Владеет переданными схемами. }
+  { Tool registry. Owns the schemas passed to it. }
   TToolRegistry = class
   private
     FNames: array of string;
@@ -56,37 +56,37 @@ type
     FHandlers: array of TToolHandler;
     FMethods: array of TToolMethod;
     FIsMethod: array of Boolean;
-    { Политика набора: после ApplyToolSwitches регистрируются только
-      инструменты, включённые в секции [tools]. }
+    { Set policy: after ApplyToolSwitches only the tools enabled in the [tools]
+      section are registered. }
     FPolicyCfg: TMirmidConfig;
     FPolicySet: Boolean;
     function IndexOf(const Name: string): Integer;
-    { Разрешён ли инструмент политикой набора ([tools]). }
+    { Is the tool allowed by the set policy ([tools])? }
     function Allowed(const Name: string): Boolean;
   public
     procedure Add(const Name, Desc: string; Schema: TJSONObject; Handler: TToolHandler);
-    { Регистрирует обработчик-метод (с состоянием). }
+    { Registers a method handler (with state). }
     procedure AddMethod(const Name, Desc: string; Schema: TJSONObject;
       const Handler: TToolMethod);
-    { Ограничивает набор инструментов секцией [tools]: инструмент с ключом 0
-      в реестр не попадает, поэтому его нет и в массиве tools запроса.
-      Внешние инструменты (mcp__*) политикой не управляются. Вызывается до
-      регистрации — порядок задаёт RegisterSessionTools. }
+    { Restricts the tool set by the [tools] section: a tool with the key set to
+      0 never reaches the registry, so it is absent from the tools array of the
+      request as well. External tools (mcp__*) are not governed by this policy.
+      Called before registration — the order is set by RegisterSessionTools. }
     procedure ApplyToolSwitches(const Cfg: TMirmidConfig);
     function Has(const Name: string): Boolean;
     function Count: Integer;
     function Names: string;
-    { Добавляет схемы в массив tools запроса (копии). }
+    { Appends the schemas to the tools array of the request (copies). }
     procedure BuildRequestTools(const Arr: TJSONArray);
-    { Разбирает аргументы и вызывает обработчик. Исключения ловятся. }
+    { Parses the arguments and calls the handler. Exceptions are caught. }
     function Invoke(const Name, ArgsJson: string; const Ctx: TToolContext): TToolOutcome;
     destructor Destroy; override;
   end;
 
-{ Таблица встроенных инструментов — единственный источник истины для секции
-  [tools]: набор ключей, значения по умолчанию и порядок строк в образце
-  конфигурации. Инструменты MCP (mcp__<server>__<tool>) сюда не входят: ими
-  управляет секция [mcp]. }
+{ Table of the built-in tools — the single source of truth for the [tools]
+  section: the key set, the default values and the order of the lines in the
+  sample configuration. MCP tools (mcp__<server>__<tool>) are not listed here:
+  they are governed by the [mcp] section. }
 const
   TOOL_SWITCHES: array[0..16] of TToolSwitchDef = (
     (Name: 'file_list'; Default: True;
@@ -124,34 +124,34 @@ const
     (Name: 'revise_plan'; Default: True;
      Note: 'plan revision while the plan mode is on'));
 
-{ Есть ли инструмент с таким именем в таблице [tools]. }
+{ Is there a tool with this name in the [tools] table? }
 function IsKnownToolName(const Name: string): Boolean;
-{ Значение по умолчанию для ключа [tools]; неизвестное имя — False. }
+{ Default value of a [tools] key; an unknown name gives False. }
 function ToolEnabledByDefault(const Name: string): Boolean;
-{ Имена всех встроенных инструментов через запятую — для сообщения о
-  неизвестном ключе в [tools]. }
+{ Names of all built-in tools separated by commas — for the message about an
+  unknown key in [tools]. }
 function ToolNamesCsv: string;
-{ Число записей таблицы [tools]. }
+{ Number of entries in the [tools] table. }
 function ToolSwitchCount: Integer;
-{ Запись таблицы по индексу (0 .. ToolSwitchCount-1). }
+{ Table entry by index (0 .. ToolSwitchCount-1). }
 function ToolSwitchAt(Index: Integer): TToolSwitchDef;
-{ Включён ли инструмент: значение из [tools], если ключ задан, иначе значение
-  по умолчанию из таблицы. Неизвестное имя — False. }
+{ Is the tool enabled: the value from [tools] when the key is set, otherwise the
+  default from the table. An unknown name gives False. }
 function ToolEnabled(const Cfg: TMirmidConfig; const Name: string): Boolean;
-{ Записывает значение ключа [tools] (разбор INI и тесты). Неизвестное имя —
-  EArgumentException: набор ключей задаёт таблица, и опечатка не должна молча
-  ничего не менять. }
+{ Writes the value of a [tools] key (INI parsing and tests). An unknown name
+  raises EArgumentException: the key set is defined by the table, and a typo
+  must not silently change nothing. }
 procedure SetToolEnabled(var Cfg: TMirmidConfig; const Name: string; Enabled: Boolean);
-{ Отказ выключенного инструмента: именованный ERROR-результат — вызов
-  обработчика в обход реестра тоже не должен сработать. }
+{ Refusal of a disabled tool: a named ERROR result — a handler called around
+  the registry must refuse as well. }
 function ToolDisabled(const Name: string): TToolOutcome;
 
 function OkResult(const Text: string): TToolOutcome;
 function ErrResult(const Text: string): TToolOutcome;
-{ Контекст выполнения по конфигурации сессии (глубина субагентов — 0). }
+{ Execution context built from the session configuration (subagent depth 0). }
 function MakeToolContext(const Cfg: TMirmidConfig): TToolContext;
 
-{ Конструкторы фрагментов JSON-схемы. }
+{ Constructors of JSON schema fragments. }
 function PropStr(const Desc: string): TJSONObject;
 function PropInt(const Desc: string): TJSONObject;
 function PropBool(const Desc: string): TJSONObject;
@@ -186,7 +186,7 @@ begin
   Result.OnSubAgentEvent := nil;
 end;
 
-{ --- Секция [tools]: таблица инструментов и их переключатели ------------- }
+{ --- [tools] section: the tool table and its switches ---------------------- }
 
 function IsKnownToolName(const Name: string): Boolean;
 var
@@ -251,9 +251,9 @@ var
 begin
   if not IsKnownToolName(Name) then
     raise EArgumentException.CreateFmt('unknown tool "%s"', [Name]);
-  { Копия массива: динамический массив в записи общий по ссылке, поэтому
-    правка элемента на месте изменила бы и родительский конфиг (TMirmidConfig
-    копируется по значению, например в AnalysisConfig). }
+  { A copy of the array: a dynamic array inside a record is shared by reference,
+    so changing an element in place would change the parent configuration too
+    (TMirmidConfig is copied by value, into AnalysisConfig for instance). }
   Tmp := Copy(Cfg.Tools);
   for I := 0 to High(Tmp) do
     if SameText(Tmp[I].Name, Name) then
@@ -318,8 +318,8 @@ end;
 
 function TToolRegistry.Allowed(const Name: string): Boolean;
 begin
-  { Внешние инструменты (не из таблицы [tools], например mcp__*) политикой
-    набора не управляются: ими ведает секция [mcp]. }
+  { External tools (not from the [tools] table, mcp__* for instance) are not
+    governed by the set policy: the [mcp] section rules them. }
   Result := (not FPolicySet) or (not IsKnownToolName(Name)) or
     ToolEnabled(FPolicyCfg, Name);
 end;
@@ -335,8 +335,9 @@ procedure TToolRegistry.Add(const Name, Desc: string; Schema: TJSONObject;
 var
   N: Integer;
 begin
-  { Выключенный в [tools] инструмент в набор не попадает: схема уже наша,
-    поэтому освобождаем её. Так он не уйдёт модели и в массиве tools. }
+  { A tool disabled in [tools] never reaches the set: the schema is already
+    ours, so it is freed here. That way it does not reach the model in the tools
+    array either. }
   if not Allowed(Name) then
   begin
     Schema.Free;
@@ -362,7 +363,7 @@ procedure TToolRegistry.AddMethod(const Name, Desc: string; Schema: TJSONObject;
 var
   N: Integer;
 begin
-  { См. Add: политика [tools] действует и на обработчики-методы. }
+  { See Add: the [tools] policy applies to method handlers as well. }
   if not Allowed(Name) then
   begin
     Schema.Free;
@@ -434,10 +435,10 @@ var
 begin
   Idx := IndexOf(Name);
   if Idx < 0 then
-    Exit(ErrResult('неизвестный инструмент: ' + Name));
-  { Защита в глубину: реестр могли наполнить в обход политики (тесты,
-    внешний код), поэтому выключенный в [tools] встроенный инструмент
-    отказывает и при вызове. Инструменты MCP управляются секцией [mcp]. }
+    Exit(ErrResult('unknown tool: ' + Name));
+  { Defence in depth: the registry could be filled around the policy (tests,
+    external code), so a built-in tool disabled in [tools] refuses a call as
+    well. MCP tools are governed by the [mcp] section. }
   if IsKnownToolName(Name) and not ToolEnabled(Ctx.Cfg, Name) then
     Exit(ToolDisabled(Name));
 
@@ -445,11 +446,11 @@ begin
   if Trim(ArgsJson) <> '' then
   begin
     if not ParseJSONRepair(ArgsJson, D, Err) then
-      Exit(ErrResult('некорректные аргументы JSON: ' + Err));
+      Exit(ErrResult('invalid JSON arguments: ' + Err));
     if not (D is TJSONObject) then
     begin
       D.Free;
-      Exit(ErrResult('аргументы инструмента должны быть JSON-объектом'));
+      Exit(ErrResult('tool arguments must be a JSON object'));
     end;
     O := TJSONObject(D);
   end
@@ -464,7 +465,7 @@ begin
         Result := FHandlers[Idx](O, Ctx);
     except
       on E: Exception do
-        Result := ErrResult('ошибка инструмента ' + Name + ': ' + E.Message);
+        Result := ErrResult('tool error ' + Name + ': ' + E.Message);
     end;
   finally
     O.Free;

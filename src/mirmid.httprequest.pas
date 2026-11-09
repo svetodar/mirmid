@@ -1,7 +1,8 @@
 unit mirmid.httprequest;
-{ Инструмент http_request: доступ к сайтам по HTTP-протоколу (GET/POST).
-  По умолчанию выключен: включается ключом http_request=1 в секции [tools] INI
-  (см. mirmid.tools) и только тогда попадает в набор инструментов сессии. }
+{ The http_request tool: access to sites over the HTTP protocol (GET/POST).
+  Disabled by default: it is enabled by the http_request=1 key in the [tools]
+  section of the INI file (see mirmid.tools) and only then gets into the session
+  tool set. }
 
 {$mode objfpc}{$H+}
 
@@ -12,10 +13,10 @@ uses
 
 const
   HTTP_TOOL_NAME = 'http_request';
-  { Сколько байт тела ответа показывать модели (больше — обрезается). }
+  { How many bytes of the response body to show the model (more is truncated). }
   MAX_HTTP_BODY = 100000;
 
-{ Регистрирует инструмент http_request в реестре. }
+{ Registers the http_request tool in the registry. }
 procedure RegisterHttpTool(R: TToolRegistry);
 
 implementation
@@ -29,18 +30,18 @@ var
   TimeoutSec, TimeoutMs: Integer;
   HR: THttpResult;
 begin
-  { Гейт в обработчике: набор инструментов фильтруется при регистрации, но
-    субагенты, шаги плана и прямой вызов обработчика обходят её. }
+  { Handler gate: the tool set is filtered at registration, but subagents,
+    plan steps and a direct handler call bypass that filter. }
   if not ToolEnabled(Ctx.Cfg, HTTP_TOOL_NAME) then
     Exit(ToolDisabled(HTTP_TOOL_NAME));
 
   Url := Trim(JStr(A, 'url', ''));
   if Url = '' then
-    Exit(ErrResult('не задан url'));
+    Exit(ErrResult('url is not set'));
 
   Method := UpperCase(Trim(JStr(A, 'method', 'GET')));
   if (Method <> 'GET') and (Method <> 'POST') then
-    Exit(ErrResult('метод должен быть GET или POST'));
+    Exit(ErrResult('method must be GET or POST'));
 
   Body := JStr(A, 'body', '');
 
@@ -60,7 +61,7 @@ begin
   if Length(HR.Body) > MAX_HTTP_BODY then
   begin
     Out2 := Out2 + sLineBreak + Copy(HR.Body, 1, MAX_HTTP_BODY) + sLineBreak +
-      Format('[… обрезано: показано %d из %d байт]', [MAX_HTTP_BODY, Length(HR.Body)]);
+      Format('[... truncated: %d of %d bytes shown]', [MAX_HTTP_BODY, Length(HR.Body)]);
   end
   else if HR.Body <> '' then
     Out2 := Out2 + sLineBreak + HR.Body;
@@ -71,13 +72,13 @@ end;
 procedure RegisterHttpTool(R: TToolRegistry);
 begin
   R.Add(HTTP_TOOL_NAME,
-    'Выполняет HTTP-запрос к сайту и возвращает статус и тело ответа.',
+    'Performs an HTTP request to a site and returns the status and the response body.',
     SchemaObject(
       TJSONObject.Create([
-        'url', PropStr('Полный URL (http:// или https://)'),
-        'method', PropStr('Метод: GET или POST (по умолчанию GET)'),
-        'body', PropStr('Тело запроса для POST'),
-        'timeout', PropInt('Таймаут в секундах (по умолчанию — из конфигурации)')]),
+        'url', PropStr('Full URL (http:// or https://)'),
+        'method', PropStr('Method: GET or POST (default GET)'),
+        'body', PropStr('Request body for POST'),
+        'timeout', PropInt('Timeout in seconds (default — from the configuration)')]),
       ['url']),
     @ToolHttpRequest);
 end;
