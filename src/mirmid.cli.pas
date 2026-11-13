@@ -58,6 +58,10 @@ function FormatStepEnd(const Text: string): string;
   the " — " separator (for example "s1: done"). The step result is printed
   separately and only under --show-step-result / --show-reasoning. }
 function FormatStepEndStatus(const Text: string): string;
+{ The one-line step summary printed when the step result is hidden: the step
+  status plus the first non-empty line of the result, shortened to
+  STEP_BRIEF_MAX visible columns on a single line. }
+function FormatStepEndBrief(const Text: string): string;
 { The depth prefix: the grey │ character repeated Depth times (0 — empty). }
 function DepthPrefix(Depth: Integer): string;
 { The context status line: "[HH:MM:SS|current/total|percent%]".
@@ -110,6 +114,12 @@ function StepTaskVisible(ShowStepTask, ShowReasoning,
   context accounting would drift apart and the subagent result would no longer be
   recognized. }
 function StepTextVisible(ShowStepResult, ShowReasoning: Boolean): Boolean;
+{ Whether to print the one-line step summary (FormatStepEndBrief) instead of the
+  full step result in aeStepEnd: the summary replaces the bare status line when
+  the step text is hidden, that is when StepTextVisible is False
+  (--show-step-result and --show-reasoning are both off). With the text visible
+  the full FormatStepEnd is printed instead. }
+function StepBriefVisible(ShowStepResult, ShowReasoning: Boolean): Boolean;
 { Whether to print the tool output (the aeToolCall call, the aeShellCommand shell
   command and the aeToolResult result) — only together with the reasoning: the
   result equals ShowReasoning (--show-reasoning). The session (main, subagent,
@@ -412,6 +422,11 @@ type
       it is hidden and printed only under
       --show-step-result/--show-reasoning. A subagent nested in the step falls
       under the condition too. }
+    { Is the analysis sub-session running: the session label is "analysis" (it
+      arrives in aeSubSessionStart) and the depth is exactly one. The analysis
+      answer is printed only once — by the final output of the planner — so the
+      text of this session is suppressed in aeAssistant and aeStreamText. }
+    function InAnalysisSubSession: Boolean;
     function InStepSubSession: Boolean;
     { The context status line after a turn — for non-streaming mode (in a stream
       it is drawn by the stream printer). }
@@ -537,6 +552,10 @@ const
   { The maximum length of the tool result text on the screen; the subagent result
     is printed in full (it is the final answer of a separate session). }
   TOOL_RESULT_MAX = 400;
+  { Visible columns of the one-line step summary printed by FormatStepEndBrief
+    when the step result is hidden: the header plus the first non-empty line of
+    the step text, shortened to this width. }
+  STEP_BRIEF_MAX = 120;
 
 { The separator " — " (space + dash + space) takes 5 bytes in UTF-8. The position
   of the result after Pos is P + Length(' — '), not P + 3: otherwise the copy
@@ -570,6 +589,51 @@ begin
     Result := Copy(Text, 1, P - 1)
   else
     Result := Text;
+end;
+{ The one-line step summary printed when the step result is hidden: the step
+  status plus the first non-empty line of the result. The result may be a
+  multi-line tool output or model answer, so only its first non-empty line is
+  taken (the step must stay one line), and the whole summary is cut by visible
+  columns, not bytes: a wide character or an ANSI sequence must not be broken. }
+function FormatStepEndBrief(const Text: string): string;
+var
+  P, I, Start: Integer;
+  Sep, Header, Body, Line: string;
+begin
+  Sep := ' — ';
+  P := Pos(Sep, Text);
+  if P > 0 then
+  begin
+    Header := Copy(Text, 1, P - 1);
+    Body := Copy(Text, P + Length(Sep), MaxInt);
+  end
+  else
+  begin
+    Header := Text;
+    Body := '';
+  end;
+  { The first non-empty line of the result: a blank line before a tool output or
+    a trailing newline must not turn the summary into an empty one. A CRLF and a
+    lone LF are both treated as a line break. }
+  Line := '';
+  Start := 1;
+  while (Line = '') and (Start <= Length(Body)) do
+  begin
+    I := Start;
+    while (I <= Length(Body)) and (Body[I] <> #10) and (Body[I] <> #13) do
+      Inc(I);
+    Line := Trim(Copy(Body, Start, I - Start));
+    if (I < Length(Body)) and (Body[I] = #13) and (Body[I + 1] = #10) then
+      Inc(I);
+    Start := I + 1;
+  end;
+  if Line <> '' then
+    Result := Header + Sep + Line
+  else
+    Result := Header;
+  if VisibleLen(Result) > STEP_BRIEF_MAX then
+    { The ellipsis takes one column, so the prefix is cut to STEP_BRIEF_MAX - 1. }
+    Result := TruncateVisible(Result, STEP_BRIEF_MAX - 1) + '…';
 end;
 
 { The depth prefix: the grey │ character repeated Depth times (0 — empty). }
@@ -1103,6 +1167,15 @@ begin
   Result := ShowStepResult or ShowReasoning;
 end;
 
+{ The one-line summary (FormatStepEndBrief) is printed exactly when the step text
+  is hidden: it replaces the bare "s1: done" status line and gives a hint of what
+  the step produced without repeating the answer. With the text visible the full
+  FormatStepEnd is printed instead, so the summary is not needed. }
+function StepBriefVisible(ShowStepResult, ShowReasoning: Boolean): Boolean;
+begin
+  Result := not StepTextVisible(ShowStepResult, ShowReasoning);
+end;
+
 { The plan step task is printed with --show-step-task or --show-reasoning (with
   both off the step name is not printed in aeStepStart, the name stays only in the
   status line). --show-step-result (ShowStepResult) does not apply to the task: it
@@ -1330,12 +1403,17 @@ begin
 end;
 
 { The status is printed on its own line under the text; the caller ensures that
-  the cursor is at the beginning of a clean line. }
+  the cursor is at the beginning of a clean line. A status wider than the
+  terminal wraps onto a second line, while the next redraw clears only the last
+  one, so the tail of the old status stays in the scrollback; therefore the text
+  is cut to the content width minus one column (moving the cursor into the very
+  last cell makes some terminals wrap). The prefix already accounts for the
+  prefix width inside ContentWidth. }
 procedure TStreamPrinter.PrintStatus(const Status: string);
 begin
   if not FLive then
     Exit;
-  Write(FPrefix + Status);
+  Write(FPrefix + TruncateVisible(Status, ContentWidth - 1));
   FStatusShown := True;
 end;
 
@@ -2185,6 +2263,15 @@ begin
   Result := (FSubAgentDepth > 0) and (FCurrentStepName <> '');
 end;
 
+{ Is the analysis sub-session running: the label "analysis" arrives in
+  aeSubSessionStart and the depth is exactly one (the planner drives the
+  analysis from the top level). A deeper subagent keeps the usual printing, and
+  the step sub-session ("step sN") is a different label. }
+function TMirmidApp.InAnalysisSubSession: Boolean;
+begin
+  Result := (FSubAgentDepth = 1) and (FSubAgentLabel = 'analysis');
+end;
+
 
 procedure TMirmidApp.OnAgentEvent(Kind: TAgentEventKind; const Text: string);
 var
@@ -2232,17 +2319,23 @@ begin
         end;
       end;
     aeStepEnd:
-      { End of a step: "s1: done" and the result — but only under
-        --show-step-result or --show-reasoning (task1: with the flags off only
-        the status lines are left of a step, and the result does not duplicate
-        the text that already arrived in aeAssistant/aeStreamText). The result is
-        shortened to TOOL_RESULT_MAX (see FormatStepEnd). The step name is not
-        needed after it: the next status line starts with the main session. }
+      { End of a step: the header plus the result. With --show-step-result or
+        --show-reasoning the result is printed in full (shortened to
+        TOOL_RESULT_MAX, see FormatStepEnd) — it is the step answer, and the step
+        text itself is hidden at that moment only if the flags are off. With the
+        flags off the answer is already hidden in aeAssistant/aeStreamText, so the
+        step must still say what it produced: FormatStepEndBrief prints the header
+        plus the first non-empty line of the result on one line (STEP_BRIEF_MAX
+        columns). FormatStepEndStatus stays as the fallback of the bare header when
+        the summary is not requested. The step name is not needed after it: the next
+        status line starts with the main session. }
       begin
         FCurrentStepName := '';
         FPrinter.PrepareStatic;
         if StepTextVisible(FShowStepResult, FShowReasoning) then
           WriteLn(Pfx + Colored(C_STEP, FormatStepEnd(Text)))
+        else if StepBriefVisible(FShowStepResult, FShowReasoning) then
+          WriteLn(Pfx + Colored(C_STEP, FormatStepEndBrief(Text)))
         else
           WriteLn(Pfx + Colored(C_STEP, FormatStepEndStatus(Text)));
       end;
@@ -2462,8 +2555,12 @@ begin
         step text would be printed twice (task1: the step result is included by
         the --show-step-result/--show-reasoning flags and printed by aeStepEnd).
         A subagent nested in a step is hidden too: its answer arrives as the full
-        tool result (aeToolResult), not as the step answer. }
-      if not FCfg.Stream and not InStepSubSession and (Trim(Text) <> '') then
+        tool result (aeToolResult), not as the step answer.
+        The analysis sub-session is hidden for the same reason: its answer is
+        printed exactly once, by the final output of the planner, so printing it
+        here would duplicate it (InAnalysisSubSession, see also aeStreamText). }
+      if not FCfg.Stream and not InStepSubSession and not InAnalysisSubSession
+        and (Trim(Text) <> '') then
       begin
         FPrinter.PrepareStatic;
         { Print the blank line before the answer only when the previous block did
@@ -2587,10 +2684,15 @@ begin
           context. The answer text of a plan step sub-session is printed only
           under --show-step-result or --show-reasoning: by default a step gives
           only the status line, and its result (also under the flags) is the line
-          "sN: done — result" in aeStepEnd. Hidden text must not get stuck in the
-          printer buffer: redraw the status instead of FeedContent. }
+          "sN: done — result" in aeStepEnd. The analysis sub-session is hidden
+          unconditionally — its answer is printed once by the final output of the
+          planner (InAnalysisSubSession, see also aeAssistant). Hidden text must
+          not get stuck in the printer buffer: redraw the status instead of
+          FeedContent. }
         FTokens.AddResponseTokens(FSubAgentDepth, (CountUTF8Chars(Text) + 3) div 4);
-        if InStepSubSession and not StepTextVisible(FShowStepResult, FShowReasoning) then
+        if InAnalysisSubSession or
+           (InStepSubSession and not StepTextVisible(FShowStepResult, FShowReasoning))
+        then
         begin
           if Text <> '' then
             FPrinter.RefreshStatus(StatusText);

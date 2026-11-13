@@ -25,6 +25,9 @@ const
 var
   P: TStreamPrinter;
   I, N: Integer;
+  { The variants of the long status in the long-status scenario (the counters
+    grow from one draw to the next, as in a real sub-session). }
+  S1, S2, S3: string;
 begin
   P := TStreamPrinter.Create;
   try
@@ -483,6 +486,51 @@ begin
       P.EndStream('[turn 2 2.0k]');
       P.PersistStatus('[turn 2 final 2.2k/128k]');
       P.PrepareStatic;
+    end
+    else if Name = 'long-status' then
+    begin
+      { A status wider than the terminal (PrintStatus): it is cut to the content
+        width minus one column, so it takes exactly one terminal line, and the
+        next redraw (ClearLine + PrintStatus) replaces the whole line instead of
+        clearing only the last of its wrapped lines — the tail of the old status
+        does not stay in the scrollback. The scenario repeats the
+        aeStepStart/aeToolCall/aeAssistant/aeSubSessionEnd branches of a step
+        sub-session: the long step task ends with "TailMarker", which must never
+        reach the screen, and the status is drawn with grown counters after every
+        static block. The step text and the static lines must not glue to the
+        remains of the status, and the fixed done line (PersistStatus) is cut the
+        same way. Regression: TStreamPrinter.PrintStatus/ContentWidth and
+        TruncateVisible. }
+      P.Prefix := '';
+      S1 := FormatStepStatus('s1: ' + StringOfChar('x', 60) + 'TailMarker',
+        1000, 128000, MAIN_CTX_STEP);
+      S2 := FormatStepStatus('s1: ' + StringOfChar('x', 60) + 'TailMarker',
+        1100, 128000, MAIN_CTX_STEP);
+      S3 := FormatStepStatus('s1: ' + StringOfChar('x', 60) + 'TailMarker',
+        1200, 128000, MAIN_CTX_STEP);
+      { aeStepStart: the drawn status and the step text under it. }
+      P.BeginStream(S1);
+      P.FeedContent('step line one' + #10, S1);
+      P.FeedContent('step line two' + #10, S2);
+      { aeToolCall: the drawn status is erased, the call line takes its place,
+        and the status is drawn again with grown counters. }
+      P.PrepareStatic;
+      WriteLn('[read] notes.md');
+      P.DrawStatus(S2);
+      { A redraw without any text (DrawStatus after the result): the whole
+        status line is replaced, the old counters do not stay above it. }
+      P.DrawStatus(S3);
+      { aeAssistant: the answer line takes the place of the erased status. }
+      P.PrepareStatic;
+      WriteLn('answer one');
+      P.DrawStatus(S3);
+      { aeSubSessionEnd: the temporary status is erased, and the done line with
+        the final counters is fixed in its place. }
+      P.EndStream(S3);
+      P.PersistStatus(FormatStepStatus('s1: ' + StringOfChar('x', 60) +
+        'TailMarker', 1300, 128000, MAIN_CTX_STEP) + ' done');
+      P.PrepareStatic;
+      WriteLn('after long status');
     end
     else
       Halt(2);

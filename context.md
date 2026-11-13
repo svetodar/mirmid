@@ -574,3 +574,69 @@ Left open after P6 (unchanged or newly noted): roadmap item 7.1 (a duplicated
 `[tools]` section is still not diagnosed), the remaining roadmap items, and
 `deps/tls` still being uninitialised in this checkout. `mirmid.anthropic`
 remains a standalone unit, untouched by this phase.
+
+## 2026-11-13 — step summary line, one analysis answer, one-line status
+
+Scope: stop the status line from lying about a step that produced nothing and
+from wrapping in a narrow terminal, and make sure the analysis answer is printed
+exactly once. Ten tracked files change: `src/mirmid.cli.pas`,
+`src/mirmid.util.pas`, `tests/fixtures/streamprobe.pas`, `tests/test_planner.pas`,
+`tests/test_stream.pas`, `tests/test_util.pas`, plus `docs/architecture.md`,
+`docs/planning.md`, `docs/repository.md` and `docs/roadmap.md`.
+
+Verification (all commands run in `C:\ai\git\mirmid` on 2026-11-13):
+
+- `make -B app test` → **473 tests run, 0 errors, 0 failures**, exit code 0.
+  The new reference count is **473 / 0 / 0**, three more than the P6 count of
+  470: `TestTruncateVisiblePlain` and `TestTruncateVisibleAnsi`
+  (`tests/test_util.pas`) and `TestLongStatusTruncatedToOneLine`
+  (`tests/test_stream.pas`). `docs/repository.md` and `docs/roadmap.md` were
+  updated to the same number.
+- `bin\mirmid.exe --version` → `mirmid 0.1.0`, `--help` → exit 0; the diff does
+  not touch the usage text, so the option list is unchanged.
+- Every edited file is LF (perl scan for `\r` → no hits), per `.gitattributes`.
+
+What changed:
+
+- **A step with hidden text now shows a summary instead of a bare status.**
+  `FormatStepEndBrief` (width `STEP_BRIEF_MAX = 120` visible columns, built on
+  `VisibleLen`/`TruncateVisible`) takes the status up to the `' — '` separator
+  plus the first non-empty line of the step result. `aeStepEnd` picks the full
+  `FormatStepEnd` when `StepTextVisible`, the brief when `StepBriefVisible`
+  (both `--show-step-result` and `--show-reasoning` off) and `FormatStepEndStatus`
+  otherwise; `StepBriefVisible` is the predicate for the middle case.
+- **The analysis answer is printed once.** `InAnalysisSubSession` is true for a
+  sub-session started with the label `analysis` at `FSubAgentDepth = 1`. In that
+  state `aeAssistant` does not print the text and `aeStreamText` refreshes the
+  status instead of feeding tokens to the content, so the only output is the
+  planner's own `aeAnalysis` event with the `[analysis]` tag. Nested subagents and
+  `step sN` sessions are not affected.
+- **The status line can no longer wrap.** `PrintStatus` prints
+  `TruncateVisible(Status, ContentWidth - 1)`; `TruncateVisible` in
+  `src/mirmid.util.pas` counts columns exactly like `VisibleLen` (an ANSI
+  sequence is 0, `IsWideCP` is 2, `IsZeroWidthCP` is 0) and closes an open SGR
+  with a reset, so a long step name or tool call is cut instead of being wrapped
+  onto a second row that the next redraw then only half erases.
+- **Coverage.** `TestStepEndResultGating` in `tests/test_planner.pas` was
+  rewritten for the brief (status plus first non-empty line, LF and CRLF splits,
+  cut at exactly 120 columns with an ellipsis, and no brief when the step text is
+  shown). The new `long-status` scenario in `tests/fixtures/streamprobe.pas`
+  draws a status wider than the terminal, and `TestLongStatusTruncatedToOneLine`
+  runs it with `COLUMNS=40` and checks that the tail marker reaches neither the
+  raw output nor the screen.
+
+Pitfalls re-confirmed:
+
+- **The new test caught a real bug in `TruncateVisible`:** an SGR sequence that
+  started after the cut point was appended to the result. Fixed minimally — at
+  the cut, `Keep`/`HasAnsi` roll back to the previous byte position. A truncation
+  helper is worth a test with a coloured string whose escape lands on the
+  boundary, not only one whose escape fits.
+- `edit_text_file` writes CRLF on Windows again: the six edited files came back
+  with CRLF and were normalised with `perl -pi -e 's/\r\n/\n/'` before the build
+  (the diffstat fell from a whole-file rewrite to 514 insertions / 34 deletions).
+- A stray empty file named `0)` (a shell-redirect artefact) appeared in the
+  working tree during the work and shows up as `?? 0)` in `git status`; it must be
+  deleted before the commit and must never be staged.
+- `perl` and `make` are still not in the default `PATH` of `cmd.exe`; the
+  `C:\Program Files\Git\usr\bin` prefix from `AGENTS.md` is required.

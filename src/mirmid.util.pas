@@ -120,6 +120,11 @@ function TermWidth(FD: Integer = 1): Integer;
   (CJK, emoji, fullwidth forms) count as 2 columns, zero-width ones (joiners,
   variation selectors, diacritics) - as 0. }
 function VisibleLen(const S: string): Integer;
+{ Truncates S to MaxCols visible columns (as VisibleLen counts them) without
+  breaking a UTF-8 character or leaving a dangling ANSI sequence: an SGR
+  sequence that precedes the cut is kept and the result is closed with a reset
+  when S carried one. MaxCols <= 0 - S is returned as is. }
+function TruncateVisible(const S: string; MaxCols: Integer): string;
 
 { --- UTF-8 --- }
 { Truncates S to MaxBytes bytes without breaking a multi-byte UTF-8 character:
@@ -1211,6 +1216,115 @@ begin
       Inc(I, Len);
     end;
   end;
+end;
+
+{ Truncates S to MaxCols visible columns without breaking a UTF-8 character
+  and without leaving a dangling ANSI sequence. The result never exceeds
+  MaxCols columns: a wide character that does not fit (MaxCols - 1 columns
+  used, 2 columns needed) is dropped instead of being cut. ANSI sequences
+  before the cut are kept byte for byte and, if the kept prefix carries any,
+  the result is closed with an SGR reset so the rest of the line is not
+  repainted. MaxCols <= 0 - S is returned unchanged. }
+function TruncateVisible(const S: string; MaxCols: Integer): string;
+var
+  I, J, N, CP, Len, W, Cols, Keep, KeepLast: Integer;
+  HasAnsi, KeepAnsi: Boolean;
+begin
+  if MaxCols <= 0 then
+    Exit(S);
+  N := Length(S);
+  Cols := 0;
+  Keep := 0;
+  KeepLast := 0;
+  HasAnsi := False;
+  KeepAnsi := False;
+  I := 1;
+  while I <= N do
+  begin
+    if S[I] = #27 then
+    begin
+      { Skip the whole ANSI sequence (the same rule as in VisibleLen): it
+        takes no columns and is kept only if the cut comes after it. }
+      Inc(I);
+      if (I <= N) and ((Ord(S[I]) in [$3C..$3F]) or (Ord(S[I]) in [$5B..$5F])) then
+        Inc(I);
+      while (I <= N) and (Ord(S[I]) in [$20..$3F]) do
+        Inc(I);
+      if I <= N then
+        Inc(I);
+      Keep := I - 1;
+      HasAnsi := True;
+      Continue;
+    end;
+    if Ord(S[I]) < $80 then
+    begin
+      { Plain ASCII character: 1 column, 1 byte. }
+      W := 1;
+      Len := 1;
+    end
+    else if (Ord(S[I]) and $C0) <> $C0 then
+    begin
+      { A continuation byte without a lead byte - one column, one byte. }
+      W := 1;
+      Len := 1;
+    end
+    else
+    begin
+      { Decode the UTF-8 code point. }
+      CP := Ord(S[I]);
+      if CP < $E0 then
+      begin
+        Len := 2;
+        CP := CP and $1F;
+      end
+      else if CP < $F0 then
+      begin
+        Len := 3;
+        CP := CP and $0F;
+      end
+      else
+      begin
+        Len := 4;
+        CP := CP and $07;
+      end;
+      if I + Len - 1 > N then
+      begin
+        { Truncated sequence - count it as one character. }
+        W := 1;
+        Len := 1;
+      end
+      else
+      begin
+        for J := 2 to Len do
+          CP := (CP shl 6) or (Ord(S[I + J - 1]) and $3F);
+        if IsWideCP(CP) then
+          W := 2
+        else if IsZeroWidthCP(CP) then
+          W := 0
+        else
+          W := 1;
+      end;
+    end;
+    if Cols + W > MaxCols then
+    begin
+      { The character does not fit: cut before the trailing ANSI sequences, so
+        an SGR that follows the last visible character is not kept. }
+      Keep := KeepLast;
+      HasAnsi := KeepAnsi;
+      Break;
+    end;
+    Inc(Cols, W);
+    Inc(I, Len);
+    Keep := I - 1;
+    KeepLast := Keep;
+    KeepAnsi := HasAnsi;
+  end;
+  { The whole string fitted - return it unchanged (no reset is added). }
+  if Keep >= N then
+    Exit(S);
+  Result := Copy(S, 1, Keep);
+  if HasAnsi then
+    Result := Result + #27 + '[0m';
 end;
 
 { Wraps a line by words: the last space before which the fragment still fits

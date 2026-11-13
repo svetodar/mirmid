@@ -54,6 +54,10 @@ type
     procedure TestTruncateUTF8Ascii;
     procedure TestIsValidUTF8;
     procedure TestSanitizeUTF8;
+    { TruncateVisible: cut by visible columns, never by bytes. }
+    procedure TestTruncateVisiblePlain;
+    { TruncateVisible with ANSI sequences: kept, closed, never cut. }
+    procedure TestTruncateVisibleAnsi;
     { ShortenLinesMiddle: the ellipsis instead of the middle, CRLF/LF and UTF-8. }
     procedure TestShortenLinesMiddleNoLimit;
     procedure TestShortenLinesMiddleMarkerIndent;
@@ -132,6 +136,60 @@ begin
   AssertTrue('became valid UTF-8', IsValidUTF8(Fixed));
   AssertTrue('U+FFFD substituted', Pos(#$EF#$BF#$BD, Fixed) > 0);
   AssertEquals('a valid string is unchanged', 'äöüßéè', SanitizeUTF8('äöüßéè'));
+end;
+
+procedure TUtilTests.TestTruncateVisiblePlain;
+var
+  S, R: string;
+begin
+  AssertEquals('fits unchanged', 'hello', TruncateVisible('hello', 10));
+  AssertEquals('exact prefix', 'hel', TruncateVisible('hello', 3));
+  AssertEquals('empty string', '', TruncateVisible('', 5));
+  AssertEquals('zero columns', 'hello', TruncateVisible('hello', 0));
+  AssertEquals('negative columns', 'hello', TruncateVisible('hello', -3));
+  { Two-byte letters take one column each. }
+  S := #$C3#$A4#$C3#$B6#$C3#$BC;   { a-umlaut, o-umlaut, u-umlaut }
+  AssertEquals('multi-byte prefix', #$C3#$A4#$C3#$B6, TruncateVisible(S, 2));
+  AssertEquals('whole multi-byte string', S, TruncateVisible(S, 3));
+  { CJK characters take two columns and are never cut in half. }
+  S := #$E4#$BD#$A0#$E5#$A5#$BD;   { two CJK characters, four columns }
+  AssertEquals('one wide char fits', #$E4#$BD#$A0, TruncateVisible(S, 3));
+  AssertEquals('no wide char fits', '', TruncateVisible(S, 1));
+  AssertTrue('valid UTF-8 after a wide cut', IsValidUTF8(TruncateVisible(S, 3)));
+  { An emoji is four bytes and two columns. }
+  S := 'a' + #$F0#$9F#$98#$80;
+  AssertEquals('emoji dropped', 'a', TruncateVisible(S, 2));
+  AssertEquals('emoji kept', S, TruncateVisible(S, 3));
+  { A combining mark is zero width and stays with its base letter. }
+  S := 'e' + #$CC#$81 + 'x';       { e + combining acute + x }
+  AssertEquals('combining mark kept', 'e' + #$CC#$81, TruncateVisible(S, 1));
+  AssertEquals('combining mark and x', S, TruncateVisible(S, 2));
+  R := TruncateVisible(S, 1);
+  AssertTrue('width within the limit', VisibleLen(R) <= 1);
+  AssertTrue('valid UTF-8', IsValidUTF8(R));
+end;
+
+procedure TUtilTests.TestTruncateVisibleAnsi;
+var
+  S, R: string;
+begin
+  S := #27'[31m' + 'hello' + #27'[0m';
+  AssertEquals('fits unchanged, no extra reset', S, TruncateVisible(S, 10));
+  { The opening SGR is kept and the cut prefix is closed with a reset. }
+  AssertEquals('colored prefix', #27'[31m' + 'hel' + #27'[0m',
+    TruncateVisible(S, 3));
+  { A sequence that starts after the cut is dropped. }
+  S := #27'[31m' + 'ab' + #27'[1m' + 'cde';
+  AssertEquals('sequence after the cut dropped', #27'[31mab' + #27'[0m',
+    TruncateVisible(S, 2));
+  { A kept sequence in the middle takes no columns. }
+  S := #27'[31m' + 'abc' + #27'[0m' + 'def';
+  R := TruncateVisible(S, 4);
+  AssertEquals('middle sequence kept', #27'[31mabc'#27'[0md'#27'[0m', R);
+  AssertEquals('visible width of the cut', 4, VisibleLen(R));
+  { Sequences only: nothing visible to cut. }
+  S := #27'[0m';
+  AssertEquals('SGR only', S, TruncateVisible(S, 1));
 end;
 function TUtilTests.JoinLines(const Parts: array of string;
   const Sep: string): string;

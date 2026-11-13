@@ -40,6 +40,7 @@ type
     procedure TestBlankLineAfterToolOutput;
     procedure TestEndStreamNoGlueBeforePrompt;
     procedure TestStatusStaysAfterTurn;
+    procedure TestLongStatusTruncatedToOneLine;
   end;
 
 implementation
@@ -842,6 +843,81 @@ begin
   end;
 end;
 
+procedure TStreamPrinterTests.TestLongStatusTruncatedToOneLine;
+const
+  { The terminal width of the probe (the COLUMNS variable) and the width the
+    status may occupy: the content width (40, the prefix is empty) minus one
+    column — moving the cursor into the very last cell makes some terminals wrap. }
+  COLS = 40;
+  CONTENT = COLS - 1;
+var
+  Out, All: string;
+  Screen, Wrapped: TStringList;
+  I, Statuses: Integer;
+begin
+  { A status wider than the terminal is cut to ContentWidth - 1 visible columns,
+    so it takes exactly one terminal line and the next redraw (ClearLine +
+    PrintStatus) replaces the whole line instead of clearing only the last of its
+    wrapped lines: the tail of the old status must not stay in the scrollback. The
+    scenario repeats the aeStepStart/aeToolCall/aeAssistant/aeSubSessionEnd
+    branches with grown counters, the long step name ends with "TailMarker", and
+    the done line (PersistStatus) is cut the same way. Regression:
+    TStreamPrinter.PrintStatus/ContentWidth and TruncateVisible. }
+  Out := RunProbe('long-status', COLS);
+  if Out = '' then
+    Exit;
+  { The long statuses really are drawn (the counters grow from one draw to the
+    next) and the tail is cut already in the raw output. }
+  AssertTrue('the 1.2k status is drawn', Pos('|6k/1.2k/128k|', Out) > 0);
+  AssertTrue('the 1.3k done status is drawn', Pos('|6k/1.3k/128k|', Out) > 0);
+  AssertEquals('the tail of the long status is cut off in the raw output', 0,
+    Pos('TailMarker', Out));
+
+  { A hard line wrap at the terminal width must not add a single line: every
+    drawn status fits into one terminal line. }
+  Screen := SimulateTerminal(Out);
+  Wrapped := SimulateTerminal(Out, COLS);
+  try
+    AssertEquals('no status is wrapped by the terminal', Screen.Count,
+      Wrapped.Count);
+    Statuses := 0;
+    All := '';
+    for I := 0 to Screen.Count - 1 do
+    begin
+      All := All + Screen[I];
+      AssertTrue('no line is wider than the content width: ' + Screen[I],
+        Length(Screen[I]) <= CONTENT);
+      if Pos('128k', Screen[I]) > 0 then
+        Inc(Statuses);
+    end;
+
+    { The static output starts on clean lines: neither the tail of a status nor
+      the long step name glues to it. }
+    AssertEquals('lines on the screen', 7, Screen.Count);
+    AssertEquals('the first step line', 'step line one', Screen[0]);
+    AssertEquals('the second step line', 'step line two', Screen[1]);
+    AssertEquals('the tool call in place of the erased status', '[read] notes.md',
+      Screen[2]);
+    AssertEquals('the answer in place of the erased status', 'answer one', Screen[3]);
+    AssertEquals('the done line is cut to the content width', CONTENT,
+      Length(Screen[4]));
+    AssertTrue('the done line carries the final status',
+      Pos('|6k/1.3k/128k|', Screen[4]) > 0);
+    AssertEquals('the static output under the done line', 'after long status',
+      Screen[5]);
+    AssertEquals('under the last output only the newline tail', '', Screen[6]);
+
+    { Exactly the temporary statuses that were erased are gone: a single line with
+      the final counters (the done line) remains, and the tail of the long name is
+      nowhere on the screen. }
+    AssertEquals('only the done line with the counters remains', 1, Statuses);
+    AssertEquals('the long status tail is not on the screen', 0,
+      Pos('TailMarker', All));
+  finally
+    Wrapped.Free;
+    Screen.Free;
+  end;
+end;
 
 initialization
   RegisterTest(TStreamPrinterTests);

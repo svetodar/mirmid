@@ -41,6 +41,11 @@ read-only rule comes from the prompt, not from the tool policy.
   preliminary analysis`.
 - The analysis session is written to `<session>_analysis.json` even when the
   turn failed, so the file shows where the agent stopped.
+- The analysis text is printed exactly once. The sub-session is labelled
+  `analysis` and runs at depth one, so `InAnalysisSubSession` makes the CLI
+  suppress its tokens in `aeStreamText` (only the status is redrawn) and its
+  answer in `aeAssistant`; the single output is the `aeAnalysis` event - the
+  `[analysis]` tag followed by the rendered markdown.
 - On success `aeAnalysis` carries the text into the plan request. A failure is
   not fatal: the planner emits `aeError` (`preliminary analysis failed: ...`)
   and builds the plan without the analysis.
@@ -91,9 +96,21 @@ about 100 characters and each step must be one concrete action.
 5. The attempt session is saved by `SaveStepSession`, and every attempt leaves
    log records in the model call log.
 
-After a step ends, `aeStepEnd` carries the label `s1: done`, an em dash and the
-result when non-empty; the CLI hides the result without `--show-step-result` or
-`--show-reasoning`, and hides the task without `--show-step-task` or
+After a step ends, `aeStepEnd` carries the status `s1: done`, an em dash and the
+result when non-empty. What the CLI prints depends on the flags:
+
+| Flags | Printed line |
+| --- | --- |
+| `--show-step-result` or `--show-reasoning` | the whole result, shortened to `TOOL_RESULT_MAX` (`FormatStepEnd`) |
+| neither flag | the status and the first non-empty line of the result, cut to `STEP_BRIEF_MAX` = 120 visible columns with a trailing ellipsis (`FormatStepEndBrief`, enabled by `StepBriefVisible`) |
+
+The summary exists because the step answer itself is hidden in that mode (see
+`StepTextVisible`): it replaces the bare status line, so a step still says what
+it produced without repeating the answer. The result may be a multi-line tool
+output, so only its first non-empty line is taken (LF and CRLF both end a line,
+the edges are trimmed) and the whole summary is cut by visible columns with
+`TruncateVisible`, never by bytes: a wide character or an ANSI sequence is not
+split. The task of a step stays hidden without `--show-step-task` or
 `--show-reasoning`. A step removed by `revise_plan` during its own sub-cycle is
 reported as `s1: removed from the plan`.
 

@@ -21,7 +21,10 @@ License: Apache-2.0.
   screenshots, window observation and plan revision (see the table below).
 - **Plan mode** (`--plan`): the agent writes a plan, executes it step by step in
   separate sub-sessions and prints a final report; `revise_plan` lets it change
-  the plan while working.
+  the plan while working. Each step ends with a one-line summary (status, the
+  first line of the result, at most 120 columns); the full text of a step needs
+  `--show-step-result` or `--show-reasoning`, and the analysis answer is printed
+  only once.
 - **Subagents**: a nested agent session with its own context that returns only
   the result of the work.
 - **MCP (Model Context Protocol)** over stdio/JSON-RPC 2.0: external tool

@@ -530,15 +530,18 @@ begin
   end;
 end;
 
-{ Gating of the step result in aeStepEnd: the planner puts "s1: done - result"
+{ Gating of the step result in aeStepEnd: the planner puts "s1: done — result"
   into the event (StepEndText), while the CLI prints the result only with
-  --show-step-result / --show-reasoning. By default a step leaves just the
-  status line without the result: the event contains the result, but it stays
-  hidden. }
+  --show-step-result / --show-reasoning. By default a step leaves a one-line
+  summary (FormatStepEndBrief): the status plus the first non-empty line of the
+  result, cut to STEP_BRIEF_MAX visible columns. With a flag the full
+  FormatStepEnd text is printed instead and the summary is switched off. }
 procedure TPlannerTests.TestStepEndResultGating;
+const
+  BRIEF_MAX = 120;
 var
   P: TPlan;
-  Txt: string;
+  Txt, Brief: string;
 begin
   P := TPlan.Create;
   try
@@ -547,28 +550,57 @@ begin
     Txt := StepEndText(P.Steps[0]);
     AssertEquals('aeStepEnd event with the result', 's1: done — file read', Txt);
 
-    { Without the flags only the step status is printed. }
+    { Without the flags the step text is hidden and the summary takes over: the
+      status line gets the first line of the result, so the step stays one line
+      and is not silent. }
     AssertFalse('the step text is hidden by default', StepTextVisible(False, False));
-    AssertEquals('status without the result', 's1: done', FormatStepEndStatus(Txt));
-    AssertEquals('no result in the status line', 0,
-      Pos('file read', FormatStepEndStatus(Txt)));
+    AssertTrue('the summary replaces the bare status',
+      StepBriefVisible(False, False));
+    AssertEquals('one-line summary with the result', 's1: done — file read',
+      FormatStepEndBrief(Txt));
 
-    { Any of the flags shows the whole event text (the result is not cut). }
+    { The summary never shows more than one line: a multi-line tool output or a
+      model answer would otherwise break the status block. A blank first line
+      (a leading newline) is skipped, CRLF and a lone LF both count as breaks. }
+    P.SetStatus('s1', psDone, LineEnding + '  first line' + LineEnding + 'second line');
+    Txt := StepEndText(P.Steps[0]);
+    Brief := FormatStepEndBrief(Txt);
+    AssertEquals('only the first non-empty line', 's1: done — first line', Brief);
+    AssertEquals('no second line in the summary', 0, Pos('second line', Brief));
+    P.SetStatus('s1', psDone, #13#10 + 'crlf line' + #13#10 + 'tail');
+    AssertEquals('CRLF line break', 's1: done — crlf line',
+      FormatStepEndBrief(StepEndText(P.Steps[0])));
+
+    { A long result is cut by visible columns with an ellipsis: the summary must
+      not wrap the status line. }
+    P.SetStatus('s1', psDone, StringOfChar('x', 300));
+    Txt := StepEndText(P.Steps[0]);
+    Brief := FormatStepEndBrief(Txt);
+    AssertTrue('long summary stays within the limit', VisibleLen(Brief) <= BRIEF_MAX);
+    AssertEquals('long summary fills the limit', BRIEF_MAX, VisibleLen(Brief));
+    AssertEquals('ellipsis at the end', '…',
+      Copy(Brief, Length(Brief) - Length('…') + 1, Length('…')));
+    AssertEquals('the cut keeps the step status', 1, Pos('s1: done — xxx', Brief));
+
+    { Any of the flags shows the whole event text (the result is not cut) and
+      switches the summary off. }
     AssertTrue('--show-step-result', StepTextVisible(True, False));
     AssertTrue('--show-reasoning', StepTextVisible(False, True));
     AssertTrue('both flags', StepTextVisible(True, True));
+    AssertFalse('no summary with --show-step-result', StepBriefVisible(True, False));
+    AssertFalse('no summary with --show-reasoning', StepBriefVisible(False, True));
     AssertEquals('full event text', Txt, FormatStepEnd(Txt));
 
-    { A step without a result: no separator, the status matches the event. }
+    { A step without a result: no separator, the summary matches the event. }
     P.SetStatus('s1', psFailed, '');
     Txt := StepEndText(P.Steps[0]);
     AssertEquals('event without a result', 's1: failed', Txt);
-    AssertEquals('status = event', Txt, FormatStepEndStatus(Txt));
+    AssertEquals('summary without a result', Txt, FormatStepEndBrief(Txt));
 
     { A step removed from the plan inside the sub-loop: also without a result,
-      the gating leaves the text as is. }
+      the summary leaves the text as is. }
     Txt := 's1: removed from the plan';
-    AssertEquals('removed step unchanged', Txt, FormatStepEndStatus(Txt));
+    AssertEquals('removed step unchanged', Txt, FormatStepEndBrief(Txt));
   finally
     P.Free;
   end;

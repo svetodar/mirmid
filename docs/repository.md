@@ -129,7 +129,7 @@ Operational notes:
 
 `tests/testrunner.lpr` is a `consoletestrunner` program that registers the `test_*.pas`
 units and runs them; the `test` target invokes it as
-`bin/testrunner --all --format=plain`. The reference result is **470 run,
+`bin/testrunner --all --format=plain`. The reference result is **473 run,
 0 errors, 0 failures** (see the latest dated entry in
 [../context.md](../context.md)); keep that count current when tests are added.
 

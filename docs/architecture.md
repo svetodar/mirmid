@@ -87,6 +87,25 @@ errors, loop warnings and status lines are visible, while reasoning and tool
 output require `--show-reasoning`. Streamed text is rendered as markdown and the
 context status line is redrawn below it.
 
+The status line is one line, not text: in an ANSI terminal `TStreamPrinter`
+draws it with `PrintStatus`, erases it with `ClearLine` and never lets it into
+the scrollback. Therefore the composed status is cut to `ContentWidth - 1`
+visible columns by `TruncateVisible` (`mirmid.util`). Without that cut a status
+wider than the terminal would wrap, and the next redraw, which erases only the
+last line, would leave the tail of the old status in the scrollback. One column
+is kept free because moving the cursor into the very last cell makes some
+terminals wrap.
+
+`TruncateVisible` counts columns exactly as `VisibleLen` does - ANSI sequences
+take none, wide characters (`IsWideCP`) take two, zero-width ones
+(`IsZeroWidthCP`) take none, a broken byte takes one - and returns the longest
+prefix that fits, so a UTF-8 character or a wide character is never split (a
+two-column character does not fit into one remaining column). ANSI sequences
+before the cut are kept byte for byte and a kept SGR prefix is closed with a
+reset; a sequence that only starts after the last visible character is dropped.
+`MaxCols <= 0` returns the input unchanged, and a string that already fits is
+returned as is.
+
 The context estimate in `TAgent.ContextTokens` walks the message history and
 the registered tool schemas. Text is weighted as four ASCII bytes per token,
 two characters per token for two-byte UTF-8 scripts and one character per token
@@ -240,6 +259,11 @@ the session state. `TPlanner.RunPlannedTurn` runs four phases:
    the tool switches are inherited unchanged, so the user's enabled tools remain
    available. The analysis session is saved as `<id>_analysis.json`; a failure is
    reported and the plan is built without the analysis.
+   The CLI prints the analysis text exactly once: `InAnalysisSubSession`
+   (depth one plus the `analysis` label) suppresses its tokens in
+   `aeStreamText` (only the status line is redrawn) and its answer in
+   `aeAssistant`, so the single output is the `aeAnalysis` event - the
+   `[analysis]` tag and the rendered markdown.
 2. **Plan.** A direct model request (with the task and the analysis) must return
    only JSON steps. A parse failure gets one retry; the parsed plan is truncated
    to `[agent] plan_max_step` when that limit is set. The planner fires
@@ -252,7 +276,12 @@ the session state. `TPlanner.RunPlannedTurn` runs four phases:
    `<id>_step_<step>.json`. A regular answer marks the step done and stores a
    truncated result; a failed turn, an empty answer or a final text starting
    with `ERROR: ` marks it failed and the failure reason goes into the next
-   attempt. The number of attempts is `1 + plan_step_fix_attempts`. When all
+   attempt. The number of attempts is `1 + plan_step_fix_attempts`. What the
+   step line shows is decided by the flags: with `--show-step-result` or
+   `--show-reasoning` the full result is printed (`FormatStepEnd`), otherwise
+   `FormatStepEndBrief` (enabled by `StepBriefVisible`) adds the first non-empty
+   line of the result to the status and cuts the line to `STEP_BRIEF_MAX` (120)
+   visible columns with `TruncateVisible`. When all
    attempts fail, the model is asked whether to revise the plan or stop; a
    revision uses the same `revise_plan` handler and a stop ends the turn with
    `aeError`.
@@ -308,6 +337,10 @@ interface and scope are covered in [anthropic.md](anthropic.md).
 - **A change to the loop:** edit `mirmid.agent` and its tests; keep the event
   contract (`aeStep`, `aeToolCall`, `aeToolResult`, `aeContext`, `aeError`)
   stable, because the CLI status line and the planner rely on it.
+- **A change to the terminal output:** edit `mirmid.cli` and keep the drawn
+  line budget: every line that replaces another one (the status line, the step
+  status) must be cut to the terminal width with `TruncateVisible`, never by
+  bytes, and the step summary must stay one line (`FormatStepEndBrief`).
 - **A change to persistence:** edit `mirmid.session`, keep schema 1 readable and
   keep auxiliary suffixes (`_sub_`, `_step_`, `_analysis`) outside
   `--list-sessions`.
