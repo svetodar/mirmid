@@ -18,11 +18,12 @@ type
       built, the test is skipped). Cols > 0 — set the terminal width (the COLUMNS
       variable) for the probe process. }
     function RunProbe(const Scenario: string; Cols: Integer = 0): string;
-    { A simple terminal model: lines, cursor (row/column). Supports CR, LF, ESC[K
-      (erase to the end of the line), ESC[A (up) and plain text. AWidth > 0 — hard
-      line wrapping at that width (as in a terminal): this is how the check that a
-      partial line with a prefix does not overflow the terminal works. Returns the
-      final screen state. }
+    { A simple terminal model: lines, cursor (row/column). Supports CR, LF, any
+      CSI sequence (ESC '[' parameters final byte: colour SGR is skipped, ESC[K
+      erases to the end of the line, ESC[nA moves the cursor up by n lines) and
+      plain text. AWidth > 0 - hard line wrapping at that width (as in a
+      terminal): this is how the check that a partial line with a prefix does not
+      overflow the terminal works. Returns the final screen state. }
     function SimulateTerminal(const S: string; AWidth: Integer = 0): TStringList;
     { Removes all whitespace characters (to compare the text after the word wrap,
       where the space at the break is dropped). }
@@ -41,6 +42,8 @@ type
     procedure TestEndStreamNoGlueBeforePrompt;
     procedure TestStatusStaysAfterTurn;
     procedure TestLongStatusTruncatedToOneLine;
+    procedure TestTableFitsTerminalWidth;
+    procedure TestTableRedrawShrinks;
   end;
 
 implementation
@@ -109,7 +112,7 @@ end;
 function TStreamPrinterTests.SimulateTerminal(const S: string;
   AWidth: Integer): TStringList;
 var
-  Row, Col, I, N: Integer;
+  Row, Col, I, J, K, N, Count: Integer;
   C: Char;
   Line: string;
 begin
@@ -124,27 +127,56 @@ begin
     C := S[I];
     if C = #27 then
     begin
-      if (I + 2 <= N) and (S[I + 1] = '[') then
+      if (I + 1 <= N) and (S[I + 1] = '[') then
       begin
-        if S[I + 2] = 'K' then
+        { CSI: ESC '[' parameters (0x20-0x3F), then the final byte
+          (0x40-0x7E). Colour SGR sequences (the "ESC[38;2;45;45;45m" of the
+          table frames) do not change the screen, so the whole sequence is
+          skipped - otherwise its parameters would land in the screen text. }
+        J := I + 2;
+        while (J <= N) and (S[J] >= #$20) and (S[J] <= #$3F) do
+          Inc(J);
+        if (J > N) or (S[J] < #$40) then
+        begin
+          Inc(I);   { an incomplete sequence - skip the ESC }
+          Continue;
+        end;
+        Count := 0;
+        for K := I + 2 to J - 1 do
+          if (S[K] >= '0') and (S[K] <= '9') then
+            Count := Count * 10 + (Ord(S[K]) - Ord('0'));
+        if Count = 0 then
+          Count := 1;
+        if S[J] = 'K' then
         begin
           { Erase from the cursor to the end of the line. }
+          while Row >= Result.Count do
+            Result.Add('');
           if Col < Length(Result[Row]) then
             Result[Row] := Copy(Result[Row], 1, Col)
           else
             Result[Row] := '';
-          Inc(I, 3);
-          Continue;
         end
-        else if S[I + 2] = 'A' then
+        else if S[J] = 'A' then
         begin
-          if Row > 0 then
-            Dec(Row);
-          Inc(I, 3);
-          Continue;
+          { Cursor up by Count lines: redrawing a group moves it back over the
+            lines already drawn. }
+          Dec(Row, Count);
+          if Row < 0 then
+            Row := 0;
+        end
+        else if S[J] = 'B' then
+        begin
+          { Cursor down by Count lines: erasing the lines a shorter redraw left
+            below the new bottom border. }
+          Inc(Row, Count);
+          while Row >= Result.Count do
+            Result.Add('');
         end;
+        I := J + 1;
+        Continue;
       end;
-      Inc(I);   { an unknown ESC sequence — skip it }
+      Inc(I);   { an unknown ESC sequence - skip it }
     end
     else if C = #13 then
     begin
@@ -915,6 +947,190 @@ begin
       Pos('TailMarker', All));
   finally
     Wrapped.Free;
+    Screen.Free;
+  end;
+end;
+
+procedure TStreamPrinterTests.TestTableFitsTerminalWidth;
+const
+  { The terminal width of the probe (the COLUMNS variable), the subagent prefix
+    the table is printed under and the visible content width left for it. }
+  COLS = 40;
+  PREFIX = '||';
+  CONTENT = COLS - Length(PREFIX);
+  { The frames of the drawn table: the columns take the whole content width
+    (padding and separators included), so the box drawing never runs past the
+    terminal edge and the table is never wrapped by the terminal itself. }
+  TOP = '||┌───────┬───────────────────┬────────┐';
+  HEADER = '||│ Name  │ Description       │ Owner  │';
+  RULE = '||├───────┼───────────────────┼────────┤';
+  BOTTOM = '||└───────┴───────────────────┴────────┘';
+  { The first visible character of a table: it counts the tables on the screen
+    (the prefix is compared as a whole, the box drawing is UTF-8). }
+  TOP_LEFT = '||┌';
+var
+  Out, All: string;
+  Screen: TStringList;
+  I, Tables: Integer;
+begin
+  { A table wider than the terminal is printed under the "||" subagent prefix: the
+    cells are wrapped by words, the column widths are distributed over the content
+    width, and every record takes as many physical lines as its highest cell. The
+    erase-and-redraw of the streamed table moves the cursor up by the number of
+    DRAWN lines, so the box drawing must never be cut by a hard terminal wrap.
+    Regression: TStreamPrinter.ShowTable/ContentWidth and RenderTable(MaxWidth). }
+  Out := RunProbe('table', COLS);
+  if Out = '' then
+    Exit;
+  { The table really was drawn and the long cells really were wrapped: the whole
+    description never appears on one line. }
+  AssertTrue('the header is drawn', Pos('Description', Out) > 0);
+  AssertTrue('the first row is drawn', Pos('alpha', Out) > 0);
+  AssertTrue('the description is wrapped by words',
+    Pos('first row with a', Out) > 0);
+  AssertEquals('the long description never stays on one line', 0,
+    Pos('first row with a longer description', Out));
+  { The whole table, prefix included, takes exactly the terminal width: the content
+    fills the CONTENT columns and not a single column is wasted. }
+  AssertEquals('the top border fills the terminal width', COLS,
+    VisibleLen(TOP));
+  AssertEquals('the table body takes the whole content width', CONTENT,
+    VisibleLen(Copy(TOP, Length(PREFIX) + 1, MaxInt)));
+
+  { The screen without a hard wrap is checked line by line: a drawn line wider than
+    the terminal would be wrapped by the terminal itself and the erase-and-redraw
+    of the table (ESC[nA moves back by the number of DRAWN lines) would leave
+    remains of the table in the scrollback. }
+  Screen := SimulateTerminal(Out);
+  try
+    AssertEquals('lines on the screen', 16, Screen.Count);
+    AssertEquals('the paragraph above the table', PREFIX + 'answer with a table',
+      Screen[0]);
+    AssertEquals('the top border of the table', TOP, Screen[1]);
+    AssertEquals('the header row', HEADER, Screen[2]);
+    AssertEquals('the rule under the header', RULE, Screen[3]);
+    { The first record is three lines high (the description is the highest cell)
+      and the shorter cells are aligned to its top. }
+    AssertEquals('the first line of the first record',
+      '||│ alpha │ first row with a  │ team   │', Screen[4]);
+    AssertEquals('the second line of the first record',
+      '||│       │ longer            │ one    │', Screen[5]);
+    AssertEquals('the third line of the first record',
+      '||│       │ description       │        │', Screen[6]);
+    AssertEquals('the first line of the second record',
+      '||│ beta  │ second row of     │ team   │', Screen[7]);
+    AssertEquals('the second line of the second record',
+      '||│       │ text              │ two    │', Screen[8]);
+    AssertEquals('the first line of the third record',
+      '||│ gamma │ third row closes  │ team   │', Screen[9]);
+    AssertEquals('the second line of the third record',
+      '||│       │ the table         │ three  │', Screen[10]);
+    AssertEquals('the bottom border of the table', BOTTOM, Screen[11]);
+    { The closing paragraph, the done line and the static line start on clean lines
+      under the bottom border - nothing glues to the table. }
+    AssertEquals('the paragraph under the table', PREFIX + 'after the table',
+      Screen[12]);
+    AssertEquals('the done line under the paragraph', PREFIX + '[tbl 9 done]',
+      Screen[13]);
+    AssertEquals('the static line under the done line',
+      PREFIX + 'static after table', Screen[14]);
+    AssertEquals('under the last line only the newline tail', '', Screen[15]);
+
+    { The drawn lines never pass the terminal edge, and only the last redraw is on
+      the screen: every earlier (narrower) draw was erased, so there is exactly one
+      table and none of its records is lost. }
+    Tables := 0;
+    All := '';
+    for I := 0 to Screen.Count - 1 do
+    begin
+      All := All + Screen[I];
+      AssertTrue('no line is wider than the terminal: ' + Screen[I],
+        VisibleLen(Screen[I]) <= COLS);
+      if Copy(Screen[I], 1, Length(TOP_LEFT)) = TOP_LEFT then
+        Inc(Tables);
+    end;
+    AssertEquals('exactly one table on the screen', 1, Tables);
+    AssertTrue('the last record is on the screen', Pos('the table', All) > 0);
+    AssertTrue('the wrapped tail of the description is on the screen',
+      Pos('description', All) > 0);
+    AssertTrue('the short cell of the first record is on the screen',
+      Pos('one', All) > 0);
+  finally
+    Screen.Free;
+  end;
+end;
+
+procedure TStreamPrinterTests.TestTableRedrawShrinks;
+const
+  { The terminal width of the probe, the subagent prefix and the visible content
+    width left for the table. }
+  COLS = 40;
+  PREFIX = '||';
+  { The last table row redistributes the column widths so that the drawn table
+    becomes two lines SHORTER than the previous rendering. The final table is
+    checked line by line: the erase-and-redraw has to clear the lines the taller
+    table left below, otherwise its bottom border stays on the screen. }
+  TOP = '||┌──────────────┬───────────┬─────────┐';
+  BOTTOM = '||└──────────────┴───────────┴─────────┘';
+  TOP_LEFT = '||┌';
+var
+  Out, All: string;
+  Screen: TStringList;
+  I, Tables: Integer;
+begin
+  { Regression: TStreamPrinter.ShowTable. The height of a streamed table is not
+    monotone (a new line can unwrap an earlier cell), so the redraw must erase
+    the remainder of the previous, taller rendering. }
+  Out := RunProbe('table-shrink', COLS);
+  if Out = '' then
+    Exit;
+  AssertTrue('the table is drawn', Pos('note text', Out) > 0);
+  Screen := SimulateTerminal(Out);
+  try
+    AssertEquals('lines on the screen', 15, Screen.Count);
+    AssertEquals('the paragraph above the table',
+      PREFIX + 'answer with a shrinking table', Screen[0]);
+    AssertEquals('the top border of the final table', TOP, Screen[1]);
+    AssertEquals('the first header line',
+      PREFIX + '│ note the     │ up        │ text    │', Screen[2]);
+    AssertEquals('the second header line',
+      PREFIX + '│ first item   │           │ data    │', Screen[3]);
+    AssertEquals('the rule under the header',
+      PREFIX + '├──────────────┼───────────┼─────────┤', Screen[4]);
+    AssertEquals('the first row, first line',
+      PREFIX + '│ note text    │ note text │ text    │', Screen[5]);
+    AssertEquals('the first row, second line',
+      PREFIX + '│ data rows    │ data rows │ data    │', Screen[6]);
+    AssertEquals('the second row, first line',
+      PREFIX + '│ row          │ text data │ cells   │', Screen[7]);
+    AssertEquals('the second row, second line',
+      PREFIX + '│              │ rows      │         │', Screen[8]);
+    AssertEquals('the third row',
+      PREFIX + '│ text data    │ cells     │ row     │', Screen[9]);
+    AssertEquals('the bottom border of the final table', BOTTOM, Screen[10]);
+    { Nothing of the taller previous table is left between the bottom border and
+      the following output. }
+    AssertEquals('the paragraph under the table', PREFIX + 'after the table',
+      Screen[11]);
+    AssertEquals('the done line under the paragraph', PREFIX + '[sh 9 done]',
+      Screen[12]);
+    AssertEquals('the static line under the done line',
+      PREFIX + 'static after the shrinking table', Screen[13]);
+    AssertEquals('under the last line only the newline tail', '', Screen[14]);
+
+    { Only the last redraw is on the screen and every line fits the terminal. }
+    Tables := 0;
+    All := '';
+    for I := 0 to Screen.Count - 1 do
+    begin
+      All := All + Screen[I];
+      AssertTrue('no line is wider than the terminal: ' + Screen[I],
+        VisibleLen(Screen[I]) <= COLS);
+      if Copy(Screen[I], 1, Length(TOP_LEFT)) = TOP_LEFT then
+        Inc(Tables);
+    end;
+    AssertEquals('exactly one table on the screen', 1, Tables);
+  finally
     Screen.Free;
   end;
 end;

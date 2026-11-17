@@ -532,6 +532,66 @@ begin
       P.PrepareStatic;
       WriteLn('after long status');
     end
+    else if Name = 'table' then
+    begin
+      { A markdown table in a stream (ShowTable): every table line is buffered and
+        the whole table is redrawn with aligned columns, its width limited by the
+        visible content width — RenderTable wraps the cells by words and
+        distributes the column widths, so the box drawing never runs past the
+        terminal edge even with the subagent prefix (a hard terminal wrap would
+        break the erase-and-redraw of the table, which moves the cursor up by the
+        number of DRAWN lines). The scenario repeats the aeStepStart/aeAssistant/
+        aeSubSessionEnd branches: the answer starts with a paragraph, then a table
+        that is wider than the terminal arrives line by line with the temporary
+        status drawn under it, then a closing paragraph, the done line and a
+        static line — none of them may glue to the remains of the status or to
+        the bottom border. Regression: TStreamPrinter.ShowTable/ContentWidth and
+        RenderTable(MaxWidth). }
+      P.Prefix := '||';
+      P.BeginStream('[tbl 1]');
+      P.FeedContent('answer with a table' + #10, '[tbl 2]');
+      { The table comes in line by line, as the model streams it: the aligned
+        table is erased and redrawn after every new line. }
+      P.FeedContent('| Name | Description | Owner |' + #10, '[tbl 3]');
+      P.FeedContent('| --- | --- | --- |' + #10, '[tbl 4]');
+      P.FeedContent('| alpha | first row with a longer description | team one |' +
+        #10, '[tbl 5]');
+      P.FeedContent('| beta | second row of text | team two |' + #10, '[tbl 6]');
+      P.FeedContent('| gamma | third row closes the table | team three |' + #10,
+        '[tbl 7]');
+      { The first non-table line closes the table and is printed under it. }
+      P.FeedContent('after the table' + #10, '[tbl 8]');
+      P.EndStream('[tbl 9]');
+      { aeSubSessionEnd: the temporary status is erased and a done line is fixed
+        in its place under the closing paragraph. }
+      P.PersistStatus('[tbl 9 done]');
+      P.PrepareStatic;
+      WriteLn(P.Prefix + 'static after table');
+    end
+    else if Name = 'table-shrink' then
+    begin
+      { A streamed table whose drawn height SHRINKS while it fills up: the last
+        row changes the volume of the columns enough to redistribute their widths
+        and unwrap two earlier cells. The erase-and-redraw of ShowTable must
+        remove the lines the taller previous table left below (the cursor moves
+        back by the number of DRAWN lines, not buffer lines): otherwise the tail
+        of the old rendering stays on the screen. Regression:
+        TStreamPrinter.ShowTable. }
+      P.Prefix := '||';
+      P.BeginStream('[sh 1]');
+      P.FeedContent('answer with a shrinking table' + #10, '[sh 2]');
+      P.FeedContent('| note the first item | up | text data |' + #10, '[sh 3]');
+      P.FeedContent('| --- | --- | --- |' + #10, '[sh 4]');
+      P.FeedContent('| note text data rows | note text data rows | text data |' +
+        #10, '[sh 5]');
+      P.FeedContent('| row | text data rows | cells |' + #10, '[sh 6]');
+      P.FeedContent('| text data | cells | row |' + #10, '[sh 7]');
+      P.FeedContent('after the table' + #10, '[sh 8]');
+      P.EndStream('[sh 9]');
+      P.PersistStatus('[sh 9 done]');
+      P.PrepareStatic;
+      WriteLn(P.Prefix + 'static after the shrinking table');
+    end
     else
       Halt(2);
     P.EndStream('[st]');

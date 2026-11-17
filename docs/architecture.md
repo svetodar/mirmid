@@ -119,6 +119,51 @@ context already has one, the parent's registry (so MCP servers are not started
 again). Nesting is limited to `MAX_SUBAGENT_DEPTH` (3); the final answer is the
 tool result, and an empty answer is reported as an error.
 
+## Terminal output and markdown tables
+
+`TStreamPrinter` measures every printed line in visible columns (`VisibleLen`):
+ANSI sequences take none, wide characters take two and zero-width ones take
+none. The width available to the text is `ContentWidth = TermWidth() -
+VisibleLen(FPrefix)`, because the depth prefix of a subagent session is printed
+in front of every line and the whole line must occupy exactly one terminal row;
+`TruncateVisible` cuts a line to that budget, never by bytes.
+
+Streamed markdown is wrapped while it is printed: the pending text goes through
+`WrapText` with `MeasureRendered` and `BreakSafe` (no break inside inline
+markup), and every complete group is rendered with
+`RenderMarkdown(G, 1, ContentWidth)`. The static outputs of a turn - `aeReport`,
+`aeAnalysis` and `aeAssistant` - use `TermWidth() - VisibleLen(Pfx)` (at least
+one column) for the same reason.
+
+Tables are rendered by `RenderTable(Lines, Colored, MaxWidth)`, called by
+`ShowTable` with `MaxWidth = ContentWidth`. With `MaxWidth = 0` (the default for
+other callers) the columns keep their natural width, which is the maximum
+visible width of the stripped cells. With a limit the natural widths are summed
+first: when the sum fits, nothing changes. When the table is wider than its
+budget (`MaxWidth - 3 * NCols - 1`: two borders and a line break per column plus
+the closing border) the widths are redistributed. `CollectTableStats` measures,
+per column, the total visible volume of its text and its longest word (capped at
+`TABLE_MAX_WORD = 20` columns); `DistributeTableWidths` gives every column at
+least room for that word (never more than its natural width) and shares the
+rest in proportion to the volume, again capped by the natural width. When even
+those minimums do not fit the budget, the budget is split by volume and
+`RenderTable` asks `WrapTableCell` for a forced break (`ForceBreak`), so the
+table stays inside `MaxWidth` instead of widening the columns; only an
+unbreakable markup span can still make it wider. A word longer than
+`TABLE_MAX_WORD` is not widened for: `WrapTableCell` breaks it with
+`BreakTableWord`, and a break that would fall inside inline markup is refused -
+showing intact markup on an overflowing line is better than showing `**` as
+text.
+
+Cells are wrapped word by word at spaces and tabs (a line break inside markup is
+also refused), the row height is the tallest cell of the record, and shorter
+cells stay top-aligned, so a row remains one visual block. As a last safety net
+the finished table is split into physical lines and each of them passes
+through `TruncateVisible(Line, MaxWidth)`; `ShowTable` additionally checks the
+result against `ContentWidth` and prints the lines unaligned if something still
+does not fit. The source text is never reflowed: only the rendered output is
+wrapped.
+
 ## Tools
 
 `TToolRegistry` stores tool names, descriptions, JSON schemas and handlers. A
@@ -337,10 +382,13 @@ interface and scope are covered in [anthropic.md](anthropic.md).
 - **A change to the loop:** edit `mirmid.agent` and its tests; keep the event
   contract (`aeStep`, `aeToolCall`, `aeToolResult`, `aeContext`, `aeError`)
   stable, because the CLI status line and the planner rely on it.
-- **A change to the terminal output:** edit `mirmid.cli` and keep the drawn
-  line budget: every line that replaces another one (the status line, the step
-  status) must be cut to the terminal width with `TruncateVisible`, never by
-  bytes, and the step summary must stay one line (`FormatStepEndBrief`).
+- **A change to the terminal output:** edit `mirmid.cli` (and `mirmid.markdown`
+  for the renderer) and keep the drawn line budget: every line that replaces
+  another one (the status line, the step status) must be cut to the terminal
+  width with `TruncateVisible`, never by bytes, the step summary must stay one
+  line (`FormatStepEndBrief`), and anything rendered from markdown - tables
+  included - must be given `ContentWidth` as `MaxWidth` so it wraps instead of
+  running past the edge.
 - **A change to persistence:** edit `mirmid.session`, keep schema 1 readable and
   keep auxiliary suffixes (`_sub_`, `_step_`, `_analysis`) outside
   `--list-sessions`.

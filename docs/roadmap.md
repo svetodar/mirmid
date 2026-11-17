@@ -6,7 +6,7 @@ makes the gap visible and has a closing condition that a test can check. Feature
 ideas that no code currently promises are not listed here.
 
 Snapshot: working tree of 2026-11-09. The build is green (`make -B app test`,
-473 tests, 0 errors, 0 failures; see the latest dated entry in
+482 tests, 0 errors, 0 failures; see the latest dated entry in
 [../context.md](../context.md)), the suite never touches the network, and
 `bin/mirmid --version` reports `mirmid 0.1.0`. Nothing below blocks this state.
 

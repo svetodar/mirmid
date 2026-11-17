@@ -1632,7 +1632,9 @@ end;
 procedure TStreamPrinter.EmitGroup(const G: string);
 begin
   ClearAbove;
-  WriteLn(ApplyPrefix(RenderMarkdown(G)));
+  { The rendered group is wrapped to the visible content width, so long lines
+    (tables, paragraphs) never run past the terminal edge. }
+  WriteLn(ApplyPrefix(RenderMarkdown(G, 1, ContentWidth)));
   ClearLine;   { clear the line under the group (the old status) }
   FStatusShown := False;
   FPendingOnScreen := False;
@@ -1674,7 +1676,13 @@ begin
   Lines := SplitLines(FTableBuf);
   RL := nil;
   try
-    R := RenderTable(Lines, True);
+    { The table width is limited by the visible content width (the terminal
+      minus the stream prefix): RenderTable wraps cells by words and distributes
+      the column widths itself. A cell that cannot be broken (a long word or an
+      inline span wider than its column) widens the column instead of losing
+      text, so the table may still not fit — then the lines are printed as they
+      are, without the box. }
+    R := RenderTable(Lines, True, ContentWidth);
     MaxW := 0;
     RL := SplitLines(R);
     for I := 0 to RL.Count - 1 do
@@ -1729,6 +1737,19 @@ begin
         WriteLn;
       end;
       ClearLine;   { the line under the table (the old status) }
+      { The drawn height is not monotone: a new buffer line redistributes the
+        column widths and can unwrap an older cell, so the new rendering may be
+        shorter than the previous one. Erase the lines the old table left below
+        and put the cursor back under the new bottom border. }
+      if FTableOnScreen > RL.Count then
+      begin
+        for K := RL.Count to FTableOnScreen - 1 do
+        begin
+          Write(ESC + '[B');
+          ClearLine;
+        end;
+        Write(ESC + '[' + IntToStr(FTableOnScreen - RL.Count) + 'A');
+      end;
       FTableOnScreen := RL.Count;
     end;
     FPendingOnScreen := False;   { the partial line is not on the screen }
@@ -2278,8 +2299,15 @@ var
   P, N: Integer;
   Name, Args, S, St: string;
   Pfx, Body: string;
+  AvailWidth: Integer;
 begin
   Pfx := FPrinter.Prefix;
+  { Visible columns left for the text after the subagent prefix: a rendered
+    markdown block must not overrun the terminal. At least one column, so the
+    renderers never see a zero or negative width. }
+  AvailWidth := TermWidth() - VisibleLen(Pfx);
+  if AvailWidth < 1 then
+    AvailWidth := 1;
   case Kind of
     aeStep:
       { Plan step text: no tag, in the step colour (C_STEP). }
@@ -2348,7 +2376,8 @@ begin
           leave it (a tool result). }
         if not FPrinter.BlankSeparated then
           WriteLn(Pfx);
-        WriteLn(FPrinter.ApplyPrefix(RenderMarkdown(Text)));
+        { The report is wrapped to the width left after the prefix. }
+        WriteLn(FPrinter.ApplyPrefix(RenderMarkdown(Text, 1, AvailWidth)));
       end;
     aeAnalysis:
       { Preliminary analysis: the [analysis] tag and markdown rendering. }
@@ -2356,7 +2385,8 @@ begin
       begin
         FPrinter.PrepareStatic;
         WriteLn(Pfx + Colored(C_STEP, '[analysis]'));
-        WriteLn(FPrinter.ApplyPrefix(RenderMarkdown(Text)));
+        { The analysis text is wrapped to the width left after the prefix. }
+        WriteLn(FPrinter.ApplyPrefix(RenderMarkdown(Text, 1, AvailWidth)));
       end;
     aeLoopWarning:
       { Loop-guard: a yellow line about repeated tool calls (the text is the same
@@ -2568,7 +2598,8 @@ begin
           lines in a row would end up under the tool output. }
         if not FPrinter.BlankSeparated then
           WriteLn(Pfx);
-        WriteLn(FPrinter.ApplyPrefix(RenderMarkdown(Text)));
+        { The answer is wrapped to the width left after the prefix. }
+        WriteLn(FPrinter.ApplyPrefix(RenderMarkdown(Text, 1, AvailWidth)));
       end;
     aeUsage:
       if FCfg.Verbose then

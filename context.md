@@ -640,3 +640,148 @@ Pitfalls re-confirmed:
   deleted before the commit and must never be staged.
 - `perl` and `make` are still not in the default `PATH` of `cmd.exe`; the
   `C:\Program Files\Git\usr\bin` prefix from `AGENTS.md` is required.
+
+## 2026-11-13 — markdown tables wrapped to the terminal width
+
+Scope: a markdown table used to be drawn at its natural width, so in a narrow
+terminal (or under the `||` subagent prefix) the frames ran past the edge and a
+status redraw could only half erase them. Tables are now wrapped by words inside
+the visible content width. Five tracked files change: `src/mirmid.markdown.pas`,
+`src/mirmid.cli.pas`, `tests/test_markdown.pas`, `tests/test_stream.pas` and
+`tests/fixtures/streamprobe.pas` (1479 insertions / 54 deletions).
+
+Verification (all commands run in `C:\ai\git\mirmid` on 2026-11-13):
+
+- `make -B app test` → **482 tests run, 0 errors, 0 failures**, exit code 0.
+  The new reference count is **482 / 0 / 0**, nine more than the previous 473;
+  the nine are listed under "Coverage" below.
+- `bin\mirmid.exe --version` → `mirmid 0.1.0`; `--help` → exit code 0 with the
+  full option list (the usage text is untouched).
+- All five edited files are LF (`git ls-files --eol` → `i/lf w/lf` for each),
+  per `.gitattributes`; `git status` holds no untracked leftovers.
+
+What changed:
+
+- **The renderers gained an optional width.** `RenderMarkdownCore`,
+  `RenderMarkdown` and `RenderTable` in `src/mirmid.markdown.pas` take a trailing
+  `MaxWidth: Integer = 0`. `0` reproduces the old behaviour (natural width), so
+  every existing caller still compiles and renders as before; `> 0` limits and
+  wraps the visible line width. `StripMarkdown` stays unlimited.
+- **Column widths are distributed, not guessed.** `RenderTable` still measures
+  the natural widths from `VisibleLen(StripMarkdown(cell))`, then computes the
+  content budget as `MaxWidth - 3 * NCols - 1` (clamped to at least `NCols`) —
+  that is `'| '` + `' |'` per column plus the closing border. Only when the
+  natural sum exceeds the budget, `CollectTableStats` (visible text volume per
+  column plus the longest word, capped by the new `TABLE_MAX_WORD = 20`) feeds
+  `DistributeTableWidths`, which gives every column at least room for its
+  longest word and shares the remainder in proportion to the text volume,
+  never above the natural width. A narrow table keeps its natural widths, so
+  short columns are not padded out to fill the terminal.
+- **Cells wrap by words.** `WrapTableCell(Text, Width, ForceBreak)` splits on
+  spaces and tabs, measures each piece through `StripMarkdown`, and cuts only at
+  `MarkdownBreakSafe` boundaries, so an open `**bold**` or `code` span is never
+  cut mid-markup. A word longer than `TABLE_MAX_WORD` is always force-broken by
+  `BreakTableWord` (`TruncateVisible` prefix; a character wider than the limit
+  gets a line of its own); `ForceBreak` also breaks shorter words, which is what
+  `RenderTable` asks for when even the word minimums do not fit the budget, so
+  such a table still fits `MaxWidth` instead of growing past it. If a piece still
+  cannot be placed (an unbreakable markup span), the column is widened: exposing
+  markup is worse than one wide cell.
+- **Rows became multi-line blocks.** Each record is rendered as a list of
+  physical lines per cell, the height of the row is the tallest cell, short
+  cells are top-aligned and padded, and the border is drawn per physical line.
+  A final safety pass runs `TruncateVisible(Line, MaxWidth)` over every physical
+  line, so nothing can run past the edge and an unfinished SGR is closed instead
+  of leaking into the next line.
+- **The CLI passes real widths.** In `src/mirmid.cli.pas`: `ShowTable` calls
+  `RenderTable(Lines, True, ContentWidth)` (the old "wider than the terminal"
+  check stays as a safety net), `EmitGroup` calls
+  `RenderMarkdown(G, 1, ContentWidth)`, and `TMirmidApp.OnAgentEvent` computes
+  `AvailWidth := TermWidth() - VisibleLen(Pfx)` clamped to a minimum of 1, which
+  feeds the three static `RenderMarkdown(Text, 1, AvailWidth)` calls
+  (`aeReport`, `aeAnalysis`, `aeAssistant`).
+
+Independent review (a separate subagent reviewed this diff before the commit) and
+the fixes it produced:
+
+- **Markers inside a word are literal.** `MarkdownBreakSafe` used to toggle the
+  italic flag on every `*`/`_`, so `foo_bar` or `2*3` made every later break point
+  "unsafe" and the whole cell came out on one overflowing line. It now opens and
+  closes a span with the same rules as `RenderInlineBody` (a marker opens only at
+  a word start and closes only after a non-space), so a mid-word marker no longer
+  blocks wrapping; `TestBreakSafe` pins the four new cases.
+- **A squeezed table now really fits.** When the sum of the word minima exceeded
+  the budget, `DistributeTableWidths` split the budget by volume but the wrapper
+  refused to break words up to `TABLE_MAX_WORD`, so the widen pass grew the
+  columns again and the drawn table could be much wider than `MaxWidth` (and not
+  monotone in `MaxWidth`). `RenderTable` detects that case and passes
+  `ForceBreak = True` to `WrapTableCell`, so the words are cut to the assigned
+  width and the frames stay inside the limit; the default `ForceBreak = False`
+  keeps `WrapTableCell` behaviour for every other caller.
+- **A wide character at a one-column limit no longer stops the break.**
+  `TruncateVisible` cannot fit a double-width character into one column, so
+  `BreakTableWord` used to return the whole word; it now emits one whole
+  character per piece.
+- **A squeezed column keeps one character.** The old volume split could give a
+  column width 0 and the later clamp to 1 pushed the table past `MaxWidth` (a
+  fuzz run found 127 of 3000 ordinary tables one or more columns too wide).
+  `DistributeTableWidths` now reserves one character for every non-empty column
+  before the volume split, so the widths still add up to the budget.
+- **Forced breaks are ANSI- and marker-safe.** `BreakTableWord` again accounts
+  for the `ESC[0m` that `TruncateVisible` appends when it cuts coloured text (the
+  cut bytes, not the piece length, drive the remainder) and `MarkdownBreakSafe`
+  skips ANSI sequences, so the `[` of an SGR code is not taken for a link
+  bracket; a cut between the two characters of a doubled marker (`**`, `__`,
+  `~~`, two backticks) is refused, so a forced break cannot print the marker.
+
+Coverage:
+
+- `tests/test_markdown.pas` (uses gained `Classes` and `StrUtils`):
+  `TestTableCellWordWrap` (2×2 table at `MaxWidth = 20` wraps by words and
+  top-aligns, plus `WrapTableCell('alpha beta gamma', 6)`), `TestTableLongWordBreak`
+  (20-column cap, force-break and continuation gluing), `TestTableWrapWideChars`
+  (CJK and emoji columns), `TestTableWrapInlineMarkup` (open `**bold**` and
+  `code` spans survive; exact output at `MaxWidth = 12`),
+  `TestTableWidthsProportional` (6/11 split at a content budget of 17, both
+  column orders), `TestTableSqueezedForceBreak` (an 18-column word stays whole
+  at a 6-column width by default, is cut into 6+6+6 on `ForceBreak`, the drawn
+  table fits `MaxWidth = 10`, a doubled `~~` marker is never split, a two-column
+  squeezed table at `MaxWidth = 12` never overshoots it, and a 22-column CJK word
+  at width 1 gives one character per piece) and `TestTableNoMaxWidth` (the
+  default `0` and a generous 80 give the natural nine-line output of a
+  five-record table).
+- `tests/test_stream.pas`: `SimulateTerminal` now parses full CSI sequences
+  (`ESC '[' 0x20–0x3F final 0x40–0x7E`: SGR skipped, `ESC[nK` erases to the end
+  of the line, `ESC[nA` moves up and `ESC[nB` down by `n` with `Count = 0`
+  treated as 1), the new `TestTableFitsTerminalWidth` runs the probe with
+  `COLUMNS = 40` and checks that no cell text stays on one line, that the frame
+  fills exactly 38 visible columns under the `||` prefix, and the exact
+  simulated screen, and `TestTableRedrawShrinks` verifies that a table which
+  becomes two lines shorter while streaming is erased down to its new bottom
+  border (`table-shrink` scenario).
+- `tests/fixtures/streamprobe.pas`: a `table` scenario (after `long-status`)
+  streams a paragraph, a three-column table wider than the terminal line by
+  line, and a closing paragraph; `table-shrink` streams a table whose height
+  shrinks while the last row arrives.
+
+Pitfalls re-confirmed:
+
+- `edit_text_file` wrote CRLF again on Windows: the edited files came back with
+  CRLF and were normalised with `sed -i 's/\r$//'` before the build. Check
+  `git ls-files --eol` after every edit, do not assume.
+- The terminal model in `tests/test_stream.pas` skipped only two-byte escape
+  sequences, so the colour parameters of the table frames (`ESC[38;2;…m`)
+  landed in the screen text. A test that asserts a coloured table needs a real
+  CSI parser first — fix the model, then write the expectation.
+- The emulator must support every cursor movement the printer emits. It knew
+  `ESC[nA` but not `ESC[nB` (the erase pass after a shorter redraw moves down and
+  clears), so the cursor stayed put, a later `ESC[10A` clamped to the top row and
+  `TestTableRedrawShrinks` showed the table over the paragraph. Add the cursor
+  opcodes before trusting a screen assertion.
+- Wide characters make width arithmetic easy to get wrong: the column budget
+  has to be counted in visible columns (`VisibleLen`) everywhere, including in
+  the test expectations (`IsWideCP` counts 2).
+
+Left open: `docs/architecture.md` (table rendering and `ContentWidth`) and the
+test counter (482) in `docs/repository.md` and `docs/roadmap.md` are updated in
+the same change; `deps/tls` is still uninitialised in this checkout.
